@@ -1,0 +1,1002 @@
+# Vera Note - AI Model & Workflow Manager
+# Copyright (C) 2026 Vera Note Contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# database.py
+import os
+import sqlite3
+import shutil
+import contextlib
+
+# Hidden private data directory relative to AppData/Home
+db_dir = os.path.join(os.path.expanduser("~"), ".veranote_data")
+os.makedirs(db_dir, exist_ok=True)
+DB_NAME = os.path.join(db_dir, "veranote.db")
+
+SAVED_IMAGES_DIR = os.path.join(db_dir, "saved_images")
+os.makedirs(SAVED_IMAGES_DIR, exist_ok=True)
+
+SAVED_WORKFLOWS_DIR = os.path.join(db_dir, "saved_workflows")
+os.makedirs(SAVED_WORKFLOWS_DIR, exist_ok=True)
+
+# Automatic migration of existing database from legacy app data directories
+for legacy_dir_name in [".veranote_legacy_data"]:
+    legacy_db_dir = os.path.join(os.path.expanduser("~"), legacy_dir_name)
+    legacy_db_file = os.path.join(legacy_db_dir, "veranote_legacy.db")
+    if os.path.exists(legacy_db_file) and not os.path.exists(DB_NAME):
+        try:
+            shutil.copy2(legacy_db_file, DB_NAME)
+            legacy_images = os.path.join(legacy_db_dir, "saved_images")
+            if os.path.exists(legacy_images):
+                for f in os.listdir(legacy_images):
+                    src = os.path.join(legacy_images, f)
+                    dst = os.path.join(SAVED_IMAGES_DIR, f)
+                    if not os.path.exists(dst) and os.path.isfile(src):
+                        shutil.copy2(src, dst)
+        except Exception as e:
+            print(f"Migration error from {legacy_dir_name}: {e}")
+
+# Automatic migration of existing database from workspace root (fallback)
+for legacy_name in ["veranote_old.db"]:
+    legacy_db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), legacy_name)
+    if os.path.exists(legacy_db_path):
+        if not os.path.exists(DB_NAME):
+            try:
+                shutil.copy2(legacy_db_path, DB_NAME)
+            except Exception as e:
+                print(f"Migration error from workspace root: {e}")
+        try:
+            os.remove(legacy_db_path)
+        except Exception:
+            pass
+
+@contextlib.contextmanager
+def get_connection():
+    """Return a context manager that yields a fresh connection and closes it on exit."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+    conn.execute("PRAGMA foreign_keys = ON;")
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+def initialize_db():
+    """Create tables if they don't exist and pre-populate default libraries."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        
+        # Settings
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+        """)
+
+        # Notes
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT,
+                image_path TEXT,
+                display_mode TEXT DEFAULT 'WITH_IMAGE',
+                is_favorite INTEGER DEFAULT 0,
+                is_deleted INTEGER DEFAULT 0,
+                is_hidden INTEGER DEFAULT 0,
+                is_pinned_corkboard INTEGER DEFAULT 0,
+                color_hex TEXT DEFAULT '#FEF08A',
+                corkboard_x INTEGER DEFAULT 0,
+                corkboard_y INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # Libraries
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS libraries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                type TEXT DEFAULT 'MODEL'
+            );
+        """)
+
+        # Workflows (ComfyUI Workflow repository)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                file_path TEXT UNIQUE NOT NULL,
+                description TEXT,
+                image_path TEXT,
+                notes TEXT,
+                is_hidden INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
+        """)
+
+        # Models
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS models (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                library_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                file_path TEXT UNIQUE NOT NULL,
+                file_hash TEXT,
+                image_path TEXT,
+                notes TEXT,
+                description TEXT,
+                is_favorite INTEGER DEFAULT 0,
+                is_hidden INTEGER DEFAULT 0,
+                FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
+            );
+        """)
+
+        # Trigger Words
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trigger_words (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_id INTEGER NOT NULL,
+                word TEXT NOT NULL,
+                FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
+                UNIQUE(model_id, word)
+            );
+        """)
+
+        # Tags
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL
+            );
+        """)
+
+        # Model Tags (Many-to-Many)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS model_tags (
+                model_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
+                FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+                UNIQUE(model_id, tag_id)
+            );
+        """)
+
+        # Note Models (Many-to-Many for notes-models association)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS note_models (
+                note_id INTEGER NOT NULL,
+                model_id INTEGER NOT NULL,
+                FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE,
+                FOREIGN KEY(model_id) REFERENCES models(id) ON DELETE CASCADE,
+                UNIQUE(note_id, model_id)
+            );
+        """)
+
+        conn.commit()
+
+        # Migrate libraries table if type column is missing
+        try:
+            cursor.execute("PRAGMA table_info(libraries);")
+            columns = [row['name'] for row in cursor.fetchall()]
+            if 'type' not in columns:
+                cursor.execute("ALTER TABLE libraries ADD COLUMN type TEXT DEFAULT 'MODEL';")
+                conn.commit()
+        except sqlite3.Error as e:
+            print(f"Error migrating libraries table: {e}")
+
+        # Migrate notes table if columns are missing (RUN BEFORE INDEX CREATION!)
+        try:
+            cursor.execute("PRAGMA table_info(notes);")
+            columns = [row['name'] for row in cursor.fetchall()]
+            
+            if 'image_path' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN image_path TEXT;")
+            if 'display_mode' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN display_mode TEXT DEFAULT 'WITH_IMAGE';")
+            if 'is_favorite' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN is_favorite INTEGER DEFAULT 0;")
+            if 'created_at' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+            if 'updated_at' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+            if 'is_deleted' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN is_deleted INTEGER DEFAULT 0;")
+            if 'is_pinned_corkboard' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN is_pinned_corkboard INTEGER DEFAULT 0;")
+            if 'color_hex' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN color_hex TEXT DEFAULT '#FEF08A';")
+            if 'corkboard_x' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_x INTEGER DEFAULT 0;")
+            if 'corkboard_y' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_y INTEGER DEFAULT 0;")
+                
+            conn.commit()
+        except sqlite3.Error as e:
+            print(f"Error migrating database (notes table): {e}")
+
+        # Add is_favorite column to models if it doesn't exist (migration for existing db)
+        try:
+            cursor.execute("SELECT is_favorite FROM models LIMIT 1;")
+        except sqlite3.OperationalError:
+            try:
+                cursor.execute("ALTER TABLE models ADD COLUMN is_favorite INTEGER DEFAULT 0;")
+                conn.commit()
+            except sqlite3.Error as e:
+                print(f"Error migrating database (adding is_favorite to models): {e}")
+
+        # Migrate is_hidden columns
+        try:
+            cursor.execute("PRAGMA table_info(notes);")
+            columns = [row['name'] for row in cursor.fetchall()]
+            if 'is_hidden' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN is_hidden INTEGER DEFAULT 0;")
+                conn.commit()
+        except sqlite3.Error as e:
+            print(f"Error migrating notes table (is_hidden): {e}")
+
+        try:
+            cursor.execute("PRAGMA table_info(workflows);")
+            columns = [row['name'] for row in cursor.fetchall()]
+            if 'is_hidden' not in columns:
+                cursor.execute("ALTER TABLE workflows ADD COLUMN is_hidden INTEGER DEFAULT 0;")
+            if 'title' not in columns:
+                cursor.execute("ALTER TABLE workflows ADD COLUMN title TEXT;")
+            if 'workflow_json' not in columns:
+                cursor.execute("ALTER TABLE workflows ADD COLUMN workflow_json TEXT;")
+            if 'is_favorite' not in columns:
+                cursor.execute("ALTER TABLE workflows ADD COLUMN is_favorite INTEGER DEFAULT 0;")
+            conn.commit()
+        except sqlite3.Error as e:
+            print(f"Error migrating workflows table (columns): {e}")
+
+        try:
+            cursor.execute("PRAGMA table_info(models);")
+            columns = [row['name'] for row in cursor.fetchall()]
+            if 'is_hidden' not in columns:
+                cursor.execute("ALTER TABLE models ADD COLUMN is_hidden INTEGER DEFAULT 0;")
+                conn.commit()
+        except sqlite3.Error as e:
+            print(f"Error migrating models table (is_hidden): {e}")
+
+        # CREATE INDEXES FOR OPTIMIZED QUERY SPEED
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_models_library_id ON models(library_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_workflows_library_id ON workflows(library_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trigger_words_model_id ON trigger_words(model_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_title ON notes(title);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_model_tags_model_id ON model_tags(model_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_model_tags_tag_id ON model_tags(tag_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_is_favorite ON notes(is_favorite);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON notes(updated_at);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_note_models_note_id ON note_models(note_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_note_models_model_id ON note_models(model_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_workflows_is_favorite ON workflows(is_favorite);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_models_fav_hidden ON models(is_favorite, is_hidden);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_models_lib_hidden ON models(library_id, is_hidden);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_pinned_hidden ON notes(is_pinned_corkboard, is_hidden);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_workflows_lib_hidden ON workflows(library_id, is_hidden);")
+
+        conn.commit()
+
+        # Insert default libraries and settings if not exists
+        try:
+            cursor.execute("INSERT OR IGNORE INTO libraries (name, type) VALUES ('Lora Modelleri', 'MODEL');")
+            cursor.execute("INSERT OR IGNORE INTO libraries (name, type) VALUES ('Checkpoint Modelleri', 'MODEL');")
+            # Force update in case they existed without type
+            cursor.execute("UPDATE libraries SET type = 'MODEL' WHERE name IN ('Lora Modelleri', 'Checkpoint Modelleri');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_save_enabled', '1');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_save_interval', '1.5');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'Koyu Gece');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('lang', 'tr');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('custom_theme_colors', '{\"bg_main\":\"#131314\",\"bg_card\":\"#1E1F20\",\"accent_color\":\"#1A73E8\"}');")
+            conn.commit()
+        except sqlite3.Error as e:
+            print(f"Error seeding libraries or settings: {e}")
+
+# --- CRUD METHODS ---
+
+# Settings
+def get_setting(key, default=None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = ?;", (key,))
+        row = cursor.fetchone()
+        return row['value'] if row else default
+
+def set_setting(key, value):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?);", (key, str(value)))
+        conn.commit()
+
+# Notes
+def save_note(note_id, title, content, image_path=None, display_mode='WITH_IMAGE', is_favorite=0, is_deleted=0, color_hex='default'):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if note_id is None:
+            cursor.execute("""
+                INSERT INTO notes (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex) 
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+            """, (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex or 'default'))
+            note_id = cursor.lastrowid
+        else:
+            if color_hex:
+                cursor.execute("""
+                    UPDATE notes 
+                    SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, color_hex = ?, updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = ?;
+                """, (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex, note_id))
+            else:
+                cursor.execute("""
+                    UPDATE notes 
+                    SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = ?;
+                """, (title, content, image_path, display_mode, is_favorite, is_deleted, note_id))
+        conn.commit()
+        return note_id
+
+def update_note_color(note_id, color_hex):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notes SET color_hex = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;", (color_hex, note_id))
+        conn.commit()
+
+def update_corkboard_geometry(note_id, x, y, w=None, h=None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("PRAGMA table_info(notes);")
+            cols = [row['name'] for row in cursor.fetchall()]
+            if 'corkboard_w' not in cols:
+                cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_w INTEGER DEFAULT 200;")
+            if 'corkboard_h' not in cols:
+                cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_h INTEGER DEFAULT 180;")
+            conn.commit()
+        except sqlite3.Error:
+            pass
+        if w is not None and h is not None:
+            cursor.execute("UPDATE notes SET corkboard_x = ?, corkboard_y = ?, corkboard_w = ?, corkboard_h = ? WHERE id = ?;", (int(x), int(y), int(w), int(h), note_id))
+        else:
+            cursor.execute("UPDATE notes SET corkboard_x = ?, corkboard_y = ? WHERE id = ?;", (int(x), int(y), note_id))
+        conn.commit()
+
+def update_corkboard_position(note_id, x, y):
+    update_corkboard_geometry(note_id, x, y)
+
+def delete_note(note_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM notes WHERE id = ?;", (note_id,))
+        conn.commit()
+
+def soft_delete_note(note_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notes SET is_deleted = 1 WHERE id = ?;", (note_id,))
+        conn.commit()
+
+def restore_note(note_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notes SET is_deleted = 0 WHERE id = ?;", (note_id,))
+        conn.commit()
+
+def permanently_delete_note(note_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM notes WHERE id = ?;", (note_id,))
+        conn.commit()
+
+def empty_recycle_bin():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM notes WHERE is_deleted = 1;")
+        conn.commit()
+
+def get_notes(search_query=None, show_only_favs=False, sort_by="En Yeni", only_deleted=False, show_hidden=False):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = "SELECT * FROM notes WHERE "
+        if only_deleted:
+            query += "is_deleted = 1"
+        else:
+            query += "is_deleted = 0"
+            
+        if not show_hidden:
+            query += " AND is_hidden = 0"
+            
+        params = []
+        
+        if show_only_favs:
+            query += " AND is_favorite = 1"
+            
+        if search_query:
+            query += " AND (title LIKE ? OR content LIKE ?)"
+            q = f"%{search_query}%"
+            params.extend([q, q])
+            
+        # Sorting
+        if sort_by == "A-Z":
+            query += " ORDER BY title ASC"
+        elif sort_by == "Z-A":
+            query += " ORDER BY title DESC"
+        elif sort_by == "En Eski":
+            query += " ORDER BY created_at ASC"
+        elif sort_by == "En Son Düzenlenen":
+            query += " ORDER BY updated_at DESC"
+        else: # "En Yeni"
+            query += " ORDER BY created_at DESC"
+            
+        cursor.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+def get_note_by_id(note_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM notes WHERE id = ?;", (note_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        row_dict = dict(row)
+        # Fetch associated models
+        cursor.execute("""
+            SELECT m.id, m.name 
+            FROM models m
+            JOIN note_models nm ON nm.model_id = m.id
+            WHERE nm.note_id = ?
+            ORDER BY m.name ASC;
+        """, (note_id,))
+        row_dict['associated_models'] = [dict(r) for r in cursor.fetchall()]
+        return row_dict
+
+def get_libraries(search_query=None, lib_type='MODEL'):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if search_query:
+            q = f"%{search_query}%"
+            cursor.execute("SELECT name FROM libraries WHERE name LIKE ? AND type = ? ORDER BY name ASC;", (q, lib_type))
+        else:
+            cursor.execute("SELECT name FROM libraries WHERE type = ? ORDER BY name ASC;", (lib_type,))
+        return [row['name'] for row in cursor.fetchall()]
+
+def add_library(name):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO libraries (name) VALUES (?);", (name,))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+def get_library_id(name):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM libraries WHERE name = ?;", (name,))
+        row = cursor.fetchone()
+        return row['id'] if row else None
+
+# Models
+def get_models_in_library(library_name, show_hidden=False):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = """
+            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.is_hidden,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list
+            FROM models m
+            JOIN libraries l ON m.library_id = l.id
+            WHERE l.name = ?
+        """
+        if not show_hidden:
+            query += " AND m.is_hidden = 0"
+        query += " ORDER BY m.name ASC;"
+        
+        cursor.execute(query, (library_name,))
+        results = []
+        for row in cursor.fetchall():
+            row_dict = dict(row)
+            tags_str = row_dict.get('tags_list')
+            row_dict['tags'] = tags_str.split(',') if tags_str else []
+            results.append(row_dict)
+        return results
+
+def get_model_by_id(model_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list
+            FROM models m
+            WHERE m.id = ?;
+        """, (model_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        row_dict = dict(row)
+        tags_str = row_dict.get('tags_list')
+        row_dict['tags'] = tags_str.split(',') if tags_str else []
+        return row_dict
+
+def register_model(library_id, name, file_path, file_hash):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # Insert if not exists, otherwise update file_hash
+        cursor.execute("""
+            INSERT INTO models (library_id, name, file_path, file_hash) 
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(file_path) DO UPDATE SET file_hash = excluded.file_hash;
+        """, (library_id, name, file_path, file_hash))
+        conn.commit()
+
+def update_model_data(model_id, name, notes):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE models SET name = ?, notes = ? WHERE id = ?;", (name, notes, model_id))
+        conn.commit()
+
+def update_model_image(model_id, image_path):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE models SET image_path = ? WHERE id = ?;", (image_path, model_id))
+        conn.commit()
+
+# Trigger Words
+def get_trigger_words(model_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT word FROM trigger_words WHERE model_id = ? ORDER BY word ASC;", (model_id,))
+        return [row['word'] for row in cursor.fetchall()]
+
+def add_trigger_word(model_id, word):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT OR IGNORE INTO trigger_words (model_id, word) VALUES (?, ?);", (model_id, word))
+            conn.commit()
+            return True
+        except sqlite3.Error:
+            return False
+
+def delete_trigger_word(model_id, word):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM trigger_words WHERE model_id = ? AND word = ?;", (model_id, word))
+        conn.commit()
+
+def register_models_batch(models_list):
+    """Insert or update multiple models in a single fast database transaction."""
+    if not models_list:
+        return
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.executemany("""
+                INSERT INTO models (library_id, name, file_path, file_hash) 
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(file_path) DO UPDATE SET file_hash = excluded.file_hash;
+            """, models_list)
+            conn.commit()
+        except sqlite3.Error as e:
+            conn.rollback()
+            print(f"Error registering models batch: {e}")
+
+def get_model_count_in_library(library_name, show_hidden=False):
+    """Retrieve the total count of models in a specific library."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = """
+            SELECT COUNT(*) as cnt
+            FROM models m
+            JOIN libraries l ON m.library_id = l.id
+            WHERE l.name = ?
+        """
+        if not show_hidden:
+            query += " AND m.is_hidden = 0"
+        query += ";"
+        cursor.execute(query, (library_name,))
+        row = cursor.fetchone()
+        return row['cnt'] if row else 0
+
+def get_workflow_count_in_library(library_id, show_hidden=False):
+    """Retrieve total count of workflows in a specific library efficiently."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = "SELECT COUNT(*) as cnt FROM workflows WHERE library_id = ?"
+        if not show_hidden:
+            query += " AND is_hidden = 0"
+        query += ";"
+        cursor.execute(query, (library_id,))
+        row = cursor.fetchone()
+        return row['cnt'] if row else 0
+
+# --- FAVORITE AND TAG CRUD FUNCTIONS ---
+def toggle_model_favorite(model_id, is_fav):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE models SET is_favorite = ? WHERE id = ?;", (1 if is_fav else 0, model_id))
+        conn.commit()
+
+def get_favorite_models(show_hidden=False):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = """
+            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.is_hidden,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list
+            FROM models m
+            WHERE m.is_favorite = 1
+        """
+        if not show_hidden:
+            query += " AND m.is_hidden = 0"
+        query += " ORDER BY m.name ASC;"
+        
+        cursor.execute(query)
+        results = []
+        for row in cursor.fetchall():
+            row_dict = dict(row)
+            tags_str = row_dict.get('tags_list')
+            row_dict['tags'] = tags_str.split(',') if tags_str else []
+            results.append(row_dict)
+        return results
+
+def get_favorite_model_count(show_hidden=False):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = "SELECT COUNT(*) as cnt FROM models WHERE is_favorite = 1"
+        if not show_hidden:
+            query += " AND is_hidden = 0"
+        query += ";"
+        cursor.execute(query)
+        row = cursor.fetchone()
+        return row['cnt'] if row else 0
+
+def add_model_tag(model_id, tag_name):
+    tag_name = tag_name.strip()
+    if not tag_name:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            # Insert tag if not exists
+            cursor.execute("INSERT OR IGNORE INTO tags (name) VALUES (?);", (tag_name,))
+            # Fetch tag id
+            cursor.execute("SELECT id FROM tags WHERE name = ?;", (tag_name,))
+            row = cursor.fetchone()
+            if row:
+                tag_id = row['id']
+                cursor.execute("INSERT OR IGNORE INTO model_tags (model_id, tag_id) VALUES (?, ?);", (model_id, tag_id))
+                conn.commit()
+                return True
+            return False
+        except sqlite3.Error as e:
+            print(f"Error adding tag {tag_name} for model {model_id}: {e}")
+            return False
+
+def delete_model_tag(model_id, tag_name):
+    tag_name = tag_name.strip()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id FROM tags WHERE name = ?;", (tag_name,))
+            row = cursor.fetchone()
+            if row:
+                tag_id = row['id']
+                cursor.execute("DELETE FROM model_tags WHERE model_id = ? AND tag_id = ?;", (model_id, tag_id))
+                
+                # Cleanup orphan tag
+                cursor.execute("SELECT COUNT(*) as cnt FROM model_tags WHERE tag_id = ?;", (tag_id,))
+                cnt_row = cursor.fetchone()
+                if cnt_row and cnt_row['cnt'] == 0:
+                    cursor.execute("DELETE FROM tags WHERE id = ?;", (tag_id,))
+                
+                conn.commit()
+                return True
+            return False
+        except sqlite3.Error as e:
+            print(f"Error deleting tag {tag_name} for model {model_id}: {e}")
+            return False
+
+# --- NOTE ADDITIONAL CRUD AND RELATION FUNCTIONS ---
+def toggle_note_favorite(note_id, is_fav):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notes SET is_favorite = ? WHERE id = ?;", (1 if is_fav else 0, note_id))
+        conn.commit()
+
+def get_note_count(show_hidden=False):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = "SELECT COUNT(*) as cnt FROM notes WHERE is_deleted = 0"
+        if not show_hidden:
+            query += " AND is_hidden = 0"
+        query += ";"
+        cursor.execute(query)
+        row = cursor.fetchone()
+        return row['cnt'] if row else 0
+
+def get_deleted_note_count(show_hidden=False):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = "SELECT COUNT(*) as cnt FROM notes WHERE is_deleted = 1"
+        if not show_hidden:
+            query += " AND is_hidden = 0"
+        query += ";"
+        cursor.execute(query)
+        row = cursor.fetchone()
+        return row['cnt'] if row else 0
+
+def associate_note_model(note_id, model_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT OR IGNORE INTO note_models (note_id, model_id) VALUES (?, ?);", (note_id, model_id))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error associating note {note_id} with model {model_id}: {e}")
+            return False
+
+def dissociate_note_model(note_id, model_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM note_models WHERE note_id = ? AND model_id = ?;", (note_id, model_id))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error dissociating note {note_id} with model {model_id}: {e}")
+            return False
+
+def get_all_models_for_association():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM models ORDER BY name ASC;")
+        return [dict(row) for row in cursor.fetchall()]
+
+# --- WORKFLOW CRUD FUNCTIONS ---
+def get_workflow_libraries():
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM libraries WHERE type = 'WORKFLOW' ORDER BY name ASC;")
+        return [dict(row) for row in cursor.fetchall()]
+
+def add_workflow_library(name):
+    name = name.strip()
+    if not name:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO libraries (name, type) VALUES (?, 'WORKFLOW');", (name,))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+def add_workflow(library_id, name, file_path, description="", image_path="", notes=""):
+    import time
+    import random
+    import json
+    
+    os.makedirs(SAVED_IMAGES_DIR, exist_ok=True)
+    os.makedirs(SAVED_WORKFLOWS_DIR, exist_ok=True)
+    
+    timestamp = int(time.time())
+    rand_suffix = random.randint(1000, 9999)
+    safe_name = "".join([c if c.isalnum() else "_" for c in name])
+    
+    dest_json_path = ""
+    dest_image_path = ""
+    workflow_json_content = ""
+    
+    # 1. Extract JSON from file_path (PNG metadata or direct JSON file)
+    if file_path.lower().endswith('.png'):
+        from utils.png_parser import extract_workflow_from_png
+        workflow_dict = extract_workflow_from_png(file_path)
+        if workflow_dict:
+            workflow_json_content = json.dumps(workflow_dict, indent=2)
+            dest_json_path = os.path.join(SAVED_WORKFLOWS_DIR, f"{safe_name}_{timestamp}_{rand_suffix}.json")
+            try:
+                with open(dest_json_path, 'w', encoding='utf-8') as f:
+                    f.write(workflow_json_content)
+            except Exception as e:
+                print(f"Error saving local workflow json copy: {e}")
+            # If the user dropped a PNG, that PNG is also the preview image!
+            image_path = file_path
+    elif file_path.lower().endswith('.json'):
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    workflow_json_content = f.read()
+                dest_json_path = os.path.join(SAVED_WORKFLOWS_DIR, f"{safe_name}_{timestamp}_{rand_suffix}.json")
+                with open(dest_json_path, 'w', encoding='utf-8') as f:
+                    f.write(workflow_json_content)
+            except Exception as e:
+                print(f"Error copying local workflow json file: {e}")
+                dest_json_path = file_path
+        else:
+            dest_json_path = file_path
+    else:
+        # Fallback
+        dest_json_path = file_path
+
+    # 2. Copy preview image to SAVED_IMAGES_DIR
+    if image_path and os.path.exists(image_path):
+        ext = os.path.splitext(image_path)[1].lower()
+        if not ext:
+            ext = ".png"
+        dest_image_path = os.path.join(SAVED_IMAGES_DIR, f"wf_{safe_name}_{timestamp}_{rand_suffix}{ext}")
+        try:
+            shutil.copy2(image_path, dest_image_path)
+        except Exception as e:
+            print(f"Error copying local workflow preview image: {e}")
+            dest_image_path = image_path
+            
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO workflows (library_id, name, file_path, description, image_path, notes, title, workflow_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """, (library_id, name, dest_json_path, description, dest_image_path, notes, name, workflow_json_content))
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            print(f"Error adding workflow {name}: {e}")
+            return None
+
+def get_workflows_in_library(library_name_or_id, show_hidden=False):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        hidden_cond = " AND is_hidden = 0" if not show_hidden else ""
+        if isinstance(library_name_or_id, int):
+            cursor.execute(f"""
+                SELECT id, library_id, name, file_path, description, image_path, notes, is_hidden, created_at, updated_at, title, workflow_json, is_favorite
+                FROM workflows
+                WHERE library_id = ?{hidden_cond}
+                ORDER BY name ASC;
+            """, (library_name_or_id,))
+        else:
+            cursor.execute(f"""
+                SELECT w.id, w.library_id, w.name, w.file_path, w.description, w.image_path, w.notes, w.is_hidden, w.created_at, w.updated_at, w.title, w.workflow_json, w.is_favorite
+                FROM workflows w
+                JOIN libraries l ON w.library_id = l.id
+                WHERE l.name = ? AND l.type = 'WORKFLOW'{hidden_cond.replace('is_hidden', 'w.is_hidden')}
+                ORDER BY w.name ASC;
+            """, (library_name_or_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+def get_workflow_by_id(workflow_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, library_id, name, file_path, description, image_path, notes, is_hidden, created_at, updated_at, title, workflow_json, is_favorite
+            FROM workflows
+            WHERE id = ?;
+        """, (workflow_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def update_workflow_data(workflow_id, name, description, notes):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE workflows
+            SET name = ?, title = ?, description = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+        """, (name, name, description, notes, workflow_id))
+        conn.commit()
+
+def update_workflow_image(workflow_id, image_path):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE workflows
+            SET image_path = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+        """, (image_path, workflow_id))
+        conn.commit()
+
+def toggle_workflow_favorite(workflow_id, is_favorite):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE workflows
+            SET is_favorite = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?;
+        """, (1 if is_favorite else 0, workflow_id))
+        conn.commit()
+
+def delete_workflow(workflow_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM workflows WHERE id = ?;", (workflow_id,))
+        conn.commit()
+
+def set_note_hidden(note_id, is_hidden):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notes SET is_hidden = ? WHERE id = ?;", (1 if is_hidden else 0, note_id))
+        conn.commit()
+
+def set_model_hidden(model_id, is_hidden):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE models SET is_hidden = ? WHERE id = ?;", (1 if is_hidden else 0, model_id))
+        conn.commit()
+
+def set_workflow_hidden(workflow_id, is_hidden):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE workflows SET is_hidden = ? WHERE id = ?;", (1 if is_hidden else 0, workflow_id))
+        conn.commit()
+
+# Corkboard & Bulk Operations
+def get_corkboard_notes(show_hidden=False):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("PRAGMA table_info(notes);")
+            cols = [row['name'] for row in cursor.fetchall()]
+            if 'is_pinned_corkboard' not in cols:
+                cursor.execute("ALTER TABLE notes ADD COLUMN is_pinned_corkboard INTEGER DEFAULT 0;")
+                conn.commit()
+        except sqlite3.Error:
+            pass
+        query = "SELECT * FROM notes WHERE is_deleted = 0 AND is_pinned_corkboard = 1"
+        if not show_hidden:
+            query += " AND is_hidden = 0"
+        query += " ORDER BY updated_at DESC;"
+        cursor.execute(query)
+        return [dict(row) for row in cursor.fetchall()]
+
+# Ensure DB is initialized on module import
+initialize_db()
+
+def toggle_corkboard_pin(note_id, is_pinned=None):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if is_pinned is None:
+            cursor.execute("SELECT is_pinned_corkboard FROM notes WHERE id = ?;", (note_id,))
+            row = cursor.fetchone()
+            current = row['is_pinned_corkboard'] if row else 0
+            new_val = 1 if current == 0 else 0
+        else:
+            new_val = 1 if is_pinned else 0
+        cursor.execute("UPDATE notes SET is_pinned_corkboard = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;", (new_val, note_id))
+        conn.commit()
+        return new_val
+
+def delete_notes_bulk(note_ids, is_trash=False):
+    if not note_ids:
+        return
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in note_ids)
+        if is_trash:
+            cursor.execute(f"DELETE FROM notes WHERE id IN ({placeholders});", note_ids)
+        else:
+            cursor.execute(f"UPDATE notes SET is_deleted = 1, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders});", note_ids)
+        conn.commit()
+
+def restore_notes_bulk(note_ids):
+    if not note_ids:
+        return
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        placeholders = ",".join("?" for _ in note_ids)
+        cursor.execute(f"UPDATE notes SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders});", note_ids)
+        conn.commit()
+

@@ -1,0 +1,9 @@
+# Vera Note - Project Dependencies
+# Modern Qt Desktop GUI Framework
+PySide6>=6.5.0
+
+# Image Processing & PNG Workflow Metadata Parsing
+Pillow>=9.0.0
+
+# Windows Executable Bundling (.exe creation)
+pyinstaller>=6.0.0

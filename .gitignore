@@ -1,0 +1,46 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# PyInstaller
+*.manifest
+
+# Backup directories
+backup_*
+backup/
+backups/
+
+# User databases & local data
+*.db
+*.sqlite3
+.veranote_data/
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Tooling / Antigravity caches & dev logs
+.gemini/
+walkthrough.md
+task.md
+
+images/ 
