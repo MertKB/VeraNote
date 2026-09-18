@@ -28,6 +28,7 @@ class Sidebar(QWidget):
         self.setObjectName("SidebarWidget")
         self.setFixedWidth(260) # Fixed static width
         self.incognito_active_state = False
+        self.comfyui_visible = True
         
         self.init_ui()
 
@@ -53,7 +54,7 @@ class Sidebar(QWidget):
         """)
 
         self.container = QWidget()
-        self.container.setStyleSheet("background-color: transparent;")
+        self.container.setObjectName("SidebarContainer")
         self.main_layout = QVBoxLayout(self.container)
         self.main_layout.setContentsMargins(12, 16, 12, 16)
         self.main_layout.setSpacing(12)
@@ -241,6 +242,20 @@ class Sidebar(QWidget):
         self.lib_label.setText(t("workflows_title"))
         self.settings_label.setText(t("settings"))
         self.set_incognito_active(self.incognito_active_state)
+        if hasattr(self, 'comfyui_visible'):
+            self.set_comfyui_visible(self.comfyui_visible)
+        if hasattr(self, 'last_models_data') and self.last_models_data:
+            self.update_models_list(self.last_models_data, getattr(self, 'last_selected_model_lib', None))
+        if hasattr(self, 'last_workflow_libs_data') and self.last_workflow_libs_data:
+            self.update_workflow_libraries_list(self.last_workflow_libs_data, getattr(self, 'last_selected_workflow_lib', None))
+
+    def set_comfyui_visible(self, visible: bool):
+        self.comfyui_visible = visible
+        self.models_label.setVisible(visible)
+        self.models_list.setVisible(visible)
+        self.new_lib_btn.setVisible(visible)
+        self.lib_label.setVisible(visible)
+        self.libraries_list.setVisible(visible)
 
     def tr_lib_name(self, name):
         if name == "Lora Modelleri":
@@ -258,6 +273,8 @@ class Sidebar(QWidget):
         self.trash_badge.setText(str(count))
 
     def update_models_list(self, models_with_counts, selected_model_lib=None):
+        self.last_models_data = models_with_counts
+        self.last_selected_model_lib = selected_model_lib
         self.models_list.clear()
         self.model_lib_names = []
         for lib_name, count in models_with_counts:
@@ -270,8 +287,12 @@ class Sidebar(QWidget):
         # Calculate height so all items fit statically without inner scrollbar
         count = max(1, len(models_with_counts))
         self.models_list.setFixedHeight(count * 44 + 8)
+        if hasattr(self, 'comfyui_visible') and not self.comfyui_visible:
+            self.models_list.setVisible(False)
 
     def update_workflow_libraries_list(self, workflow_libs_with_counts, selected_workflow_lib=None):
+        self.last_workflow_libs_data = workflow_libs_with_counts
+        self.last_selected_workflow_lib = selected_workflow_lib
         self.libraries_list.clear()
         self.workflow_lib_names = []
         for lib_name, count in workflow_libs_with_counts:
@@ -283,6 +304,8 @@ class Sidebar(QWidget):
 
         count = max(1, len(workflow_libs_with_counts))
         self.libraries_list.setFixedHeight(count * 44 + 8)
+        if hasattr(self, 'comfyui_visible') and not self.comfyui_visible:
+            self.libraries_list.setVisible(False)
 
     def on_model_clicked(self, item):
         row = self.models_list.row(item)

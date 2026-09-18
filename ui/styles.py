@@ -4,42 +4,57 @@ import json
 PALETTES = {
     "Koyu Gece": {
         "bg_main": "#131314",
-        "bg_card": "#1E1F20",
-        "bg_input": "#2D2F31",
-        "border_color": "#2F2F2F",
+        "bg_card": "#1E1F22",
+        "bg_sidebar": "#18191B",
+        "bg_input": "#282A2E",
+        "border_color": "#2F3136",
         "border_focus": "#8AB4F8",
         "accent_color": "#1A73E8",
         "accent_hover": "#1557B0",
         "accent_light": "#004A77",
         "text_main": "#E3E3E3",
         "text_muted": "#9AA0A6",
-        "text_light": "#C2E7FF"
+        "text_light": "#C2E7FF",
+        "card_img_bg": "#18191B",
+        "card_hover": "#25272C",
+        "card_selected": "#192231",
+        "card_selected_hover": "#1F2B3E"
     },
     "Derin Mor": {
         "bg_main": "#120E16",
         "bg_card": "#1D1625",
-        "bg_input": "#2D2237",
-        "border_color": "#30223A",
+        "bg_sidebar": "#17121C",
+        "bg_input": "#2A2033",
+        "border_color": "#33253E",
         "border_focus": "#D7AEF5",
         "accent_color": "#A061D8",
         "accent_hover": "#8049B6",
         "accent_light": "#432B5B",
         "text_main": "#EAE5ED",
         "text_muted": "#B5A9BC",
-        "text_light": "#F0E4FF"
+        "text_light": "#F0E4FF",
+        "card_img_bg": "#17121C",
+        "card_hover": "#251D2F",
+        "card_selected": "#281838",
+        "card_selected_hover": "#331E48"
     },
     "Okyanus Mavisi": {
         "bg_main": "#06131D",
-        "bg_card": "#0C2030",
-        "bg_input": "#132D42",
-        "border_color": "#18374E",
+        "bg_card": "#0E1E2B",
+        "bg_sidebar": "#091724",
+        "bg_input": "#14293A",
+        "border_color": "#1B3449",
         "border_focus": "#00E5FF",
         "accent_color": "#00B0FF",
         "accent_hover": "#0091EA",
         "accent_light": "#00365C",
         "text_main": "#E0F2F1",
         "text_muted": "#80CBC4",
-        "text_light": "#E0F7FA"
+        "text_light": "#E0F7FA",
+        "card_img_bg": "#0B1823",
+        "card_hover": "#14293A",
+        "card_selected": "#10324D",
+        "card_selected_hover": "#164164"
     }
 }
 
@@ -57,7 +72,18 @@ def adjust_brightness(hex_color, factor):
     except Exception:
         return "#" + hex_color
 
-def get_stylesheet(theme_name="Koyu Gece", custom_colors=None):
+def is_light(hex_color):
+    hex_color = hex_color.lstrip('#')
+    try:
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+        return ((r * 299) + (g * 587) + (b * 114)) / 1000 >= 128
+    except Exception:
+        return False
+
+def get_palette(theme_name="Koyu Gece", custom_colors=None):
+    """Returns a dictionary of theme colors for the specified theme or custom colors."""
     if theme_name in ["Özel Tema", "Custom"]:
         if isinstance(custom_colors, str):
             try:
@@ -68,33 +94,119 @@ def get_stylesheet(theme_name="Koyu Gece", custom_colors=None):
             custom_colors = {}
             
         bg_main = custom_colors.get("bg_main", "#131314")
-        bg_card = custom_colors.get("bg_card", "#1E1F20")
+        bg_card = custom_colors.get("bg_card", "#1E1F22")
         accent_color = custom_colors.get("accent_color", "#1A73E8")
         
-        # Derive auxiliary theme colors dynamically
-        bg_input = adjust_brightness(bg_card, 1.2)
-        border_color = adjust_brightness(bg_card, 1.4)
-        border_focus = adjust_brightness(accent_color, 1.2)
-        accent_hover = adjust_brightness(accent_color, 0.8)
-        accent_light = adjust_brightness(accent_color, 0.3)
-        text_light = adjust_brightness(accent_color, 1.5)
+        custom_border = custom_colors.get("border_color")
+        custom_input = custom_colors.get("bg_input")
+        custom_sidebar = custom_colors.get("bg_sidebar")
+        custom_text_main = custom_colors.get("text_main")
+        custom_text_muted = custom_colors.get("text_muted")
         
-        p = {
+        light_theme = is_light(bg_card)
+        
+        def parse_rgb(hex_c):
+            h = hex_c.lstrip('#')
+            try:
+                return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            except Exception:
+                return 10, 11, 13
+        
+        cr, cg, cb = parse_rgb(bg_card)
+        ar, ag, ab = parse_rgb(accent_color)
+        
+        if not light_theme:
+            # Dark theme smart derivation - ensure minimum contrast even on pure black (#000000)
+            border_r = min(255, int(cr * 1.25 + 34))
+            border_g = min(255, int(cg * 1.25 + 36))
+            border_b = min(255, int(cb * 1.25 + 42))
+            border_color = custom_border if custom_border else f"#{border_r:02X}{border_g:02X}{border_b:02X}"
+            
+            in_r = min(255, int(cr * 1.2 + 20))
+            in_g = min(255, int(cg * 1.2 + 21))
+            in_b = min(255, int(cb * 1.2 + 24))
+            bg_input = custom_input if custom_input else f"#{in_r:02X}{in_g:02X}{in_b:02X}"
+            
+            bg_sidebar = custom_sidebar if custom_sidebar else bg_card
+            card_img_bg = custom_colors.get("card_img_bg") or bg_card
+            
+            hov_r = min(255, int(cr * 1.15 + 12))
+            hov_g = min(255, int(cg * 1.15 + 12))
+            hov_b = min(255, int(cb * 1.15 + 14))
+            card_hover = f"#{hov_r:02X}{hov_g:02X}{hov_b:02X}"
+            
+            sel_r = min(255, int(cr * 0.8 + ar * 0.2))
+            sel_g = min(255, int(cg * 0.8 + ag * 0.2))
+            sel_b = min(255, int(cb * 0.8 + ab * 0.2))
+            card_selected = f"#{sel_r:02X}{sel_g:02X}{sel_b:02X}"
+            
+            sel_hov_r = min(255, int(cr * 0.7 + ar * 0.3))
+            sel_hov_g = min(255, int(cg * 0.7 + ag * 0.3))
+            sel_hov_b = min(255, int(cb * 0.7 + ab * 0.3))
+            card_selected_hover = f"#{sel_hov_r:02X}{sel_hov_g:02X}{sel_hov_b:02X}"
+            
+            text_main = custom_text_main if custom_text_main else "#E3E3E3"
+            text_muted = custom_text_muted if custom_text_muted else "#9AA0A6"
+        else:
+            # Light theme smart derivation
+            border_r = max(0, int(cr * 0.82))
+            border_g = max(0, int(cg * 0.82))
+            border_b = max(0, int(cb * 0.82))
+            border_color = custom_border if custom_border else f"#{border_r:02X}{border_g:02X}{border_b:02X}"
+            
+            in_r = max(0, int(cr * 0.94))
+            in_g = max(0, int(cg * 0.94))
+            in_b = max(0, int(cb * 0.94))
+            bg_input = custom_input if custom_input else f"#{in_r:02X}{in_g:02X}{in_b:02X}"
+            
+            bg_sidebar = custom_sidebar if custom_sidebar else bg_card
+            card_img_bg = custom_colors.get("card_img_bg") or bg_card
+            
+            hov_r = max(0, int(cr * 0.95))
+            hov_g = max(0, int(cg * 0.95))
+            hov_b = max(0, int(cb * 0.95))
+            card_hover = f"#{hov_r:02X}{hov_g:02X}{hov_b:02X}"
+            
+            sel_r = min(255, int(cr * 0.85 + ar * 0.15))
+            sel_g = min(255, int(cg * 0.85 + ag * 0.15))
+            sel_b = min(255, int(cb * 0.85 + ab * 0.15))
+            card_selected = f"#{sel_r:02X}{sel_g:02X}{sel_b:02X}"
+            
+            sel_hov_r = min(255, int(cr * 0.75 + ar * 0.25))
+            sel_hov_g = min(255, int(cg * 0.75 + ag * 0.25))
+            sel_hov_b = min(255, int(cb * 0.75 + ab * 0.25))
+            card_selected_hover = f"#{sel_hov_r:02X}{sel_hov_g:02X}{sel_hov_b:02X}"
+            
+            text_main = custom_text_main if custom_text_main else "#1A1A1A"
+            text_muted = custom_text_muted if custom_text_muted else "#5F6368"
+
+        border_focus = adjust_brightness(accent_color, 1.2)
+        accent_hover = adjust_brightness(accent_color, 0.85)
+        accent_light = adjust_brightness(accent_color, 0.35 if not light_theme else 0.85)
+        text_light = adjust_brightness(accent_color, 1.4 if not light_theme else 0.5)
+        
+        return {
             "bg_main": bg_main,
             "bg_card": bg_card,
+            "bg_sidebar": bg_sidebar,
             "bg_input": bg_input,
             "border_color": border_color,
             "border_focus": border_focus,
             "accent_color": accent_color,
             "accent_hover": accent_hover,
             "accent_light": accent_light,
-            "text_main": "#E3E3E3",
-            "text_muted": "#9AA0A6",
-            "text_light": text_light
+            "text_main": text_main,
+            "text_muted": text_muted,
+            "text_light": text_light,
+            "card_img_bg": card_img_bg,
+            "card_hover": card_hover,
+            "card_selected": card_selected,
+            "card_selected_hover": card_selected_hover
         }
-    else:
-        p = PALETTES.get(theme_name, PALETTES["Koyu Gece"])
-        
+    return PALETTES.get(theme_name, PALETTES["Koyu Gece"])
+
+def get_stylesheet(theme_name="Koyu Gece", custom_colors=None):
+    p = get_palette(theme_name, custom_colors)
     return f"""
 QMainWindow {{
     background-color: {p['bg_main']};
@@ -162,7 +274,7 @@ QMainWindow::separator:hover {{
 
 /* Sidebar Widget */
 #SidebarWidget {{
-    background-color: {p['bg_card']};
+    background-color: {p.get('bg_sidebar', p['bg_card'])};
     border-right: 1px solid {p['border_color']};
 }}
 
@@ -393,37 +505,111 @@ QListWidget::item:selected {{
     border: none;
 }}
 
+#NotesGridContainer, #LibraryGridContainer, #WorkflowGridContainer, #SidebarContainer {{
+    background: transparent;
+    border: none;
+}}
+
 /* Model Card */
 #ModelCard {{
     background-color: {p['bg_card']};
     border: 1px solid {p['border_color']};
-    border-radius: 12px;
+    border-radius: 14px;
 }}
 #ModelCard:hover {{
     border: 1px solid {p['border_focus']};
-    background-color: {p['bg_input']};
+    background-color: {p.get('card_hover', p['bg_input'])};
+}}
+#ModelCard[selected="true"] {{
+    background-color: {p.get('card_selected', p['accent_light'])};
+    border: 2px solid {p['accent_color']};
+}}
+#ModelCard[selected="true"]:hover {{
+    border: 2px solid {p['border_focus']};
+    background-color: {p.get('card_selected_hover', p['accent_hover'])};
+}}
+
+#CardImageLabel {{
+    background-color: {p.get('card_img_bg', p['bg_card'])};
+    border-top-left-radius: 13px;
+    border-top-right-radius: 13px;
+    border-bottom-left-radius: 0px;
+    border-bottom-right-radius: 0px;
+}}
+
+#CardInfoPanel {{
+    background-color: {p['bg_card']};
+    border-top: 1px solid {p['border_color']};
+    border-bottom-left-radius: 13px;
+    border-bottom-right-radius: 13px;
 }}
 
 #CardTitle {{
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: bold;
     color: {p['text_main']};
+    background: transparent;
 }}
 
 #CardFilename {{
     font-size: 11px;
     color: {p['text_muted']};
+    background: transparent;
 }}
 
-#CardImageLabel {{
-    background-color: {p['bg_main']};
-    border-top-left-radius: 11px;
-    border-top-right-radius: 11px;
+#WarningBadge {{
+    background-color: rgba(249, 168, 37, 0.9);
+    color: #131314;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 2px 4px;
+    border-radius: 4px;
 }}
+
+QPushButton#CardFavBtn {{
+    background-color: transparent;
+    border: none;
+    color: #6B7280;
+    font-size: 18px;
+    font-weight: bold;
+    padding: 0px;
+    margin: 0px;
+}}
+QPushButton#CardFavBtn:hover {{
+    color: #F59E0B;
+}}
+QPushButton#CardFavBtn[favorite="true"] {{
+    color: #F59E0B;
+}}
+
+QPushButton#CardSelectBtn {{
+    background-color: rgba(255, 255, 255, 0.22);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 6px;
+    color: transparent;
+    font-size: 13px;
+    font-weight: bold;
+    padding: 0px;
+    margin: 0px;
+}}
+QPushButton#CardSelectBtn:hover {{
+    background-color: rgba(255, 255, 255, 0.35);
+    border-color: rgba(255, 255, 255, 0.6);
+}}
+QPushButton#CardSelectBtn[selected="true"] {{
+    background-color: #2563EB;
+    border: 1px solid #60A5FA;
+    color: #FFFFFF;
+}}
+QPushButton#CardSelectBtn[selected="true"]:hover {{
+    background-color: #1D4ED8;
+    border-color: #93C5FD;
+}}
+
 
 /* Detail Panel */
 #DetailPanelWidget {{
-    background-color: {p['bg_card']};
+    background-color: {p.get('bg_sidebar', p['bg_card'])};
     border-left: 1px solid {p['border_color']};
 }}
 
@@ -462,6 +648,20 @@ QListWidget::item:selected {{
 QDialog {{
     background-color: {p['bg_card']};
     color: {p['text_main']};
+}}
+
+#SettingsScrollArea {{
+    background: transparent;
+    border: none;
+}}
+
+#SettingsContentWidget {{
+    background: transparent;
+}}
+
+#SettingsBottomBar {{
+    background-color: {p.get('bg_sidebar', p['bg_card'])};
+    border-top: 1px solid {p['border_color']};
 }}
 
 /* Favorites Header Toggle Button */
@@ -517,7 +717,7 @@ QDialog {{
 }}
 
 #NoteCardImageLabel {{
-    background-color: {p['bg_main']};
+    background-color: {p.get('card_img_bg', p['bg_card'])};
     border-top-left-radius: 11px;
     border-top-right-radius: 11px;
 }}
@@ -552,6 +752,49 @@ QDockWidget::title {{
     font-weight: bold;
     border-radius: 10px;
     border: none;
+}}
+
+/* Corkboard & Welcome Screen Styles */
+#CorkboardCard {{
+    border-radius: 8px;
+    border: 1px solid {p['border_color']};
+}}
+#CorkboardCard:hover {{
+    border: 1px solid {p['border_focus']};
+}}
+
+#QuickNoteCard {{
+    background-color: {p['bg_card']};
+    border: 1px solid {p['border_color']};
+    border-radius: 10px;
+}}
+
+/* Detail Panel & Pill Styles */
+#DetailPanel {{
+    background-color: {p['bg_card']};
+}}
+
+#TriggerPill {{
+    background-color: {p['bg_input']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+}}
+#TriggerPill:hover {{
+    background-color: {p['accent_light']};
+    border-color: {p['border_focus']};
+    color: {p['text_light']};
+}}
+
+#TagPill {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+}}
+#TagPill:hover {{
+    border-color: {p['border_focus']};
 }}
 """
 

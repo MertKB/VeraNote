@@ -3,12 +3,12 @@ import os
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QScrollArea, QGridLayout, QFrame, 
                              QSizePolicy, QLineEdit, QDialog, QFormLayout, QTextEdit, QFileDialog, QMessageBox, QComboBox)
-from PySide6.QtCore import Signal, Qt, QSize, QTimer, QUrl, QMimeData, QThreadPool, Slot
+from PySide6.QtCore import Signal, Qt, QSize, QTimer, QUrl, QMimeData, QThreadPool, Slot, QPoint, QRect
 from PySide6.QtGui import QPixmap, QFontMetrics, QPainter, QPainterPath, QDrag, QGuiApplication, QImage
 from utils.i18n import t, get_lang
 from ui.library_view import THUMBNAIL_CACHE, ImageLoadWorker
 
-def get_rounded_pixmap(pixmap, radius=11):
+def get_rounded_pixmap(pixmap, radius=13):
     if pixmap.isNull():
         return pixmap
     
@@ -83,7 +83,7 @@ class WorkflowMetadataDialog(QDialog):
 
     def browse_image(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, t("workflow_dialog_preview").replace(":", ""), "", "Resim Dosyaları (*.png *.jpg *.jpeg *.webp)"
+            self, t("workflow_dialog_preview").replace(":", ""), "", t("dialog_image_filter")
         )
         if file_path:
             self.img_edit.setText(file_path)
@@ -105,95 +105,74 @@ class WorkflowCardWidget(QFrame):
         super().__init__(parent)
         self.workflow_data = workflow_data
         self.setObjectName("ModelCard") # Reuse ModelCard styles (border-radius, hover, etc.)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedSize(200, 240)
         self.setCursor(Qt.PointingHandCursor)
+        self.image_loaded = False
+        self.image_loading = False
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         # Image Container
         self.image_label = QLabel(self)
         self.image_label.setObjectName("CardImageLabel")
-        self.image_label.setFixedSize(184, 130)
+        self.image_label.setFixedSize(200, 135)
         self.image_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.image_label)
 
-        # Absolute overlays layout container for the favorite button
-        self.top_overlay_container = QWidget(self)
-        self.top_overlay_container.setGeometry(12, 12, 176, 28)
-        self.top_overlay_container.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-        self.top_overlay_container.setStyleSheet("background: transparent;")
-        
-        top_overlay_layout = QHBoxLayout(self.top_overlay_container)
-        top_overlay_layout.setContentsMargins(0, 0, 0, 0)
-        top_overlay_layout.setSpacing(6)
-        
-        self.fav_btn = QPushButton("☆", self)
+        # Star / Favorite Button Overlay on top-left of image
+        self.fav_btn = QPushButton(self.image_label)
+        self.fav_btn.setObjectName("CardFavBtn")
         self.fav_btn.setFixedSize(28, 28)
+        self.fav_btn.setGeometry(8, 8, 28, 28)
         self.fav_btn.setCursor(Qt.PointingHandCursor)
         self.fav_btn.clicked.connect(self.on_fav_clicked)
-        top_overlay_layout.addWidget(self.fav_btn)
+
+        # Bottom Info Panel
+        self.info_panel = QFrame(self)
+        self.info_panel.setObjectName("CardInfoPanel")
+        self.info_panel.setAttribute(Qt.WA_StyledBackground, True)
+        self.info_panel.setFixedHeight(105)
         
-        top_overlay_layout.addStretch()
+        info_layout = QVBoxLayout(self.info_panel)
+        info_layout.setContentsMargins(10, 6, 10, 6)
+        info_layout.setSpacing(2)
 
         # Name label
-        self.title_label = QLabel(self)
+        self.title_label = QLabel(self.info_panel)
         self.title_label.setObjectName("CardTitle")
-        self.title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        layout.addWidget(self.title_label)
+        self.title_label.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(self.title_label)
 
         # Filename label
-        self.filename_label = QLabel(self)
+        self.filename_label = QLabel(self.info_panel)
         self.filename_label.setObjectName("CardFilename")
-        self.filename_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.filename_label.setStyleSheet("color: #8ab4f8; font-size: 11px;")
-        layout.addWidget(self.filename_label)
+        self.filename_label.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(self.filename_label)
 
         # Description/snippet label
-        self.desc_label = QLabel(self)
+        self.desc_label = QLabel(self.info_panel)
         self.desc_label.setObjectName("CardFilename") # smaller grey text
         self.desc_label.setWordWrap(True)
         self.desc_label.setFixedHeight(34)
-        self.desc_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        layout.addWidget(self.desc_label)
+        self.desc_label.setAlignment(Qt.AlignCenter)
+        info_layout.addWidget(self.desc_label)
+
+        layout.addWidget(self.info_panel)
 
         # Set values
         self.update_content()
-        self.top_overlay_container.raise_()
 
     def update_fav_btn_style(self):
         is_fav = self.workflow_data.get('is_favorite', 0) == 1
-        if is_fav:
-            text = "⭐"
-            bg = "rgba(255, 215, 0, 0.25)"
-            border = "rgba(255, 215, 0, 0.8)"
-            color = "#FFD700"
-        else:
-            text = "☆"
-            bg = "rgba(255, 255, 255, 0.1)"
-            border = "rgba(255, 255, 255, 0.25)"
-            color = "#888888"
-            
-        self.fav_btn.setText(text)
-        self.fav_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {bg};
-                border: 1px solid {border};
-                border-radius: 14px;
-                color: {color};
-                font-size: 14px;
-                padding: 0px;
-                margin: 0px;
-            }}
-            QPushButton:hover {{
-                background-color: rgba(255, 215, 0, 0.4);
-                border-color: #FFD700;
-                color: #FFD700;
-            }}
-        """)
+        self.fav_btn.setText("⭐" if is_fav else "☆")
+        self.fav_btn.setProperty("favorite", is_fav)
+        self.fav_btn.style().unpolish(self.fav_btn)
+        self.fav_btn.style().polish(self.fav_btn)
 
     def on_fav_clicked(self):
         is_fav = self.workflow_data.get('is_favorite', 0) == 1
@@ -222,31 +201,65 @@ class WorkflowCardWidget(QFrame):
 
         # Set image
         if image_path and os.path.exists(image_path):
+            self.current_image_path = image_path
             if image_path in THUMBNAIL_CACHE:
                 self.image_label.setPixmap(THUMBNAIL_CACHE[image_path])
+                self.image_label.setText("")
                 self.image_label.setStyleSheet("background-color: transparent;")
+                self.image_loaded = True
                 return
             else:
-                self.current_image_path = image_path
-                worker = ImageLoadWorker(image_path, target_w=184, target_h=130)
-                worker.signals.image_loaded.connect(self._on_async_image_loaded)
-                QThreadPool.globalInstance().start(worker)
+                self.image_label.setText("")
+                self.image_label.setPixmap(QPixmap())
+                self.image_label.setStyleSheet("background-color: #242527; border-radius: 8px;")
+                self.image_loaded = False
+                self.ensure_image_loaded()
                 return
 
         self.show_default_placeholder()
+        self.image_loaded = True
+
+    def ensure_image_loaded(self):
+        if getattr(self, 'image_loaded', False) or getattr(self, 'image_loading', False):
+            return
+        image_path = self.workflow_data.get('image_path', '')
+        if not image_path or not os.path.exists(image_path):
+            self.image_loaded = True
+            return
+        if image_path in THUMBNAIL_CACHE:
+            self.image_label.setPixmap(THUMBNAIL_CACHE[image_path])
+            self.image_label.setText("")
+            self.image_label.setStyleSheet("background-color: transparent;")
+            self.image_loaded = True
+            return
+        self.image_loading = True
+        self.current_image_path = image_path
+        worker = ImageLoadWorker(image_path, target_w=200, target_h=135)
+        worker.signals.image_loaded.connect(self._on_async_image_loaded)
+        QThreadPool.globalInstance().start(worker)
 
     @Slot(str, object, int, int)
     def _on_async_image_loaded(self, path, qimage, w, h):
+        self.image_loading = False
         if getattr(self, 'current_image_path', '') != path:
             return
         if qimage and not qimage.isNull():
             pixmap = QPixmap.fromImage(qimage)
-            rounded = get_rounded_pixmap(pixmap, radius=11)
+            rounded = get_rounded_pixmap(pixmap, radius=13)
             THUMBNAIL_CACHE[path] = rounded
             self.image_label.setPixmap(rounded)
+            self.image_label.setText("")
             self.image_label.setStyleSheet("background-color: transparent;")
+            self.image_loaded = True
         else:
             self.show_default_placeholder()
+            self.image_loaded = True
+
+    def prepare_for_deletion(self):
+        """Immediately clear QPixmap references to release RAM memory before Qt deletes the widget."""
+        self.image_label.setPixmap(QPixmap())
+        self.image_loaded = False
+        self.image_loading = False
 
     def show_default_placeholder(self):
         # Default Flow placeholder (emoji / styling)
@@ -338,15 +351,19 @@ class WorkflowView(QWidget):
         self.workflows_data = []
         self.filtered_workflows_data = []
         self.cards = []
+        self.current_columns = -1
         
-        self.pending_cards_data = []
-        self.current_loading_index = 0
-        self.loading_timer = QTimer(self)
-        self.loading_timer.timeout.connect(self.load_next_batch)
-
         self.search_debounce_timer = QTimer(self)
         self.search_debounce_timer.setSingleShot(True)
         self.search_debounce_timer.timeout.connect(self.populate_grid)
+
+        self.resize_debounce_timer = QTimer(self)
+        self.resize_debounce_timer.setSingleShot(True)
+        self.resize_debounce_timer.timeout.connect(self._on_debounced_resize)
+
+        self.scroll_check_timer = QTimer(self)
+        self.scroll_check_timer.setSingleShot(True)
+        self.scroll_check_timer.timeout.connect(self.check_visible_cards)
         
         self.setAcceptDrops(True)
         self.init_ui()
@@ -361,13 +378,13 @@ class WorkflowView(QWidget):
 
         # Header
         header_layout = QHBoxLayout()
-        self.title_label = QLabel("Workflow Kitaplığı")
+        self.title_label = QLabel(t("workflow_library_title"))
         self.title_label.setStyleSheet("color: #E3E3E3; font-size: 24px; font-weight: bold;")
         header_layout.addWidget(self.title_label)
 
         # Search field
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("İş akışlarında veya düğümlerde ara...")
+        self.search_edit.setPlaceholderText(t("view_search_workflows_placeholder"))
         self.search_edit.setMinimumWidth(120)
         self.search_edit.setMaximumWidth(400)
         self.search_edit.textChanged.connect(lambda: self.search_debounce_timer.start(150))
@@ -382,7 +399,7 @@ class WorkflowView(QWidget):
 
         # Sorting ComboBox
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems(["En Yeni", "Son Düzenlenen", "En Eski", "A-Z", "Z-A"])
+        self.sort_combo.addItems([t("view_sort_newest"), t("view_last_edited"), t("view_sort_oldest"), t("view_sort_az"), t("view_sort_za")])
         self.sort_combo.setStyleSheet("""
             QComboBox {
                 background-color: #2D2F31;
@@ -402,7 +419,7 @@ class WorkflowView(QWidget):
 
         header_layout.addStretch()
 
-        self.add_btn = QPushButton("➕ Workflow Ekle")
+        self.add_btn = QPushButton(t("view_add_workflow"))
         self.add_btn.setObjectName("HeaderAddBtn") # Oval style
         self.add_btn.setFixedHeight(36)
         self.add_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 14px !important; font-weight: bold !important; }")
@@ -433,19 +450,31 @@ class WorkflowView(QWidget):
         self.scroll_area.setWidgetResizable(True)
         
         self.grid_container = QWidget()
-        self.grid_container.setStyleSheet("background-color: transparent;")
+        self.grid_container.setObjectName("WorkflowGridContainer")
         self.grid_layout = QGridLayout(self.grid_container)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
         self.grid_layout.setSpacing(16)
         self.grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         self.scroll_area.setWidget(self.grid_container)
+        self.scroll_area.verticalScrollBar().valueChanged.connect(lambda: self.scroll_check_timer.start(40))
         self.main_layout.addWidget(self.scroll_area)
 
     def set_workflows(self, library_id, library_name, workflows):
+        existing_card_ids = [c.workflow_data['id'] for c in self.cards if isinstance(c, WorkflowCardWidget)]
+        new_workflow_ids = [w['id'] for w in workflows] if workflows else []
+        same_lib = (self.library_id == library_id and self.library_name == library_name)
+        same_workflows = (existing_card_ids == new_workflow_ids and len(new_workflow_ids) > 0)
+
         self.library_id = library_id
         self.library_name = library_name
-        self.workflows_data = workflows
+        self.workflows_data = workflows or []
+        self.filtered_workflows_data = self.workflows_data
+
+        if same_lib and same_workflows:
+            self.title_label.setText(self.tr_lib_name(self.library_name) if self.library_name else t("workflows_title"))
+            self.update_grid_layout()
+            return
         
         self.search_edit.blockSignals(True)
         self.search_edit.clear()
@@ -456,6 +485,14 @@ class WorkflowView(QWidget):
         self.fav_toggle_btn.blockSignals(False)
         
         self.retranslate_ui()
+
+    def _create_card(self, workflow):
+        card = WorkflowCardWidget(workflow, parent=self.grid_container)
+        card.clicked.connect(self.workflow_clicked.emit)
+        card.hide_requested.connect(self.workflow_hide_requested.emit)
+        card.unhide_requested.connect(self.workflow_unhide_requested.emit)
+        card.favorite_toggled.connect(self.on_card_favorite_toggled)
+        return card
 
     def on_filter_changed(self, text=None):
         self.populate_grid()
@@ -473,108 +510,194 @@ class WorkflowView(QWidget):
             self.populate_grid()
 
     def populate_grid(self):
-        if self.loading_timer.isActive():
-            self.loading_timer.stop()
+        if hasattr(self, '_chunk_timer') and self._chunk_timer.isActive():
+            self._chunk_timer.stop()
 
-        for card in self.cards:
-            self.grid_layout.removeWidget(card)
-            card.deleteLater()
-        self.cards.clear()
+        self.scroll_area.setUpdatesEnabled(False)
+        self.grid_container.setUpdatesEnabled(False)
+        try:
+            for card in self.cards:
+                self.grid_layout.removeWidget(card)
+                if hasattr(card, 'prepare_for_deletion'):
+                    card.prepare_for_deletion()
+                card.deleteLater()
+            self.cards.clear()
 
-        query = self.search_edit.text().strip().lower()
-        show_only_favs = self.fav_toggle_btn.isChecked()
-        
-        self.filtered_workflows_data = []
-        for w in self.workflows_data:
-            if show_only_favs and w.get('is_favorite', 0) != 1:
-                continue
-            if query:
-                name_match = query in w.get('name', '').lower()
-                desc_match = query in (w.get('description', '') or '').lower()
-                json_match = False
-                workflow_json = w.get('workflow_json')
-                if workflow_json:
-                    json_match = query in workflow_json.lower()
-                
-                if not (name_match or desc_match or json_match):
+            query = self.search_edit.text().strip().lower()
+            show_only_favs = self.fav_toggle_btn.isChecked()
+            
+            self.filtered_workflows_data = []
+            for w in self.workflows_data:
+                if show_only_favs and w.get('is_favorite', 0) != 1:
                     continue
-            self.filtered_workflows_data.append(w)
+                if query:
+                    name_match = query in w.get('name', '').lower()
+                    desc_match = query in (w.get('description', '') or '').lower()
+                    json_match = False
+                    workflow_json = w.get('workflow_json')
+                    if workflow_json:
+                        json_match = query in workflow_json.lower()
+                    
+                    if not (name_match or desc_match or json_match):
+                        continue
+                self.filtered_workflows_data.append(w)
 
-        sort_idx = self.sort_combo.currentIndex()
-        if sort_idx == 1: # Son Düzenlenen / Last Edited
-            self.filtered_workflows_data.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
-        elif sort_idx == 3: # A-Z
-            self.filtered_workflows_data.sort(key=lambda x: x.get('name', '').lower())
-        elif sort_idx == 4: # Z-A
-            self.filtered_workflows_data.sort(key=lambda x: x.get('name', '').lower(), reverse=True)
-        elif sort_idx == 2: # En Eski / Oldest
-            self.filtered_workflows_data.sort(key=lambda x: x.get('created_at', ''))
-        else: # En Yeni / Newest
-            self.filtered_workflows_data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            sort_idx = self.sort_combo.currentIndex()
+            if sort_idx == 1: # Son Düzenlenen / Last Edited
+                self.filtered_workflows_data.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+            elif sort_idx == 3: # A-Z
+                self.filtered_workflows_data.sort(key=lambda x: x.get('name', '').lower())
+            elif sort_idx == 4: # Z-A
+                self.filtered_workflows_data.sort(key=lambda x: x.get('name', '').lower(), reverse=True)
+            elif sort_idx == 2: # En Eski / Oldest
+                self.filtered_workflows_data.sort(key=lambda x: x.get('created_at', ''))
+            else: # En Yeni / Newest
+                self.filtered_workflows_data.sort(key=lambda x: x.get('created_at', ''), reverse=True)
 
-        if not self.filtered_workflows_data:
-            empty_label = QLabel(t("view_empty_workflow"))
-            empty_label.setObjectName("CardFilename")
-            empty_label.setAlignment(Qt.AlignCenter)
-            empty_label.setStyleSheet("font-size: 13px; color: #9AA0A6; padding: 40px;")
-            self.grid_layout.addWidget(empty_label, 0, 0)
-            self.cards.append(empty_label)
-            return
+            if not self.filtered_workflows_data:
+                empty_label = QLabel(t("view_empty_workflow"))
+                empty_label.setObjectName("CardFilename")
+                empty_label.setAlignment(Qt.AlignCenter)
+                empty_label.setStyleSheet("font-size: 13px; color: #9AA0A6; padding: 40px;")
+                self.grid_layout.addWidget(empty_label, 0, 0)
+                self.cards.append(empty_label)
+                self.current_columns = -1
+                self.grid_container.setMinimumHeight(0)
+                return
 
-        self.update_grid_layout()
-
-    def update_grid_layout(self):
-        if self.cards and not isinstance(self.cards[0], QLabel):
             width = self.scroll_area.viewport().width()
+            if width <= 100:
+                width = self.scroll_area.width() - 48
+            if width <= 100:
+                width = 860
+
             card_width = 200
             spacing = 16
-            columns = max(1, (width + spacing) // (card_width + spacing))
-            for i, card in enumerate(self.cards):
-                self.grid_layout.removeWidget(card)
-                row = i // columns
-                col = i % columns
-                self.grid_layout.addWidget(card, row, col)
+            scrollbar_w = 16 if len(self.filtered_workflows_data) > 16 else 0
+            avail_w = max(100, width - scrollbar_w)
+            columns = max(1, (avail_w + spacing) // (card_width + spacing))
+            self.current_columns = columns
+
+            total_rows = (len(self.filtered_workflows_data) + columns - 1) // columns
+            row_height = 240 + spacing
+            # Responsive Phase 1: fill entire visible screen (FHD: ~24, 2K/4K: ~40-60 workflows)
+            viewport_h = max(600, self.scroll_area.viewport().height())
+            visible_rows = (viewport_h // row_height) + 2
+            needed_cards = max(24, columns * visible_rows)
+            initial_count = min(needed_cards, len(self.filtered_workflows_data))
+            for i in range(initial_count):
+                card = self._create_card(self.filtered_workflows_data[i])
+                self.grid_layout.addWidget(card, i // columns, i % columns)
+                self.cards.append(card)
+        finally:
+            self.grid_container.setUpdatesEnabled(True)
+            self.scroll_area.setUpdatesEnabled(True)
+
+        if len(self.filtered_workflows_data) > initial_count:
+            self._pending_workflows_data = self.filtered_workflows_data
+            self._pending_load_index = initial_count
+            if not hasattr(self, '_chunk_timer'):
+                self._chunk_timer = QTimer(self)
+                self._chunk_timer.setSingleShot(True)
+                self._chunk_timer.timeout.connect(self._load_remaining_cards)
+            self._chunk_timer.start(0)
+
+        self.scroll_check_timer.start(10)
+
+    def _load_remaining_cards(self):
+        if not hasattr(self, '_pending_workflows_data') or self._pending_load_index >= len(self._pending_workflows_data):
             return
 
-        if not self.filtered_workflows_data:
-            return
+        display_data = self._pending_workflows_data
+        columns = self.current_columns if self.current_columns > 0 else 1
+        chunk_size = 40
+        end_idx = min(self._pending_load_index + chunk_size, len(display_data))
 
-        self.pending_cards_data = list(self.filtered_workflows_data)
-        self.current_loading_index = 0
-        self.loading_timer.start(10)
+        self.scroll_area.setUpdatesEnabled(False)
+        self.grid_container.setUpdatesEnabled(False)
+        try:
+            for i in range(self._pending_load_index, end_idx):
+                card = self._create_card(display_data[i])
+                self.grid_layout.addWidget(card, i // columns, i % columns)
+                self.cards.append(card)
+        finally:
+            self.grid_container.setUpdatesEnabled(True)
+            self.scroll_area.setUpdatesEnabled(True)
 
-    def load_next_batch(self):
-        if not self.pending_cards_data or self.current_loading_index >= len(self.pending_cards_data):
-            self.loading_timer.stop()
+        self._pending_load_index = end_idx
+        if self._pending_load_index < len(display_data):
+            self._chunk_timer.start(0)
+
+    def update_grid_layout(self):
+        if not self.cards or isinstance(self.cards[0], QLabel):
             return
 
         width = self.scroll_area.viewport().width()
         card_width = 200
         spacing = 16
-        columns = max(1, (width + spacing) // (card_width + spacing))
+        total_items = len(self.filtered_workflows_data) if getattr(self, 'filtered_workflows_data', None) else len(self.cards)
+        scrollbar_w = 16 if total_items > 16 else 0
+        avail_w = max(100, width - scrollbar_w)
+        columns = max(1, (avail_w + spacing) // (card_width + spacing))
 
-        batch_size = 20
-        end_index = min(self.current_loading_index + batch_size, len(self.pending_cards_data))
+        if columns == self.current_columns:
+            return
 
-        for i in range(self.current_loading_index, end_index):
-            workflow = self.pending_cards_data[i]
-            card = WorkflowCardWidget(workflow, parent=self)
-            card.clicked.connect(self.workflow_clicked.emit)
-            card.hide_requested.connect(self.workflow_hide_requested.emit)
-            card.unhide_requested.connect(self.workflow_unhide_requested.emit)
-            card.favorite_toggled.connect(self.on_card_favorite_toggled)
-            row = i // columns
-            col = i % columns
-            self.grid_layout.addWidget(card, row, col)
-            self.cards.append(card)
+        self.current_columns = columns
+        total_rows = (total_items + columns - 1) // columns
+        row_height = 240 + spacing
+        self.grid_container.setMinimumHeight(total_rows * row_height)
 
-        self.current_loading_index = end_index
-        if self.current_loading_index >= len(self.pending_cards_data):
-            self.loading_timer.stop()
+        self.scroll_area.setUpdatesEnabled(False)
+        self.grid_container.setUpdatesEnabled(False)
+        try:
+            for i, card in enumerate(self.cards):
+                self.grid_layout.addWidget(card, i // columns, i % columns)
+        finally:
+            self.grid_container.setUpdatesEnabled(True)
+            self.scroll_area.setUpdatesEnabled(True)
+
+        self.scroll_check_timer.start(20)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if event.oldSize().width() <= 0 or event.oldSize().width() == event.size().width():
+            return
+        width = self.scroll_area.viewport().width()
+        card_width = 200
+        spacing = 16
+        total_items = len(self.filtered_workflows_data) if getattr(self, 'filtered_workflows_data', None) else len(self.cards)
+        scrollbar_w = 16 if total_items > 16 else 0
+        avail_w = max(100, width - scrollbar_w)
+        columns = max(1, (avail_w + spacing) // (card_width + spacing))
+        
+        if columns != self.current_columns:
+            self.resize_debounce_timer.start(35)
+
+    def _on_debounced_resize(self):
         self.update_grid_layout()
+
+    def check_visible_cards(self):
+        if not self.cards or isinstance(self.cards[0], QLabel):
+            return
+        viewport = self.scroll_area.viewport()
+        if not viewport or not viewport.isVisible():
+            return
+
+        columns = self.current_columns if self.current_columns > 0 else 1
+        scroll_y = self.scroll_area.verticalScrollBar().value()
+        viewport_h = viewport.height()
+        row_h = 240 + 16 # card height + spacing
+        first_row = max(0, (scroll_y - 300) // row_h)
+        last_row = (scroll_y + viewport_h + 350) // row_h
+        first_idx = int(first_row * columns)
+        last_idx = min(len(self.cards), int((last_row + 1) * columns))
+
+        for i in range(first_idx, last_idx):
+            card = self.cards[i]
+            if isinstance(card, WorkflowCardWidget):
+                if not (getattr(card, 'image_loaded', False) or getattr(card, 'image_loading', False)):
+                    card.ensure_image_loaded()
 
     # --- DRAG AND DROP HANDLERS ---
     def dragEnterEvent(self, event):
@@ -618,7 +741,7 @@ class WorkflowView(QWidget):
 
     def browse_workflow_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, t("workflow_dialog_title") + " JSON", "", "ComfyUI Workflow (*.json)"
+            self, t("workflow_dialog_title") + " JSON", "", t("dialog_workflow_filter")
         )
         if file_path:
             self.on_add_workflow_file(file_path)

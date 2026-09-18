@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QStackedWidget, QSplitter, QTextEdit, QLineEdit, 
                              QPushButton, QLabel, QMessageBox, QDockWidget)
-from PySide6.QtCore import Slot, Qt, Signal, QTimer
+from PySide6.QtCore import Slot, Qt, Signal, QTimer, QEvent
 from PySide6.QtGui import QIcon
 from ui.sidebar import Sidebar
 from ui.welcome_screen import WelcomeScreen
@@ -13,10 +13,46 @@ from ui.styles import STYLE_SHEET
 from utils.i18n import t
 
 class ResettableDockWidget(QDockWidget):
-    """Custom QDockWidget that resets floating state upon closing."""
+    """Custom QDockWidget with styled background that cleanly notifies main window on close."""
+    def __init__(self, title, parent=None):
+        super().__init__(title, parent)
+        self._main_win = parent
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.topLevelChanged.connect(lambda f: self._wire_close_btn())
+
+    def _wire_close_btn(self):
+        for b in self.findChildren(object):
+            if b.objectName() == "qt_dockwidget_closebutton":
+                b.installEventFilter(self)
+                try:
+                    b.clicked.disconnect()
+                except Exception:
+                    pass
+                b.clicked.connect(self.close_dock)
+
+    def eventFilter(self, obj, event):
+        if obj.objectName() == "qt_dockwidget_closebutton":
+            if event.type() == QEvent.MouseButtonRelease:
+                if obj.rect().contains(event.position().toPoint()):
+                    self.close_dock()
+                    return True
+        return super().eventFilter(obj, event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._wire_close_btn()
+
+    def close_dock(self):
+        self.hide()
+        main_win = self._main_win or self.parent()
+        if main_win and hasattr(main_win, "hide_detail_panel"):
+            main_win.hide_detail_panel()
+
     def closeEvent(self, event):
         super().closeEvent(event)
-        self.setFloating(False)
+        main_win = self._main_win or self.parent()
+        if main_win and hasattr(main_win, "hide_detail_panel"):
+            main_win.hide_detail_panel()
 
 class NoteEditor(QWidget):
     save_requested = Signal(object, str, str) # note_id (int/None), title, content
@@ -38,13 +74,13 @@ class NoteEditor(QWidget):
 
         # Title Input
         self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("...")
+        self.title_edit.setPlaceholderText(t("detail_card_title_placeholder"))
         self.title_edit.setStyleSheet("font-size: 16px; font-weight: bold; background-color: #1E1F20; border: 1px solid #444746; padding: 10px; border-radius: 8px;")
         layout.addWidget(self.title_edit)
 
         # Content Input
         self.content_edit = QTextEdit()
-        self.content_edit.setPlaceholderText("...")
+        self.content_edit.setPlaceholderText(t("detail_notes_placeholder_note"))
         self.content_edit.setStyleSheet("font-size: 14px; background-color: #1E1F20; border: 1px solid #444746; padding: 12px; border-radius: 8px;")
         layout.addWidget(self.content_edit)
 
@@ -59,6 +95,8 @@ class NoteEditor(QWidget):
 
     def retranslate_ui(self):
         self.header_label.setText(t("view_all_notes"))
+        self.title_edit.setPlaceholderText(t("detail_card_title_placeholder"))
+        self.content_edit.setPlaceholderText(t("detail_notes_placeholder_note"))
         self.save_btn.setText(t("save_note"))
 
     def load_note(self, note_id, title, content):
@@ -75,7 +113,7 @@ class NoteEditor(QWidget):
         title = self.title_edit.text().strip()
         content = self.content_edit.toPlainText().strip()
         if not title:
-            QMessageBox.warning(self, "Hata", "Not başlığı boş olamaz!", QMessageBox.Ok)
+            QMessageBox.warning(self, t("msg_copy_error_title"), t("msg_empty_title_error"), QMessageBox.Ok)
             return
         self.save_requested.emit(self.note_id, title, content)
 
@@ -110,6 +148,9 @@ class MainWindow(QMainWindow):
     workflow_unhide_signal = Signal(dict)
     note_hide_signal = Signal(dict)
     note_unhide_signal = Signal(dict)
+    bulk_add_tag_signal = Signal(list)
+    bulk_remove_tag_signal = Signal(list)
+    bulk_favorite_signal = Signal(list, bool)
 
     def __init__(self):
         super().__init__()
@@ -143,6 +184,9 @@ class MainWindow(QMainWindow):
         self.library_view.model_clicked.connect(self.on_model_clicked)
         self.library_view.scan_requested.connect(self.scan_library_signal.emit)
         self.library_view.favorite_toggled.connect(self.favorite_toggled_signal.emit)
+        self.library_view.bulk_add_tag_requested.connect(self.bulk_add_tag_signal.emit)
+        self.library_view.bulk_remove_tag_requested.connect(self.bulk_remove_tag_signal.emit)
+        self.library_view.bulk_favorite_requested.connect(self.bulk_favorite_signal.emit)
 
         self.note_editor = NoteEditor()
         self.note_editor.save_requested.connect(self.save_note_signal.emit)
@@ -173,7 +217,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self.splitter)
 
-        # Detail Panel wrapped inside native QDockWidget (Native Movable / Floatable / Closable)
+        # Detail Panel wrapped inside native QDockWidget (Floatable / Detachable / Closable)
         self.detail_panel = DetailPanel()
         self.detail_panel.close_requested.connect(self.hide_detail_panel)
         self.detail_panel.save_model_data_requested.connect(self.save_model_data_signal.emit)
@@ -188,9 +232,12 @@ class MainWindow(QMainWindow):
         self.detail_panel.workflow_image_changed.connect(self.workflow_image_changed_signal.emit)
 
         self.setObjectName("MainWindow")
-        self.detail_dock = ResettableDockWidget("Not & Model Düzenleyici", self)
+
+        # Setup Dock Widget in RightDockWidgetArea
+        dock_title = t("detail_dock_title")
+        self.detail_dock = ResettableDockWidget(dock_title, self)
         self.detail_dock.setObjectName("DetailDockWidget")
-        self.detail_dock.setAllowedAreas(Qt.RightDockWidgetArea | Qt.LeftDockWidgetArea)
+        self.detail_dock.setAllowedAreas(Qt.RightDockWidgetArea)
         self.detail_dock.setFeatures(
             QDockWidget.DockWidgetMovable | 
             QDockWidget.DockWidgetFloatable | 
@@ -198,10 +245,13 @@ class MainWindow(QMainWindow):
         )
         self.detail_dock.setWidget(self.detail_panel)
         self.addDockWidget(Qt.RightDockWidgetArea, self.detail_dock)
-        self.detail_dock.setVisible(False)
 
-        # Capture pristine initial layout state for 100% native Qt layout restoration
-        self.initial_dock_state = self.saveState()
+        # Save pristine docked layout state so we can restore docked position with 100% precision
+        self._pristine_docked_state = self.saveState()
+
+        # Initially hidden
+        self.detail_dock.hide()
+        self.detail_dock.visibilityChanged.connect(self._on_dock_visibility_changed)
 
         # Connect context menu hide/unhide signals
         self.library_view.model_hide_requested.connect(self.model_hide_signal.emit)
@@ -217,6 +267,15 @@ class MainWindow(QMainWindow):
         self.sidebar.new_note_requested.connect(self.create_new_note)
         self.sidebar.settings_requested.connect(self.settings_requested_signal.emit)
         self.sidebar.home_requested.connect(self.show_welcome)
+
+    def set_comfyui_enabled(self, enabled: bool):
+        self.sidebar.set_comfyui_visible(enabled)
+        if not enabled:
+            curr_idx = self.center_stack.currentIndex()
+            if curr_idx in (1, 4):  # 1 is library_view, 4 is workflow_view
+                self.show_welcome()
+            if hasattr(self, 'detail_panel') and getattr(self.detail_panel, 'mode', None) in ("MODEL", "WORKFLOW"):
+                self.hide_detail_panel()
 
     def show_welcome(self):
         self.sidebar.set_active_item('home')
@@ -234,37 +293,64 @@ class MainWindow(QMainWindow):
         self.hide_detail_panel()
 
     def show_library(self, name, models):
-        self.sidebar.set_active_item('model', name)
-        self.library_view.set_library(name, models)
-        self.center_stack.setCurrentIndex(1)
         self.hide_detail_panel()
+        self.sidebar.set_active_item('model', name)
+        self.center_stack.setCurrentIndex(1)
+        if self.center_stack.width() > 100:
+            self.library_view.resize(self.center_stack.size())
+        self.library_view.set_library(name, models)
 
     def show_workflow_library(self, lib_id, name, workflows):
-        self.sidebar.set_active_item('workflow', name)
-        self.workflow_view.set_workflows(lib_id, name, workflows)
-        self.center_stack.setCurrentIndex(4)
         self.hide_detail_panel()
+        self.sidebar.set_active_item('workflow', name)
+        self.center_stack.setCurrentIndex(4)
+        if self.center_stack.width() > 100:
+            self.workflow_view.resize(self.center_stack.size())
+        self.workflow_view.set_workflows(lib_id, name, workflows)
 
     def show_notes_panel(self, notes, is_trash=False):
-        self.sidebar.set_active_item('trash' if is_trash else 'all_notes')
-        self.notes_view.set_notes(notes, is_trash=is_trash)
-        self.center_stack.setCurrentIndex(3)
         self.hide_detail_panel()
+        self.sidebar.set_active_item('trash' if is_trash else 'all_notes')
+        self.center_stack.setCurrentIndex(3)
+        if self.center_stack.width() > 100:
+            self.notes_view.resize(self.center_stack.size())
+        self.notes_view.set_notes(notes, is_trash=is_trash)
 
     def on_model_clicked(self, model_data):
         pass
 
+    def reset_detail_dock(self):
+        """Resets the detail dock widget back to its pristine right dock area position."""
+        if hasattr(self, '_pristine_docked_state') and self._pristine_docked_state:
+            if hasattr(self, 'detail_dock') and self.detail_dock:
+                self.addDockWidget(Qt.RightDockWidgetArea, self.detail_dock)
+            self.restoreState(self._pristine_docked_state)
+
     def show_detail_panel(self, model_data=None):
-        """Restore detail panel to its pristine right-docked position every time."""
-        if hasattr(self, 'initial_dock_state') and self.initial_dock_state:
-            self.restoreState(self.initial_dock_state)
-        self.detail_dock.setVisible(True)
+        """Shows the detail panel, guaranteeing it is docked in Qt.RightDockWidgetArea."""
+        if not hasattr(self, 'detail_dock') or not self.detail_dock:
+            return
+
+        # If floating or hidden, restore pristine docked position
+        if self.detail_dock.isFloating() or not self.detail_dock.isVisible():
+            self.reset_detail_dock()
+
+        self.detail_dock.show()
         self.detail_dock.raise_()
 
+    def _on_dock_visibility_changed(self, visible: bool):
+        if not visible:
+            self.hide_detail_panel()
+
     def hide_detail_panel(self):
-        """Hide and clear detail panel dock widget."""
-        if hasattr(self, 'detail_dock') and self.detail_dock:
+        """Hide detail panel dock widget."""
+        if hasattr(self, 'detail_dock') and self.detail_dock and self.detail_dock.isVisible():
             self.detail_dock.hide()
+
+    def show_toast(self, message: str, toast_type: str = "info", duration_ms: int = 2800):
+        """Displays a non-blocking floating toast notification in the bottom-right corner."""
+        from ui.widgets.toast import show_toast
+        return show_toast(self, message, toast_type, duration_ms)
 
     def on_quick_note_saved(self, title, content):
         self.save_note_signal.emit(None, title, content)
@@ -290,5 +376,5 @@ class MainWindow(QMainWindow):
         self.library_view.retranslate_ui()
         self.workflow_view.retranslate_ui()
         self.detail_panel.retranslate_ui()
-        if hasattr(self, 'detail_dock') and hasattr(self.detail_dock, 'setWindowTitle'):
+        if hasattr(self, 'detail_dock') and self.detail_dock and hasattr(self.detail_dock, 'setWindowTitle'):
             self.detail_dock.setWindowTitle(t("detail_dock_title"))

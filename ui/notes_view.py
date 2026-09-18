@@ -1,12 +1,34 @@
 # ui/notes_view.py
 import os
+import re
+import html
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QScrollArea, QGridLayout, QFrame, 
                              QSizePolicy, QLineEdit, QComboBox, QMessageBox, QMenu)
-from PySide6.QtCore import Signal, Qt, QSize, QTimer, QThreadPool, Slot
-from PySide6.QtGui import QPixmap, QFontMetrics, QGuiApplication, QTextDocument, QImage, QKeyEvent, QCursor
+from PySide6.QtCore import Signal, Qt, QSize, QTimer, QThreadPool, Slot, QPoint, QRect
+from PySide6.QtGui import QPixmap, QFontMetrics, QGuiApplication, QImage, QKeyEvent, QCursor
 from utils.i18n import t
 from ui.library_view import get_rounded_pixmap, THUMBNAIL_CACHE, cache_thumbnail, ImageLoadWorker
+
+_STYLE_RE = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL | re.IGNORECASE)
+_HEAD_RE = re.compile(r'<head[^>]*>.*?</head>', re.DOTALL | re.IGNORECASE)
+_SCRIPT_RE = re.compile(r'<script[^>]*>.*?</script>', re.DOTALL | re.IGNORECASE)
+_TAG_RE = re.compile(r'</?(?:p|div|br|h[1-6]|li|blockquote)[^>]*>', re.IGNORECASE)
+_ANY_TAG_RE = re.compile(r'<[^>]+>')
+
+def html_to_plain(html_str: str) -> str:
+    """Ultra-fast regex and entity decoder to extract plain text without QTextDocument allocation."""
+    if not html_str:
+        return ""
+    # Strip style, head and script blocks along with their inner css/scripts
+    text = _STYLE_RE.sub('', html_str)
+    text = _HEAD_RE.sub('', text)
+    text = _SCRIPT_RE.sub('', text)
+    # Block level tags become spaces / line breaks
+    text = _TAG_RE.sub(' ', text)
+    # Inline formatting tags like <b>, <i>, <span> are stripped without adding whitespace
+    text = _ANY_TAG_RE.sub('', text)
+    return html.unescape(' '.join(text.split()))
 
 class NoteCardWidget(QFrame):
     clicked = Signal(dict)
@@ -24,6 +46,7 @@ class NoteCardWidget(QFrame):
         self.note_data = note_data
         self.is_trash = is_trash
         self.setObjectName("NoteCard")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedSize(240, 260)
         self.setCursor(Qt.PointingHandCursor)
         
@@ -32,6 +55,8 @@ class NoteCardWidget(QFrame):
         self.is_selected = False
         self.display_mode = self.note_data.get('display_mode', 'WITH_IMAGE')
         self.image_path = self.note_data.get('image_path') or ''
+        self.image_loaded = False
+        self.image_loading = False
         
         self.init_ui()
         self.update_card_style()
@@ -143,6 +168,7 @@ class NoteCardWidget(QFrame):
         # Title Label
         self.title_label = QLabel(self)
         self.title_label.setObjectName("NoteCardTitle")
+        self.title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.title_label)
 
         # Content Label
@@ -271,11 +297,15 @@ class NoteCardWidget(QFrame):
             
             if self.image_path in THUMBNAIL_CACHE:
                 self.image_label.setPixmap(THUMBNAIL_CACHE[self.image_path])
-                self.image_label.setStyleSheet("background-color: transparent;")
+                self.image_label.setText("")
+                self.image_label.setStyleSheet("background-color: transparent; border-radius: 8px;")
+                self.image_loaded = True
             else:
-                worker = ImageLoadWorker(self.image_path, target_w=216, target_h=130)
-                worker.signals.image_loaded.connect(self._on_async_image_loaded)
-                QThreadPool.globalInstance().start(worker)
+                self.image_label.setText("")
+                self.image_label.setPixmap(QPixmap())
+                self.image_label.setStyleSheet("background-color: #242527; border-radius: 8px;")
+                self.image_loaded = False
+                self.ensure_image_loaded()
                 
             self.content_label.setFixedHeight(50)
             self.content_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -285,11 +315,31 @@ class NoteCardWidget(QFrame):
             layout.setSpacing(12)
             self.content_label.setFixedHeight(120)
             self.content_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            self.image_loaded = True
             
         self.update_texts()
 
+    def ensure_image_loaded(self):
+        if getattr(self, 'image_loaded', False) or getattr(self, 'image_loading', False):
+            return
+        show_img = (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
+        if not show_img:
+            self.image_loaded = True
+            return
+        if self.image_path in THUMBNAIL_CACHE:
+            self.image_label.setPixmap(THUMBNAIL_CACHE[self.image_path])
+            self.image_label.setText("")
+            self.image_label.setStyleSheet("background-color: transparent; border-radius: 8px;")
+            self.image_loaded = True
+            return
+        self.image_loading = True
+        worker = ImageLoadWorker(self.image_path, target_w=216, target_h=130)
+        worker.signals.image_loaded.connect(self._on_async_image_loaded)
+        QThreadPool.globalInstance().start(worker)
+
     @Slot(str, object, int, int)
     def _on_async_image_loaded(self, path, qimage, w, h):
+        self.image_loading = False
         if getattr(self, 'image_path', '') != path:
             return
         if qimage and not qimage.isNull():
@@ -297,9 +347,18 @@ class NoteCardWidget(QFrame):
             rounded = get_rounded_pixmap(pixmap, radius=11)
             cache_thumbnail(path, rounded)
             self.image_label.setPixmap(rounded)
-            self.image_label.setStyleSheet("background-color: transparent;")
+            self.image_label.setText("")
+            self.image_label.setStyleSheet("background-color: transparent; border-radius: 8px;")
+            self.image_loaded = True
         else:
             self.show_no_image_style()
+            self.image_loaded = True
+
+    def prepare_for_deletion(self):
+        """Immediately clear QPixmap references to release RAM memory before Qt deletes the widget."""
+        self.image_label.setPixmap(QPixmap())
+        self.image_loaded = False
+        self.image_loading = False
 
     def show_no_image_style(self):
         self.image_label.setText(t("msg_image_load_failed"))
@@ -343,9 +402,7 @@ class NoteCardWidget(QFrame):
         self.title_label.setText(elided_title)
 
         html_content = self.note_data.get('content', '')
-        doc = QTextDocument()
-        doc.setHtml(html_content)
-        plain_text = doc.toPlainText().strip()
+        plain_text = html_to_plain(html_content)
         
         show_img = (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
         if show_img:
@@ -399,6 +456,10 @@ class NoteCardWidget(QFrame):
         
         clipboard = QGuiApplication.clipboard()
         clipboard.setText(plain_text)
+        
+        win = self.window()
+        if win and hasattr(win, 'show_toast'):
+            win.show_toast(t("toast_copied"), "success")
 
     def on_restore_clicked(self):
         self.restore_requested.emit(self.note_data.get('id', 0))
@@ -474,11 +535,16 @@ class NotesView(QWidget):
         self.cards = []
         self.selected_note_ids = set()
         self.is_trash = False
+        self.current_columns = -1
         
-        self.pending_cards_data = []
-        self.current_loading_index = 0
-        self.loading_timer = QTimer(self)
-        self.loading_timer.timeout.connect(self.load_next_batch)
+
+        self.resize_debounce_timer = QTimer(self)
+        self.resize_debounce_timer.setSingleShot(True)
+        self.resize_debounce_timer.timeout.connect(self._on_debounced_resize)
+
+        self.scroll_check_timer = QTimer(self)
+        self.scroll_check_timer.setSingleShot(True)
+        self.scroll_check_timer.timeout.connect(self.check_visible_cards)
 
         self.init_ui()
 
@@ -491,20 +557,20 @@ class NotesView(QWidget):
         self.main_layout.setSpacing(16)
 
         header_layout = QHBoxLayout()
-        self.title_label = QLabel("Not Defteri")
+        self.title_label = QLabel(t("view_all_notes"))
         self.title_label.setStyleSheet("color: #E3E3E3; font-size: 24px; font-weight: bold;")
         header_layout.addWidget(self.title_label)
 
         # Search field
         self.search_edit = QLineEdit()
-        self.search_edit.setPlaceholderText("Notlarda ara...")
+        self.search_edit.setPlaceholderText(t("view_search_notes_placeholder"))
         self.search_edit.setMinimumWidth(120)
         self.search_edit.setMaximumWidth(300)
         self.search_edit.textChanged.connect(self.on_filter_changed)
         header_layout.addWidget(self.search_edit)
 
         # Favorites Filter Toggle
-        self.fav_toggle_btn = QPushButton("⭐ Favoriler")
+        self.fav_toggle_btn = QPushButton(t("view_favorites"))
         self.fav_toggle_btn.setCheckable(True)
         self.fav_toggle_btn.setObjectName("FavToggleBtn")
         self.fav_toggle_btn.clicked.connect(self.on_filter_changed)
@@ -512,7 +578,7 @@ class NotesView(QWidget):
 
         # Sorting ComboBox
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems(["En Yeni", "Son Düzenlenen", "En Eski", "A-Z", "Z-A"])
+        self.sort_combo.addItems([t("view_sort_newest"), t("view_last_edited"), t("view_sort_oldest"), t("view_sort_az"), t("view_sort_za")])
         self.sort_combo.setStyleSheet("""
             QComboBox {
                 background-color: #2D2F31;
@@ -540,7 +606,7 @@ class NotesView(QWidget):
         self.empty_trash_btn.setVisible(False)
         header_layout.addWidget(self.empty_trash_btn)
 
-        self.new_note_btn = QPushButton("➕ Yeni Not")
+        self.new_note_btn = QPushButton(t("new_note"))
         self.new_note_btn.setObjectName("HeaderAddBtn")
         self.new_note_btn.setFixedHeight(36)
         self.new_note_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 14px !important; font-weight: bold !important; }")
@@ -564,34 +630,34 @@ class NotesView(QWidget):
         bulk_layout.setContentsMargins(8, 6, 8, 6)
         bulk_layout.setSpacing(12)
 
-        self.bulk_count_label = QLabel("0 Not Seçildi", self.bulk_bar)
+        self.bulk_count_label = QLabel(t("bulk_selected_count").format(count=0), self.bulk_bar)
         self.bulk_count_label.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 14px;")
         bulk_layout.addWidget(self.bulk_count_label)
 
         bulk_layout.addStretch()
 
-        self.select_all_btn = QPushButton("☑️ Tümünü Seç", self.bulk_bar)
+        self.select_all_btn = QPushButton(t("bulk_select_all"), self.bulk_bar)
         self.select_all_btn.setStyleSheet("background-color: #334155; color: #F1F5F9; border-radius: 6px; padding: 5px 10px;")
         self.select_all_btn.clicked.connect(self.select_all_notes)
         bulk_layout.addWidget(self.select_all_btn)
 
-        self.clear_select_btn = QPushButton("❌ Seçimi Temizle", self.bulk_bar)
+        self.clear_select_btn = QPushButton(t("bulk_clear_selection"), self.bulk_bar)
         self.clear_select_btn.setStyleSheet("background-color: #334155; color: #94A3B8; border-radius: 6px; padding: 5px 10px;")
         self.clear_select_btn.clicked.connect(self.clear_selection)
         bulk_layout.addWidget(self.clear_select_btn)
 
-        self.bulk_pin_btn = QPushButton("📌 Panoya Sabitle", self.bulk_bar)
+        self.bulk_pin_btn = QPushButton(t("bulk_pin_corkboard"), self.bulk_bar)
         self.bulk_pin_btn.setStyleSheet("background-color: #D97706; color: #FFFFFF; font-weight: bold; border-radius: 6px; padding: 5px 12px;")
         self.bulk_pin_btn.clicked.connect(self.on_bulk_pin_clicked)
         bulk_layout.addWidget(self.bulk_pin_btn)
 
-        self.bulk_restore_btn = QPushButton("🔄 Seçilenleri Geri Yükle", self.bulk_bar)
+        self.bulk_restore_btn = QPushButton(t("bulk_restore"), self.bulk_bar)
         self.bulk_restore_btn.setStyleSheet("background-color: #0284C7; color: #FFFFFF; font-weight: bold; border-radius: 6px; padding: 5px 12px;")
         self.bulk_restore_btn.clicked.connect(self.on_bulk_restore_clicked)
         self.bulk_restore_btn.setVisible(False)
         bulk_layout.addWidget(self.bulk_restore_btn)
 
-        self.bulk_delete_btn = QPushButton("🗑️ Seçilenleri Sil", self.bulk_bar)
+        self.bulk_delete_btn = QPushButton(t("bulk_delete"), self.bulk_bar)
         self.bulk_delete_btn.setStyleSheet("background-color: #DC2626; color: #FFFFFF; font-weight: bold; border-radius: 6px; padding: 5px 12px;")
         self.bulk_delete_btn.clicked.connect(self.on_bulk_delete_clicked)
         bulk_layout.addWidget(self.bulk_delete_btn)
@@ -605,20 +671,38 @@ class NotesView(QWidget):
         self.scroll_area.setWidgetResizable(True)
         
         self.grid_container = QWidget()
-        self.grid_container.setStyleSheet("background-color: transparent;")
+        self.grid_container.setObjectName("NotesGridContainer")
         self.grid_layout = QGridLayout(self.grid_container)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
         self.grid_layout.setSpacing(16)
         self.grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         self.scroll_area.setWidget(self.grid_container)
+        self.scroll_area.verticalScrollBar().valueChanged.connect(lambda: self.scroll_check_timer.start(40))
         self.main_layout.addWidget(self.scroll_area)
 
     def set_notes(self, notes, is_trash=False):
+        existing_card_ids = [c.note_data['id'] for c in self.cards if isinstance(c, NoteCardWidget)]
+        new_note_ids = [n['id'] for n in notes] if notes else []
+        same_trash = (self.is_trash == is_trash)
+        same_notes = (existing_card_ids == new_note_ids and len(new_note_ids) > 0)
+
         self.is_trash = is_trash
-        self.notes_data = notes
+        self.notes_data = notes or []
+        self.filtered_notes_data = self.notes_data
         self.clear_selection()
         
+        self.empty_trash_btn.setVisible(is_trash)
+        self.new_note_btn.setVisible(not is_trash)
+        self.fav_toggle_btn.setVisible(not is_trash)
+        self.bulk_pin_btn.setVisible(not is_trash)
+        self.bulk_restore_btn.setVisible(is_trash)
+
+        if same_trash and same_notes:
+            self.title_label.setText(t("trash_title") if self.is_trash else t("view_all_notes"))
+            self.update_grid_layout()
+            return
+
         # Reset local filters silently
         self.fav_toggle_btn.blockSignals(True)
         self.fav_toggle_btn.setChecked(False)
@@ -628,13 +712,26 @@ class NotesView(QWidget):
         self.search_edit.clear()
         self.search_edit.blockSignals(False)
         
-        self.empty_trash_btn.setVisible(is_trash)
-        self.new_note_btn.setVisible(not is_trash)
-        self.fav_toggle_btn.setVisible(not is_trash)
-        self.bulk_pin_btn.setVisible(not is_trash)
-        self.bulk_restore_btn.setVisible(is_trash)
-        
         self.retranslate_ui()
+
+    def _create_card(self, note):
+        card = NoteCardWidget(note, is_trash=self.is_trash, parent=self.grid_container)
+        card.selection_toggled.connect(self.on_card_selection_toggled)
+        card.corkboard_pin_toggled.connect(self.corkboard_pin_toggled.emit)
+        card.color_changed.connect(self.note_color_changed.emit)
+        
+        if card.note_data.get('id') in self.selected_note_ids:
+            card.set_selected(True)
+            
+        if self.is_trash:
+            card.restore_requested.connect(self.note_restore_requested.emit)
+            card.perm_delete_requested.connect(self.note_perm_delete_requested.emit)
+        else:
+            card.clicked.connect(self.note_clicked.emit)
+            card.favorite_toggled.connect(self.note_favorite_toggled.emit)
+            card.hide_requested.connect(self.note_hide_requested.emit)
+            card.unhide_requested.connect(self.note_unhide_requested.emit)
+        return card
 
     def on_card_selection_toggled(self, note_data, is_selected):
         note_id = note_data.get('id')
@@ -649,7 +746,7 @@ class NotesView(QWidget):
     def update_bulk_bar(self):
         count = len(self.selected_note_ids)
         if count > 0:
-            self.bulk_count_label.setText(f"{count} Not Seçildi (Ctrl + Tıklama)")
+            self.bulk_count_label.setText(t("bulk_selected_count").format(count=count))
             self.bulk_bar.setVisible(True)
         else:
             self.bulk_bar.setVisible(False)
@@ -674,9 +771,9 @@ class NotesView(QWidget):
         if not self.selected_note_ids:
             return
         count = len(self.selected_note_ids)
-        action_name = "kalıcı olarak silinsin mi?" if self.is_trash else "çöp kutusuna taşınsın mı?"
+        msg_text = (t("bulk_delete_confirm_perm") if self.is_trash else t("bulk_delete_confirm_trash")).format(count=count)
         reply = QMessageBox.question(
-            self, "Toplu Silme", f"Seçilen {count} not {action_name}",
+            self, t("bulk_delete_title"), msg_text,
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         if reply == QMessageBox.Yes:
@@ -717,9 +814,8 @@ class NotesView(QWidget):
                 continue
             if query:
                 title_match = query in n.get('title', '').lower()
-                doc = QTextDocument()
-                doc.setHtml(n.get('content', ''))
-                content_match = query in doc.toPlainText().lower()
+                plain_content = html_to_plain(n.get('content', '')).lower()
+                content_match = query in plain_content
                 if not (title_match or content_match):
                     continue
             filtered.append(n)
@@ -739,82 +835,123 @@ class NotesView(QWidget):
         self.populate_grid()
 
     def populate_grid(self):
-        if self.loading_timer.isActive():
-            self.loading_timer.stop()
+        if hasattr(self, '_chunk_timer') and self._chunk_timer.isActive():
+            self._chunk_timer.stop()
 
-        for card in self.cards:
-            self.grid_layout.removeWidget(card)
-            card.deleteLater()
-        self.cards.clear()
+        self.scroll_area.setUpdatesEnabled(False)
+        self.grid_container.setUpdatesEnabled(False)
+        try:
+            for card in self.cards:
+                self.grid_layout.removeWidget(card)
+                if hasattr(card, 'prepare_for_deletion'):
+                    card.prepare_for_deletion()
+                card.deleteLater()
+            self.cards.clear()
 
-        if not self.filtered_notes_data:
-            empty_label = QLabel(t("view_empty_notes"))
-            empty_label.setObjectName("CardFilename")
-            empty_label.setAlignment(Qt.AlignCenter)
-            empty_label.setStyleSheet("font-size: 14px; color: #9AA0A6; padding: 40px;")
-            self.grid_layout.addWidget(empty_label, 0, 0)
-            self.cards.append(empty_label)
-            return
+            if not self.filtered_notes_data:
+                empty_label = QLabel(t("view_empty_notes"))
+                empty_label.setObjectName("CardFilename")
+                empty_label.setAlignment(Qt.AlignCenter)
+                empty_label.setStyleSheet("font-size: 14px; color: #9AA0A6; padding: 40px;")
+                self.grid_layout.addWidget(empty_label, 0, 0)
+                self.cards.append(empty_label)
+                self.current_columns = -1
+                self.grid_container.setMinimumHeight(0)
+                return
 
-        self.update_grid_layout()
-
-    def update_grid_layout(self):
-        if self.cards and not isinstance(self.cards[0], QLabel):
             width = self.scroll_area.viewport().width()
+            if width <= 100:
+                width = self.scroll_area.width() - 48
+            if width <= 100:
+                width = 860
+
             card_width = 240
             spacing = 16
-            columns = max(1, (width + spacing) // (card_width + spacing))
-            
-            for i, card in enumerate(self.cards):
-                self.grid_layout.removeWidget(card)
-                row = i // columns
-                col = i % columns
-                self.grid_layout.addWidget(card, row, col)
+            scrollbar_w = 16 if len(self.filtered_notes_data) > 12 else 0
+            avail_w = max(100, width - scrollbar_w)
+            columns = max(1, (avail_w + spacing) // (card_width + spacing))
+            self.current_columns = columns
+
+            total_rows = (len(self.filtered_notes_data) + columns - 1) // columns
+            row_height = 260 + spacing
+            self.grid_container.setMinimumHeight(total_rows * row_height)
+
+            # Responsive Phase 1: fill entire visible screen (FHD: ~24, 2K/4K: ~40-60 notes)
+            viewport_h = max(600, self.scroll_area.viewport().height())
+            visible_rows = (viewport_h // row_height) + 2
+            needed_cards = max(24, columns * visible_rows)
+            initial_count = min(needed_cards, len(self.filtered_notes_data))
+            for i in range(initial_count):
+                card = self._create_card(self.filtered_notes_data[i])
+                self.grid_layout.addWidget(card, i // columns, i % columns)
+                self.cards.append(card)
+        finally:
+            self.grid_container.setUpdatesEnabled(True)
+            self.scroll_area.setUpdatesEnabled(True)
+
+        if len(self.filtered_notes_data) > initial_count:
+            self._pending_load_index = initial_count
+            if not hasattr(self, '_chunk_timer'):
+                self._chunk_timer = QTimer(self)
+                self._chunk_timer.setSingleShot(True)
+                self._chunk_timer.timeout.connect(self._load_remaining_notes)
+            self._chunk_timer.start(0)
+
+        self.scroll_check_timer.start(10)
+
+    def _load_remaining_notes(self):
+        if not hasattr(self, '_pending_load_index') or self._pending_load_index >= len(self.filtered_notes_data):
             return
 
-        self.pending_cards_data = list(self.filtered_notes_data)
-        self.current_loading_index = 0
-        self.loading_timer.start(10)
+        columns = self.current_columns if self.current_columns > 0 else 1
+        chunk_size = 40
+        end_idx = min(self._pending_load_index + chunk_size, len(self.filtered_notes_data))
 
-    def load_next_batch(self):
-        if not self.pending_cards_data or self.current_loading_index >= len(self.pending_cards_data):
-            self.loading_timer.stop()
+        self.scroll_area.setUpdatesEnabled(False)
+        self.grid_container.setUpdatesEnabled(False)
+        try:
+            for i in range(self._pending_load_index, end_idx):
+                card = self._create_card(self.filtered_notes_data[i])
+                self.grid_layout.addWidget(card, i // columns, i % columns)
+                self.cards.append(card)
+        finally:
+            self.grid_container.setUpdatesEnabled(True)
+            self.scroll_area.setUpdatesEnabled(True)
+
+        self._pending_load_index = end_idx
+        if self._pending_load_index < len(self.filtered_notes_data):
+            self._chunk_timer.start(0)
+
+    def update_grid_layout(self):
+        if not self.cards or isinstance(self.cards[0], QLabel):
             return
 
         width = self.scroll_area.viewport().width()
         card_width = 240
         spacing = 16
-        columns = max(1, (width + spacing) // (card_width + spacing))
+        total_items = len(self.filtered_notes_data) if getattr(self, 'filtered_notes_data', None) else len(self.cards)
+        scrollbar_w = 16 if total_items > 12 else 0
+        avail_w = max(100, width - scrollbar_w)
+        columns = max(1, (avail_w + spacing) // (card_width + spacing))
 
-        batch_size = 20
-        end_index = min(self.current_loading_index + batch_size, len(self.pending_cards_data))
+        if columns == self.current_columns:
+            return
 
-        for i in range(self.current_loading_index, end_index):
-            note = self.pending_cards_data[i]
-            card = NoteCardWidget(note, is_trash=self.is_trash, parent=self)
-            card.selection_toggled.connect(self.on_card_selection_toggled)
-            card.corkboard_pin_toggled.connect(self.corkboard_pin_toggled.emit)
-            card.color_changed.connect(self.note_color_changed.emit)
-            
-            if card.note_data.get('id') in self.selected_note_ids:
-                card.set_selected(True)
-                
-            if self.is_trash:
-                card.restore_requested.connect(self.note_restore_requested.emit)
-                card.perm_delete_requested.connect(self.note_perm_delete_requested.emit)
-            else:
-                card.clicked.connect(self.note_clicked.emit)
-                card.favorite_toggled.connect(self.note_favorite_toggled.emit)
-                card.hide_requested.connect(self.note_hide_requested.emit)
-                card.unhide_requested.connect(self.note_unhide_requested.emit)
-            row = i // columns
-            col = i % columns
-            self.grid_layout.addWidget(card, row, col)
-            self.cards.append(card)
+        self.current_columns = columns
+        total_rows = (total_items + columns - 1) // columns
+        row_height = 260 + spacing
+        self.grid_container.setMinimumHeight(total_rows * row_height)
 
-        self.current_loading_index = end_index
-        if self.current_loading_index >= len(self.pending_cards_data):
-            self.loading_timer.stop()
+        self.scroll_area.setUpdatesEnabled(False)
+        self.grid_container.setUpdatesEnabled(False)
+        try:
+            for i, card in enumerate(self.cards):
+                self.grid_layout.addWidget(card, i // columns, i % columns)
+        finally:
+            self.grid_container.setUpdatesEnabled(True)
+            self.scroll_area.setUpdatesEnabled(True)
+
+        self.scroll_check_timer.start(20)
 
     def on_filter_changed(self):
         self.apply_filters_and_sorting()
@@ -824,7 +961,43 @@ class NotesView(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if event.oldSize().width() <= 0 or event.oldSize().width() == event.size().width():
+            return
+
+        width = self.scroll_area.viewport().width()
+        card_width = 240
+        spacing = 16
+        scrollbar_w = 16 if len(self.cards) > 12 else 0
+        avail_w = max(100, width - scrollbar_w)
+        columns = max(1, (avail_w + spacing) // (card_width + spacing))
+        
+        if columns != self.current_columns:
+            self.resize_debounce_timer.start(35)
+
+    def _on_debounced_resize(self):
         self.update_grid_layout()
+
+    def check_visible_cards(self):
+        if not self.cards or isinstance(self.cards[0], QLabel):
+            return
+        viewport = self.scroll_area.viewport()
+        if not viewport or not viewport.isVisible():
+            return
+
+        columns = self.current_columns if self.current_columns > 0 else 1
+        scroll_y = self.scroll_area.verticalScrollBar().value()
+        viewport_h = viewport.height()
+        row_h = 260 + 16 # card height + spacing
+        first_row = max(0, (scroll_y - 300) // row_h)
+        last_row = (scroll_y + viewport_h + 350) // row_h
+        first_idx = int(first_row * columns)
+        last_idx = min(len(self.cards), int((last_row + 1) * columns))
+
+        for i in range(first_idx, last_idx):
+            card = self.cards[i]
+            if isinstance(card, NoteCardWidget):
+                if not (getattr(card, 'image_loaded', False) or getattr(card, 'image_loading', False)):
+                    card.ensure_image_loaded()
 
     def update_card_favorite(self, note_id, is_favorite):
         for n in self.notes_data:
@@ -853,9 +1026,16 @@ class NotesView(QWidget):
         self.title_label.setText(t("view_recycle_bin") if self.is_trash else t("view_all_notes"))
         self.search_edit.setPlaceholderText(t("view_search_notes_placeholder"))
         self.fav_toggle_btn.setText(t("view_favorites"))
-        self.empty_trash_btn.setText(t("view_empty_trash_btn"))
+        self.empty_trash_btn.setText("🗑️ " + t("trash_empty_title"))
         self.new_note_btn.setText(t("new_note"))
         
+        self.select_all_btn.setText(t("bulk_select_all"))
+        self.clear_select_btn.setText(t("bulk_clear_selection"))
+        self.bulk_pin_btn.setText(t("bulk_pin_corkboard"))
+        self.bulk_restore_btn.setText(t("bulk_restore"))
+        self.bulk_delete_btn.setText(t("bulk_delete"))
+        self.update_bulk_bar()
+
         self.sort_combo.blockSignals(True)
         current_idx = self.sort_combo.currentIndex()
         self.sort_combo.clear()

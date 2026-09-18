@@ -9,8 +9,12 @@
 
 # scanner.py
 import os
+import time
 from PySide6.QtCore import QThread, Signal
 import database
+
+SUPPORTED_EXTENSIONS = ('.safetensors', '.ckpt', '.gguf', '.pt', '.bin', '.onnx')
+IGNORED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', '.idea', '.vscode', '.system_generated'}
 
 class ModelScanner(QThread):
     progress_signal = Signal(str) # Filename currently being indexed
@@ -33,9 +37,14 @@ class ModelScanner(QThread):
 
         scanned_count = 0
         batch = []
+        last_progress_emit = 0.0
+        files_since_emit = 0
         
         # Walk through directory
         for root, dirs, files in os.walk(self.directory_path):
+            # Prune ignored directories in-place to avoid unnecessary traversal
+            dirs[:] = [d for d in dirs if d.lower() not in IGNORED_DIRS and not d.startswith('.')]
+
             for file in files:
                 if self.isInterruptionRequested():
                     if batch:
@@ -43,10 +52,18 @@ class ModelScanner(QThread):
                     self.finished_signal.emit(scanned_count)
                     return
                 
-                # Scan safetensors and checkpoints
-                if file.endswith(('.safetensors', '.ckpt')):
+                # Scan safetensors, checkpoints, gguf, pt, bin, onnx
+                if file.lower().endswith(SUPPORTED_EXTENSIONS):
                     file_path = os.path.join(root, file)
-                    self.progress_signal.emit(file)
+                    scanned_count += 1
+                    files_since_emit += 1
+                    
+                    # Throttle progress signals: emit at most every 25 files or 100ms
+                    now = time.time()
+                    if files_since_emit >= 25 or (now - last_progress_emit) >= 0.1:
+                        self.progress_signal.emit(file)
+                        last_progress_emit = now
+                        files_since_emit = 0
                     
                     # Store empty/dummy hash since we are offline and need instant response
                     file_hash = ""
@@ -54,7 +71,6 @@ class ModelScanner(QThread):
                     # Register to database in batch (name defaults to filename without extension)
                     name = os.path.splitext(file)[0]
                     batch.append((library_id, name, file_path, file_hash))
-                    scanned_count += 1
                     
                     # Insert in batches of 100 to reduce transaction and IO locking overhead
                     if len(batch) >= 100:

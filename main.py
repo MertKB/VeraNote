@@ -14,7 +14,7 @@ os.environ["QT_LOGGING_RULES"] = "qt.qpa.gl=false;*.warning=false"
 import shutil
 import time
 import json
-from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog, QInputDialog
 from PySide6.QtCore import Slot, Qt
 
 import database
@@ -57,6 +57,9 @@ class AppController:
         self.win.workflow_favorite_toggled_signal.connect(self.on_workflow_favorite_toggled)
         self.win.add_tag_signal.connect(self.on_add_tag)
         self.win.delete_tag_signal.connect(self.on_delete_tag)
+        self.win.bulk_add_tag_signal.connect(self.on_bulk_add_tag)
+        self.win.bulk_remove_tag_signal.connect(self.on_bulk_remove_tag)
+        self.win.bulk_favorite_signal.connect(self.on_bulk_favorite)
         
         # Connect Sidebar "Tüm Notlar", "Çöp Kutusu" and "+ Yeni Not" redirect
         self.win.sidebar.all_notes_requested.connect(self.on_all_notes_requested)
@@ -102,6 +105,7 @@ class AppController:
         self.win.welcome_screen.corkboard_unpin_requested.connect(self.on_corkboard_unpin)
         self.win.welcome_screen.corkboard_position_changed.connect(self.on_corkboard_position_changed)
         self.win.welcome_screen.note_open_requested.connect(self.open_note_in_drawer)
+        self.win.welcome_screen.setting_changed.connect(database.set_setting)
 
         # Connect NotesView Corkboard & Bulk Actions
         self.win.notes_view.corkboard_pin_toggled.connect(self.on_corkboard_pin_toggled)
@@ -112,7 +116,7 @@ class AppController:
         self.win.detail_panel.note_color_changed.connect(self.on_note_color_changed)
 
         # Load theme and language settings from DB
-        lang = database.get_setting("lang", "tr")
+        lang = database.get_setting("lang", "en")
         theme = database.get_setting("theme", "Koyu Gece")
         custom_colors = database.get_setting("custom_theme_colors", "{}")
         i18n.set_lang(lang)
@@ -122,12 +126,29 @@ class AppController:
         # Load Welcome customizations from DB
         w_title = database.get_setting("welcome_title", i18n.t("welcome_title_default"))
         w_wallpaper = database.get_setting("welcome_wallpaper", "")
+        welcome_keys = [
+            "corkboard_mode", "corkboard_coord_mode", "home_positions_locked", "welcome_title_visible",
+            "welcome_title_font_size", "welcome_title_font_family", "welcome_title_font_weight",
+            "welcome_title_w", "welcome_title_h", "welcome_title_color",
+            "welcome_title_outline_color", "welcome_title_outline_width",
+            "welcome_title_frame_enabled", "welcome_title_frame_bg", "welcome_title_frame_border_color",
+            "quick_note_visible", "quick_note_bg", "quick_note_border_color",
+            "quick_note_w", "quick_note_h", "corkboard_notes_visible", "corkboard_show_images",
+            "welcome_title_x", "welcome_title_y", "quick_note_x", "quick_note_y"
+        ]
+        welcome_settings = {k: database.get_setting(k) for k in welcome_keys if database.get_setting(k) is not None}
+        self.win.welcome_screen.load_settings(welcome_settings)
         self.win.welcome_screen.title_label.setText(w_title)
         self.win.welcome_screen.set_wallpaper(w_wallpaper)
 
+        # ComfyUI Features Enabled state
+        self.comfyui_enabled = database.get_setting("comfyui_enabled", "1") == "1"
+        self.win.set_comfyui_enabled(self.comfyui_enabled)
+
         # Initial UI populate
         self.refresh_notes()
-        self.refresh_libraries()
+        if self.comfyui_enabled:
+            self.refresh_libraries()
         self.win.show_welcome()
 
     def refresh_notes(self, search_query=None):
@@ -175,7 +196,7 @@ class AppController:
         saved_id = database.save_note(note_id, title, content)
         self.refresh_notes()
         self.open_note_in_drawer(saved_id)
-        self.win.statusBar().showMessage("Not başarıyla kaydedildi.", 2000)
+        self.win.statusBar().showMessage(i18n.t("note_saved"), 2000)
 
     @Slot(int)
     def on_note_selected(self, note_id):
@@ -191,10 +212,10 @@ class AppController:
 
     @Slot()
     def on_create_new_note(self):
-        new_id = database.save_note(None, "Yeni Not", "<p></p>", None, "WITH_IMAGE", 0)
+        new_id = database.save_note(None, i18n.t("notes_new_title"), "<p></p>", None, "WITH_IMAGE", 0)
         self.refresh_notes()
         self.open_note_in_drawer(new_id)
-        self.win.statusBar().showMessage("Yeni boş not oluşturuldu.", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_new_note"), 2000)
 
     @Slot(dict)
     def on_note_clicked_from_grid(self, note_data):
@@ -207,7 +228,6 @@ class AppController:
         self.win.sidebar.libraries_list.clearSelection()
         all_notes = database.get_notes(show_hidden=self.incognito_active)
         self.win.show_notes_panel(all_notes, is_trash=False)
-        self.refresh_notes()
 
     @Slot()
     def on_trash_requested(self):
@@ -216,25 +236,24 @@ class AppController:
         self.win.sidebar.libraries_list.clearSelection()
         deleted_notes = database.get_notes(only_deleted=True, show_hidden=self.incognito_active)
         self.win.show_notes_panel(deleted_notes, is_trash=True)
-        self.refresh_notes()
 
     @Slot(int)
     def on_note_restore_requested(self, note_id):
         database.restore_note(note_id)
         self.refresh_notes()
-        self.win.statusBar().showMessage("Not çöp kutusundan geri yüklendi.", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_restored"), 2000)
 
     @Slot(int)
     def on_note_perm_delete_requested(self, note_id):
         database.permanently_delete_note(note_id)
         self.refresh_notes()
-        self.win.statusBar().showMessage("Not kalıcı olarak silindi.", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_perm_deleted"), 2000)
 
     @Slot()
     def on_empty_trash(self):
         database.empty_recycle_bin()
         self.refresh_notes()
-        self.win.statusBar().showMessage("Çöp kutusu tamamen boşaltıldı.", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_trash_emptied"), 2000)
 
     @Slot(int)
     def on_detail_delete_note(self, note_id):
@@ -247,19 +266,19 @@ class AppController:
         new_id = database.save_note(None, title, content, None, "WITH_IMAGE", 0)
         database.toggle_corkboard_pin(new_id, is_pinned=True)
         self.refresh_notes()
-        self.win.statusBar().showMessage("Not Mantar Panoya yapıştırıldı! 📌", 2500)
+        self.win.statusBar().showMessage(i18n.t("status_pasted_corkboard"), 2500)
 
     @Slot(int)
     def on_corkboard_unpin(self, note_id):
         database.toggle_corkboard_pin(note_id, is_pinned=False)
         self.refresh_notes()
-        self.win.statusBar().showMessage("Not Mantar Panodan çıkarıldı.", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_unpinned_corkboard"), 2000)
 
     @Slot(int, str)
     def on_note_color_changed(self, note_id, color_hex):
         database.update_note_color(note_id, color_hex)
         self.refresh_notes()
-        self.win.statusBar().showMessage("Not rengi güncellendi 🎨", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_color_updated"), 2000)
 
     @Slot(object)
     def on_corkboard_position_changed(self, note_id, x, y, w=None, h=None):
@@ -269,21 +288,20 @@ class AppController:
     def on_corkboard_pin_toggled(self, note_id, is_pinned):
         database.toggle_corkboard_pin(note_id, is_pinned=is_pinned)
         self.refresh_notes()
-        msg = "Not Mantar Panoya sabitlendi 📌" if is_pinned else "Not Mantar Panodan çıkarıldı"
+        msg = i18n.t("status_pinned_corkboard") if is_pinned else i18n.t("status_unpinned_corkboard")
         self.win.statusBar().showMessage(msg, 2000)
 
     @Slot(list, bool)
     def on_bulk_delete_notes(self, note_ids, is_trash):
         database.delete_notes_bulk(note_ids, is_trash=is_trash)
         self.refresh_notes()
-        self.win.statusBar().showMessage(f"{len(note_ids)} not silindi.", 2500)
+        self.win.statusBar().showMessage(f"{len(note_ids)} " + (i18n.t("status_deleted") if is_trash else i18n.t("status_moved_trash")), 2500)
 
     @Slot(list)
     def on_bulk_restore_notes(self, note_ids):
         database.restore_notes_bulk(note_ids)
         self.refresh_notes()
-        self.win.statusBar().showMessage(f"{len(note_ids)} not geri yüklendi.", 2500)
-        self.win.statusBar().showMessage("Not çöp kutusuna taşındı.", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_restored"), 2000)
 
     @Slot(int, bool)
     def on_note_favorite_toggled(self, note_id, is_favorite):
@@ -366,7 +384,7 @@ class AppController:
             # Full save (explicit save): refresh everything normally
             self.refresh_notes()
             self.open_note_in_drawer(note_id)
-            self.win.statusBar().showMessage("Not başarıyla kaydedildi.", 2000)
+            self.win.statusBar().showMessage(i18n.t("note_saved"), 2000)
 
 
 
@@ -420,12 +438,12 @@ class AppController:
         database.add_workflow(library_id, name, file_path, description, image_path)
         self.refresh_workflow_grid(library_id)
         self.refresh_libraries() # update badge counts in sidebar
-        self.win.statusBar().showMessage(f"Workflow '{name}' başarıyla eklendi.", 3000)
+        self.win.statusBar().showMessage(i18n.t("status_wf_added").format(name=name), 3000)
 
     @Slot(int, str, str, str)
     def on_save_workflow_data(self, workflow_id, name, description, notes):
         database.update_workflow_data(workflow_id, name, description, notes)
-        self.win.statusBar().showMessage("Workflow bilgileri kaydedildi.", 3000)
+        self.win.statusBar().showMessage(i18n.t("status_wf_saved"), 3000)
         
         wf = database.get_workflow_by_id(workflow_id)
         if wf:
@@ -450,7 +468,7 @@ class AppController:
             self.win.hide_detail_panel()
             self.refresh_workflow_grid(library_id)
             self.refresh_libraries()
-            self.win.statusBar().showMessage("Workflow başarıyla silindi.", 3000)
+            self.win.statusBar().showMessage(i18n.t("status_wf_deleted"), 3000)
 
     @Slot(int, str)
     def on_workflow_image_changed(self, workflow_id, file_path):
@@ -478,7 +496,7 @@ class AppController:
                         print(f"Error removing old image file {old_path}: {clean_err}")
 
             database.update_workflow_image(workflow_id, dest_path)
-            self.win.statusBar().showMessage("Workflow görseli güncellendi.", 3000)
+            self.win.statusBar().showMessage(i18n.t("status_wf_img_updated"), 3000)
             
             wf = database.get_workflow_by_id(workflow_id)
             if wf:
@@ -517,7 +535,7 @@ class AppController:
     @Slot(str)
     def on_welcome_title_changed(self, new_title):
         database.set_setting("welcome_title", new_title)
-        self.win.statusBar().showMessage("Ana sayfa başlığı güncellendi.", 3000)
+        self.win.statusBar().showMessage(i18n.t("status_title_updated"), 3000)
 
     @Slot(str)
     def on_welcome_wallpaper_changed(self, file_path):
@@ -545,7 +563,7 @@ class AppController:
 
             database.set_setting("welcome_wallpaper", dest_path)
             self.win.welcome_screen.set_wallpaper(dest_path)
-            self.win.statusBar().showMessage("Ana sayfa arka planı güncellendi.", 3000)
+            self.win.statusBar().showMessage(i18n.t("status_bg_updated"), 3000)
         except OSError as e:
             QMessageBox.critical(
                 self.win, i18n.t("msg_copy_error_title"), 
@@ -558,18 +576,20 @@ class AppController:
     @Slot()
     def on_settings_requested(self):
         dialog = SettingsDialog(self.win)
+        comfyui_enabled = int(database.get_setting("comfyui_enabled", "1"))
         lora_path = database.get_setting("lora_path", "")
         ckpt_path = database.get_setting("ckpt_path", "")
         auto_save_enabled = database.get_setting("auto_save_enabled", "1")
         auto_save_interval = database.get_setting("auto_save_interval", "1.5")
         theme = database.get_setting("theme", "Koyu Gece")
-        lang = database.get_setting("lang", "tr")
+        lang = database.get_setting("lang", "en")
         custom_colors = database.get_setting("custom_theme_colors", "{}")
         
-        dialog.set_settings(lora_path, ckpt_path, int(auto_save_enabled), float(auto_save_interval), theme, lang, custom_colors)
+        dialog.set_settings(lora_path, ckpt_path, int(auto_save_enabled), float(auto_save_interval), theme, lang, custom_colors, comfyui_enabled=comfyui_enabled)
 
         if dialog.exec():
             settings = dialog.get_settings()
+            new_comfyui = settings.get('comfyui_enabled', 1)
             new_lora = settings['lora_path']
             new_ckpt = settings['ckpt_path']
             new_ase = settings['auto_save_enabled']
@@ -580,6 +600,7 @@ class AppController:
 
             new_custom_colors_str = json.dumps(new_custom_colors)
 
+            database.set_setting("comfyui_enabled", str(new_comfyui))
             database.set_setting("lora_path", new_lora)
             database.set_setting("ckpt_path", new_ckpt)
             database.set_setting("auto_save_enabled", str(new_ase))
@@ -587,6 +608,9 @@ class AppController:
             database.set_setting("theme", new_theme)
             database.set_setting("lang", new_lang)
             database.set_setting("custom_theme_colors", new_custom_colors_str)
+
+            self.comfyui_enabled = bool(new_comfyui)
+            self.win.set_comfyui_enabled(self.comfyui_enabled)
             
             # Sync settings with DetailPanel so that it updates instantly!
             self.win.detail_panel.sync_auto_save_settings(new_ase, new_asi)
@@ -597,22 +621,25 @@ class AppController:
             self.win.retranslate_ui()
             
             # Refresh sidebar counts, names, and notes translation
-            self.refresh_libraries()
+            if self.comfyui_enabled:
+                self.refresh_libraries()
             self.refresh_notes()
             
             self.win.statusBar().showMessage(i18n.t("status_saved"), 3000)
             
-            if new_lora and os.path.exists(new_lora):
-                self.run_silent_scan(new_lora, "Lora Modelleri")
-            if new_ckpt and os.path.exists(new_ckpt):
-                self.run_silent_scan(new_ckpt, "Checkpoint Modelleri")
+            if self.comfyui_enabled:
+                if new_lora and os.path.exists(new_lora):
+                    self.run_silent_scan(new_lora, "Lora Modelleri")
+                if new_ckpt and os.path.exists(new_ckpt):
+                    self.run_silent_scan(new_ckpt, "Checkpoint Modelleri")
 
     def run_silent_scan(self, path, library_name):
         scanner = ModelScanner(path, library_name, self.win)
         self.running_scanners.append(scanner)
         
         def on_finished(count):
-            self.win.statusBar().showMessage(f"'{library_name}' otomatik tarandı: {count} model yüklendi.", 4000)
+            disp_name = self.win.sidebar.tr_lib_name(library_name)
+            self.win.statusBar().showMessage(i18n.t("status_auto_scanned").format(name=disp_name, count=count), 4000)
             self.refresh_libraries() # Refresh counts in sidebar
             if self.active_library == library_name:
                 self.on_library_selected(library_name)
@@ -626,7 +653,8 @@ class AppController:
     @Slot(int, str, str)
     def on_save_model_data(self, model_id, name, notes):
         database.update_model_data(model_id, name, notes)
-        self.win.statusBar().showMessage("Model bilgileri kaydedildi.", 3000)
+        self.win.statusBar().showMessage(i18n.t("status_model_saved"), 3000)
+        self.win.show_toast(i18n.t("toast_saved"), "success")
         
         model_data = database.get_model_by_id(model_id)
         trigger_words = database.get_trigger_words(model_id)
@@ -638,7 +666,7 @@ class AppController:
     @Slot(int, str)
     def on_add_trigger(self, model_id, word):
         if database.add_trigger_word(model_id, word):
-            self.win.statusBar().showMessage(f"'{word}' tetikleyici kelimesi eklendi.", 2000)
+            self.win.statusBar().showMessage(i18n.t("status_trigger_added").format(word=word), 2000)
             model_data = database.get_model_by_id(model_id)
             trigger_words = database.get_trigger_words(model_id)
             if model_data:
@@ -647,7 +675,7 @@ class AppController:
     @Slot(int, str)
     def on_delete_trigger(self, model_id, word):
         database.delete_trigger_word(model_id, word)
-        self.win.statusBar().showMessage(f"'{word}' tetikleyici kelimesi silindi.", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_trigger_deleted").format(word=word), 2000)
         model_data = database.get_model_by_id(model_id)
         trigger_words = database.get_trigger_words(model_id)
         if model_data:
@@ -679,7 +707,7 @@ class AppController:
                         print(f"Error removing old image file {old_path}: {clean_err}")
 
             database.update_model_image(model_id, dest_path)
-            self.win.statusBar().showMessage("Model görseli güncellendi.", 3000)
+            self.win.statusBar().showMessage(i18n.t("status_model_img_updated"), 3000)
             
             model_data = database.get_model_by_id(model_id)
             trigger_words = database.get_trigger_words(model_id)
@@ -698,9 +726,9 @@ class AppController:
 
     @Slot(str)
     def on_scan_library(self, library_name):
-        if library_name == "Lora Modelleri":
+        if library_name in ("Lora Modelleri", "Lora Models"):
             dir_path = database.get_setting("lora_path", "")
-        elif library_name == "Checkpoint Modelleri":
+        elif library_name in ("Checkpoint Modelleri", "Checkpoint Models"):
             dir_path = database.get_setting("ckpt_path", "")
         else:
             QMessageBox.warning(self.win, i18n.t("msg_copy_error_title"), i18n.t("msg_unknown_lib_text").format(name=library_name), QMessageBox.Ok)
@@ -738,10 +766,9 @@ class AppController:
             
         self.refresh_libraries() # Refresh counts in sidebar
         
-        QMessageBox.information(
-            self.win, i18n.t("msg_scan_completed_title"), 
-            i18n.t("msg_scan_completed_text").format(count=count), 
-            QMessageBox.Ok
+        self.win.show_toast(
+            i18n.t("toast_scan_completed").format(count=count), 
+            "success"
         )
         
         if self.active_library:
@@ -752,7 +779,7 @@ class AppController:
     def cancel_scan(self):
         if self.scan_thread and self.scan_thread.isRunning():
             self.scan_thread.requestInterruption()
-            self.win.statusBar().showMessage("Tarama iptal ediliyor...", 3000)
+            self.win.statusBar().showMessage(i18n.t("status_cancelling_scan"), 3000)
 
     @Slot(int, bool)
     def on_favorite_toggled(self, model_id, is_favorite):
@@ -762,19 +789,69 @@ class AppController:
         if self.win.detail_panel.isVisible() and self.win.detail_panel.model_data and self.win.detail_panel.model_data['id'] == model_id:
             self.win.detail_panel.model_data['is_favorite'] = 1 if is_favorite else 0
             
-        self.win.statusBar().showMessage("Favori durumu güncellendi.", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_fav_updated"), 2000)
 
     @Slot(int, str)
     def on_add_tag(self, model_id, tag_name):
         if database.add_model_tag(model_id, tag_name):
-            self.win.statusBar().showMessage(f"Etiket '{tag_name}' eklendi.", 2000)
+            self.win.statusBar().showMessage(i18n.t("status_tag_added").format(tag_name=tag_name), 2000)
+            self.win.show_toast(i18n.t("status_tag_added").format(tag_name=tag_name), "success")
             self.refresh_active_model_details(model_id)
 
     @Slot(int, str)
     def on_delete_tag(self, model_id, tag_name):
         if database.delete_model_tag(model_id, tag_name):
-            self.win.statusBar().showMessage(f"Etiket '{tag_name}' kaldırıldı.", 2000)
+            self.win.statusBar().showMessage(i18n.t("status_tag_removed").format(tag_name=tag_name), 2000)
+            self.win.show_toast(i18n.t("status_tag_removed").format(tag_name=tag_name), "info")
             self.refresh_active_model_details(model_id)
+
+    @Slot(list)
+    def on_bulk_add_tag(self, model_ids):
+        if not model_ids:
+            return
+        tag_name, ok = QInputDialog.getText(
+            self.win, i18n.t("bulk_add_tag_title"), i18n.t("bulk_add_tag_label")
+        )
+        if ok and tag_name.strip():
+            tag = tag_name.strip()
+            for m_id in model_ids:
+                database.add_model_tag(m_id, tag)
+            self.win.show_toast(i18n.t("bulk_tag_done").format(count=len(model_ids), tag=tag), "success")
+            if self.active_library:
+                self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)
+                self.win.library_view.apply_filters()
+            if self.win.detail_panel.isVisible() and self.win.detail_panel.model_data and self.win.detail_panel.model_data['id'] in model_ids:
+                self.refresh_active_model_details(self.win.detail_panel.model_data['id'])
+
+    @Slot(list)
+    def on_bulk_remove_tag(self, model_ids):
+        if not model_ids:
+            return
+        tag_name, ok = QInputDialog.getText(
+            self.win, i18n.t("bulk_remove_tag_title"), i18n.t("bulk_remove_tag_label")
+        )
+        if ok and tag_name.strip():
+            tag = tag_name.strip()
+            for m_id in model_ids:
+                database.delete_model_tag(m_id, tag)
+            self.win.show_toast(i18n.t("bulk_tag_removed").format(count=len(model_ids), tag=tag), "info")
+            if self.active_library:
+                self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)
+                self.win.library_view.apply_filters()
+            if self.win.detail_panel.isVisible() and self.win.detail_panel.model_data and self.win.detail_panel.model_data['id'] in model_ids:
+                self.refresh_active_model_details(self.win.detail_panel.model_data['id'])
+
+    @Slot(list, bool)
+    def on_bulk_favorite(self, model_ids, is_favorite):
+        if not model_ids:
+            return
+        for m_id in model_ids:
+            database.toggle_model_favorite(m_id, is_favorite)
+            self.win.library_view.update_card_favorite(m_id, is_favorite)
+        self.win.show_toast(i18n.t("bulk_fav_done").format(count=len(model_ids)), "success")
+        if self.active_library:
+            self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)
+            self.win.library_view.apply_filters()
 
     def refresh_active_model_details(self, model_id):
         fresh_model_data = database.get_model_by_id(model_id)
@@ -815,7 +892,7 @@ class AppController:
         model_id = model_data['id'] if isinstance(model_data, dict) else model_data
         name = model_data.get('name', '') if isinstance(model_data, dict) else f"#{model_id}"
         database.set_model_hidden(model_id, True)
-        self.win.statusBar().showMessage(f"Model gizlendi: {name}", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_model_hidden").format(name=name), 2000)
         self.refresh_libraries()
         if self.active_library:
             self.on_library_selected(self.active_library)
@@ -829,7 +906,7 @@ class AppController:
         model_id = model_data['id'] if isinstance(model_data, dict) else model_data
         name = model_data.get('name', '') if isinstance(model_data, dict) else f"#{model_id}"
         database.set_model_hidden(model_id, False)
-        self.win.statusBar().showMessage(f"Model gizliliği kaldırıldı: {name}", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_model_unhidden").format(name=name), 2000)
         self.refresh_libraries()
         if self.active_library:
             self.on_library_selected(self.active_library)
@@ -841,7 +918,7 @@ class AppController:
         workflow_id = workflow_data['id'] if isinstance(workflow_data, dict) else workflow_data
         name = workflow_data.get('name', '') if isinstance(workflow_data, dict) else f"#{workflow_id}"
         database.set_workflow_hidden(workflow_id, True)
-        self.win.statusBar().showMessage(f"Workflow gizlendi: {name}", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_wf_hidden").format(name=name), 2000)
         self.refresh_libraries()
         if self.active_workflow_library:
             self.on_workflow_library_selected(self.active_workflow_library)
@@ -855,7 +932,7 @@ class AppController:
         workflow_id = workflow_data['id'] if isinstance(workflow_data, dict) else workflow_data
         name = workflow_data.get('name', '') if isinstance(workflow_data, dict) else f"#{workflow_id}"
         database.set_workflow_hidden(workflow_id, False)
-        self.win.statusBar().showMessage(f"Workflow gizliliği kaldırıldı: {name}", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_wf_unhidden").format(name=name), 2000)
         self.refresh_libraries()
         if self.active_workflow_library:
             self.on_workflow_library_selected(self.active_workflow_library)
@@ -867,7 +944,7 @@ class AppController:
         note_id = note_data['id'] if isinstance(note_data, dict) else note_data
         title = note_data.get('title', '') if isinstance(note_data, dict) else f"#{note_id}"
         database.set_note_hidden(note_id, True)
-        self.win.statusBar().showMessage(f"Not gizlendi: {title}", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_note_hidden").format(title=title), 2000)
         self.refresh_notes()
         if not self.incognito_active:
             self.win.hide_detail_panel()
@@ -879,7 +956,7 @@ class AppController:
         note_id = note_data['id'] if isinstance(note_data, dict) else note_data
         title = note_data.get('title', '') if isinstance(note_data, dict) else f"#{note_id}"
         database.set_note_hidden(note_id, False)
-        self.win.statusBar().showMessage(f"Not gizliliği kaldırıldı: {title}", 2000)
+        self.win.statusBar().showMessage(i18n.t("status_note_unhidden").format(title=title), 2000)
         self.refresh_notes()
         if self.win.detail_panel.isVisible() and self.win.detail_panel.mode == "NOTE" and self.win.detail_panel.note_data and self.win.detail_panel.note_data['id'] == note_id:
             self.open_note_in_drawer(note_id)

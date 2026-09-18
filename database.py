@@ -12,6 +12,10 @@ import os
 import sqlite3
 import shutil
 import contextlib
+import threading
+
+# Thread-local storage for persistent per-thread SQLite connections
+_thread_local = threading.local()
 
 # Hidden private data directory relative to AppData/Home
 db_dir = os.path.join(os.path.expanduser("~"), ".veranote_data")
@@ -55,19 +59,45 @@ for legacy_name in ["veranote_old.db"]:
         except Exception:
             pass
 
+def get_db_connection():
+    """Get or create a thread-local SQLite connection with optimized PRAGMAs."""
+    conn = getattr(_thread_local, "conn", None)
+    if conn is None:
+        conn = sqlite3.connect(DB_NAME, timeout=30.0, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA busy_timeout = 30000;")
+        _thread_local.conn = conn
+    return conn
+
+def close_db_connection():
+    """Close the active thread-local connection if present."""
+    conn = getattr(_thread_local, "conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _thread_local.conn = None
+
 @contextlib.contextmanager
 def get_connection():
-    """Return a context manager that yields a fresh connection and closes it on exit."""
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute("PRAGMA synchronous = NORMAL;")
-    conn.execute("PRAGMA foreign_keys = ON;")
+    """Return a context manager yielding the persistent thread-local connection within a transaction."""
+    conn = get_db_connection()
     try:
         with conn:
             yield conn
-    finally:
-        conn.close()
+    except sqlite3.OperationalError as e:
+        # If connection was lost or corrupted, reset thread local connection
+        if "closed" in str(e).lower() or "disk i/o error" in str(e).lower():
+            try:
+                conn.close()
+            except Exception:
+                pass
+            _thread_local.conn = None
+        raise
 
 def initialize_db():
     """Create tables if they don't exist and pre-populate default libraries."""
@@ -97,6 +127,8 @@ def initialize_db():
                 color_hex TEXT DEFAULT '#FEF08A',
                 corkboard_x INTEGER DEFAULT 0,
                 corkboard_y INTEGER DEFAULT 0,
+                corkboard_w INTEGER DEFAULT 200,
+                corkboard_h INTEGER DEFAULT 180,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -223,6 +255,10 @@ def initialize_db():
                 cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_x INTEGER DEFAULT 0;")
             if 'corkboard_y' not in columns:
                 cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_y INTEGER DEFAULT 0;")
+            if 'corkboard_w' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_w INTEGER DEFAULT 200;")
+            if 'corkboard_h' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_h INTEGER DEFAULT 180;")
                 
             conn.commit()
         except sqlite3.Error as e:
@@ -299,8 +335,9 @@ def initialize_db():
             cursor.execute("UPDATE libraries SET type = 'MODEL' WHERE name IN ('Lora Modelleri', 'Checkpoint Modelleri');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_save_enabled', '1');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_save_interval', '1.5');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('comfyui_enabled', '1');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'Koyu Gece');")
-            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('lang', 'tr');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('lang', 'en');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('custom_theme_colors', '{\"bg_main\":\"#131314\",\"bg_card\":\"#1E1F20\",\"accent_color\":\"#1A73E8\"}');")
             conn.commit()
         except sqlite3.Error as e:
@@ -323,17 +360,18 @@ def set_setting(key, value):
         conn.commit()
 
 # Notes
-def save_note(note_id, title, content, image_path=None, display_mode='WITH_IMAGE', is_favorite=0, is_deleted=0, color_hex='default'):
+def save_note(note_id, title, content, image_path=None, display_mode='WITH_IMAGE', is_favorite=0, is_deleted=0, color_hex=None):
     with get_connection() as conn:
         cursor = conn.cursor()
         if note_id is None:
+            c_hex = color_hex if color_hex is not None else 'default'
             cursor.execute("""
                 INSERT INTO notes (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex) 
                 VALUES (?, ?, ?, ?, ?, ?, ?);
-            """, (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex or 'default'))
+            """, (title, content, image_path, display_mode, is_favorite, is_deleted, c_hex))
             note_id = cursor.lastrowid
         else:
-            if color_hex:
+            if color_hex is not None:
                 cursor.execute("""
                     UPDATE notes 
                     SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, color_hex = ?, updated_at = CURRENT_TIMESTAMP 
@@ -357,20 +395,16 @@ def update_note_color(note_id, color_hex):
 def update_corkboard_geometry(note_id, x, y, w=None, h=None):
     with get_connection() as conn:
         cursor = conn.cursor()
-        try:
-            cursor.execute("PRAGMA table_info(notes);")
-            cols = [row['name'] for row in cursor.fetchall()]
-            if 'corkboard_w' not in cols:
-                cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_w INTEGER DEFAULT 200;")
-            if 'corkboard_h' not in cols:
-                cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_h INTEGER DEFAULT 180;")
-            conn.commit()
-        except sqlite3.Error:
-            pass
         if w is not None and h is not None:
-            cursor.execute("UPDATE notes SET corkboard_x = ?, corkboard_y = ?, corkboard_w = ?, corkboard_h = ? WHERE id = ?;", (int(x), int(y), int(w), int(h), note_id))
+            cursor.execute(
+                "UPDATE notes SET corkboard_x = ?, corkboard_y = ?, corkboard_w = ?, corkboard_h = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
+                (int(x), int(y), int(w), int(h), note_id)
+            )
         else:
-            cursor.execute("UPDATE notes SET corkboard_x = ?, corkboard_y = ? WHERE id = ?;", (int(x), int(y), note_id))
+            cursor.execute(
+                "UPDATE notes SET corkboard_x = ?, corkboard_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
+                (int(x), int(y), note_id)
+            )
         conn.commit()
 
 def update_corkboard_position(note_id, x, y):
@@ -406,7 +440,7 @@ def empty_recycle_bin():
         cursor.execute("DELETE FROM notes WHERE is_deleted = 1;")
         conn.commit()
 
-def get_notes(search_query=None, show_only_favs=False, sort_by="En Yeni", only_deleted=False, show_hidden=False):
+def get_notes(search_query=None, show_only_favs=False, sort_by="En Yeni", only_deleted=False, show_hidden=False, limit=None, offset=None):
     with get_connection() as conn:
         cursor = conn.cursor()
         query = "SELECT * FROM notes WHERE "
@@ -428,18 +462,26 @@ def get_notes(search_query=None, show_only_favs=False, sort_by="En Yeni", only_d
             q = f"%{search_query}%"
             params.extend([q, q])
             
-        # Sorting
-        if sort_by == "A-Z":
+        # Sorting (Multilingual: TR & EN support)
+        s_lower = (sort_by or "").lower().strip()
+        if s_lower in ("a-z", "a to z"):
             query += " ORDER BY title ASC"
-        elif sort_by == "Z-A":
+        elif s_lower in ("z-a", "z to a"):
             query += " ORDER BY title DESC"
-        elif sort_by == "En Eski":
+        elif s_lower in ("en eski", "oldest"):
             query += " ORDER BY created_at ASC"
-        elif sort_by == "En Son Düzenlenen":
+        elif s_lower in ("en son düzenlenen", "son düzenlenen", "last edited", "recently edited"):
             query += " ORDER BY updated_at DESC"
-        else: # "En Yeni"
+        else: # "En Yeni", "Newest"
             query += " ORDER BY created_at DESC"
             
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(int(limit))
+            if offset is not None:
+                query += " OFFSET ?"
+                params.append(int(offset))
+                
         cursor.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
 
@@ -490,7 +532,7 @@ def get_library_id(name):
         return row['id'] if row else None
 
 # Models
-def get_models_in_library(library_name, show_hidden=False):
+def get_models_in_library(library_name, show_hidden=False, limit=None, offset=None):
     with get_connection() as conn:
         cursor = conn.cursor()
         query = """
@@ -500,11 +542,21 @@ def get_models_in_library(library_name, show_hidden=False):
             JOIN libraries l ON m.library_id = l.id
             WHERE l.name = ?
         """
+        params = [library_name]
         if not show_hidden:
             query += " AND m.is_hidden = 0"
-        query += " ORDER BY m.name ASC;"
+        query += " ORDER BY m.name ASC"
         
-        cursor.execute(query, (library_name,))
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(int(limit))
+            if offset is not None:
+                query += " OFFSET ?"
+                params.append(int(offset))
+                
+        query += ";"
+        
+        cursor.execute(query, params)
         results = []
         for row in cursor.fetchall():
             row_dict = dict(row)
@@ -629,7 +681,7 @@ def toggle_model_favorite(model_id, is_fav):
         cursor.execute("UPDATE models SET is_favorite = ? WHERE id = ?;", (1 if is_fav else 0, model_id))
         conn.commit()
 
-def get_favorite_models(show_hidden=False):
+def get_favorite_models(show_hidden=False, limit=None, offset=None):
     with get_connection() as conn:
         cursor = conn.cursor()
         query = """
@@ -638,11 +690,19 @@ def get_favorite_models(show_hidden=False):
             FROM models m
             WHERE m.is_favorite = 1
         """
+        params = []
         if not show_hidden:
             query += " AND m.is_hidden = 0"
-        query += " ORDER BY m.name ASC;"
+        query += " ORDER BY m.name ASC"
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(int(limit))
+            if offset is not None:
+                query += " OFFSET ?"
+                params.append(int(offset))
+        query += ";"
         
-        cursor.execute(query)
+        cursor.execute(query, params)
         results = []
         for row in cursor.fetchall():
             row_dict = dict(row)
@@ -947,14 +1007,6 @@ def set_workflow_hidden(workflow_id, is_hidden):
 def get_corkboard_notes(show_hidden=False):
     with get_connection() as conn:
         cursor = conn.cursor()
-        try:
-            cursor.execute("PRAGMA table_info(notes);")
-            cols = [row['name'] for row in cursor.fetchall()]
-            if 'is_pinned_corkboard' not in cols:
-                cursor.execute("ALTER TABLE notes ADD COLUMN is_pinned_corkboard INTEGER DEFAULT 0;")
-                conn.commit()
-        except sqlite3.Error:
-            pass
         query = "SELECT * FROM notes WHERE is_deleted = 0 AND is_pinned_corkboard = 1"
         if not show_hidden:
             query += " AND is_hidden = 0"
@@ -999,4 +1051,44 @@ def restore_notes_bulk(note_ids):
         placeholders = ",".join("?" for _ in note_ids)
         cursor.execute(f"UPDATE notes SET is_deleted = 0, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders});", note_ids)
         conn.commit()
+
+def get_storage_stats():
+    """Calculate storage sizes for database and asset files."""
+    db_size = 0
+    if os.path.exists(DB_NAME):
+        try:
+            db_size = os.path.getsize(DB_NAME)
+        except Exception:
+            pass
+
+    assets_size = 0
+    if os.path.exists(db_dir):
+        try:
+            for root, dirs, files in os.walk(db_dir):
+                for file in files:
+                    filepath = os.path.join(root, file)
+                    if os.path.exists(filepath) and filepath != DB_NAME:
+                        assets_size += os.path.getsize(filepath)
+        except Exception:
+            pass
+
+    workspace_images = os.path.join(os.path.dirname(os.path.abspath(__file__)), "images")
+    if os.path.exists(workspace_images):
+        try:
+            for root, dirs, files in os.walk(workspace_images):
+                for file in files:
+                    filepath = os.path.join(root, file)
+                    if os.path.exists(filepath):
+                        assets_size += os.path.getsize(filepath)
+        except Exception:
+            pass
+
+    def format_size(size):
+        if size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        else:
+            return f"{size / (1024 * 1024):.1f} MB"
+
+    return format_size(db_size), format_size(assets_size), format_size(db_size + assets_size)
+
 
