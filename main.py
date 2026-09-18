@@ -115,6 +115,19 @@ class AppController:
         self.win.detail_panel.corkboard_pin_toggled.connect(self.on_corkboard_pin_toggled)
         self.win.detail_panel.note_color_changed.connect(self.on_note_color_changed)
 
+        # Connect Agenda Signals
+        self.win.sidebar.agenda_requested.connect(self.on_agenda_requested)
+        self.win.agenda_view.date_selected.connect(self.on_agenda_date_selected)
+        self.win.agenda_view.month_changed.connect(self.on_agenda_month_changed)
+        self.win.agenda_view.note_autosave_requested.connect(self.on_agenda_note_autosave)
+        self.win.agenda_view.task_add_requested.connect(self.on_agenda_task_add)
+        self.win.agenda_view.task_toggle_requested.connect(self.on_agenda_task_toggle)
+        self.win.agenda_view.task_delete_requested.connect(self.on_agenda_task_delete)
+
+        # Initialize agenda active date
+        import datetime
+        self.agenda_active_date = datetime.date.today().isoformat()
+
         # Load theme and language settings from DB
         lang = database.get_setting("lang", "en")
         theme = database.get_setting("theme", "Koyu Gece")
@@ -236,6 +249,77 @@ class AppController:
         self.win.sidebar.libraries_list.clearSelection()
         deleted_notes = database.get_notes(only_deleted=True, show_hidden=self.incognito_active)
         self.win.show_notes_panel(deleted_notes, is_trash=True)
+
+    @Slot()
+    def on_agenda_requested(self):
+        self.win.show_agenda()
+        if not hasattr(self, 'agenda_active_date') or not self.agenda_active_date:
+            import datetime
+            self.agenda_active_date = datetime.date.today().isoformat()
+        self.on_agenda_date_selected(self.agenda_active_date)
+
+    @Slot(str)
+    def on_agenda_date_selected(self, date_str: str):
+        self.agenda_active_date = date_str
+        note = database.get_or_create_daily_note(date_str)
+        tasks = database.get_tasks_for_date(date_str)
+        self.win.agenda_view.set_date_data(date_str, note.get('content', ''), tasks)
+        # Also refresh indicators for the current month
+        try:
+            import datetime
+            dt = datetime.date.fromisoformat(date_str)
+            indicators = database.get_month_task_indicators(dt.year, dt.month)
+            self.win.agenda_view.set_indicators(indicators)
+        except Exception:
+            pass
+
+    @Slot(int, int)
+    def on_agenda_month_changed(self, year: int, month: int):
+        indicators = database.get_month_task_indicators(year, month)
+        self.win.agenda_view.set_indicators(indicators)
+
+    def refresh_agenda_indicators(self):
+        import datetime
+        target_date = getattr(self, 'agenda_active_date', None) or datetime.date.today().isoformat()
+        try:
+            dt = datetime.date.fromisoformat(target_date)
+            y, m = dt.year, dt.month
+        except Exception:
+            today = datetime.date.today()
+            y, m = today.year, today.month
+        indicators = database.get_month_task_indicators(y, m)
+        self.win.agenda_view.set_indicators(indicators)
+
+    @Slot(str, str)
+    def on_agenda_note_autosave(self, date_str: str, content: str):
+        database.save_daily_note(date_str, content)
+        self.refresh_agenda_indicators()
+
+    @Slot(str, int, str)
+    def on_agenda_task_add(self, title: str, priority: int, due_date: str):
+        database.add_task(
+            title=title,
+            priority=priority,
+            due_date=due_date,
+            daily_note_date=due_date
+        )
+        tasks = database.get_tasks_for_date(due_date)
+        self.win.agenda_view.set_tasks(tasks, due_date)
+        self.refresh_agenda_indicators()
+
+    @Slot(int, int)
+    def on_agenda_task_toggle(self, task_id: int, is_completed: int):
+        database.toggle_task_completed(task_id, is_completed)
+        self.refresh_agenda_indicators()
+
+    @Slot(int)
+    def on_agenda_task_delete(self, task_id: int):
+        database.delete_task(task_id)
+        target_date = getattr(self, 'agenda_active_date', None)
+        if target_date:
+            tasks = database.get_tasks_for_date(target_date)
+            self.win.agenda_view.set_tasks(tasks, target_date)
+        self.refresh_agenda_indicators()
 
     @Slot(int)
     def on_note_restore_requested(self, note_id):

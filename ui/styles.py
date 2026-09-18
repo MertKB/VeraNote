@@ -352,7 +352,7 @@ QPushButton#EmptyTrashBtn:hover {{
 }}
 
 /* Home, Notes & Settings Buttons in Sidebar */
-#HomeBtn, #AllNotesBtn, #TrashBtn, #SettingsBtn {{
+#HomeBtn, #AgendaBtn, #AllNotesBtn, #TrashBtn, #SettingsBtn {{
     background-color: transparent;
     border: none;
     color: {p['text_main']};
@@ -361,7 +361,7 @@ QPushButton#EmptyTrashBtn:hover {{
     transition: background-color 0.2s ease, color 0.2s ease;
 }}
 
-#HomeBtn QLabel, #AllNotesBtn QLabel, #TrashBtn QLabel, #SettingsBtn QLabel {{
+#HomeBtn QLabel, #AgendaBtn QLabel, #AllNotesBtn QLabel, #TrashBtn QLabel, #SettingsBtn QLabel {{
     color: {p['text_main']};
     font-size: 13px;
     font-weight: bold;
@@ -369,31 +369,31 @@ QPushButton#EmptyTrashBtn:hover {{
     transition: color 0.2s ease;
 }}
 
-#HomeBtn:hover, #AllNotesBtn:hover, #TrashBtn:hover, #SettingsBtn:hover {{
+#HomeBtn:hover, #AgendaBtn:hover, #AllNotesBtn:hover, #TrashBtn:hover, #SettingsBtn:hover {{
     background-color: {p['bg_input']};
     color: white;
 }}
 
-#HomeBtn:hover QLabel, #AllNotesBtn:hover QLabel, #TrashBtn:hover QLabel, #SettingsBtn:hover QLabel {{
+#HomeBtn:hover QLabel, #AgendaBtn:hover QLabel, #AllNotesBtn:hover QLabel, #TrashBtn:hover QLabel, #SettingsBtn:hover QLabel {{
     color: white;
 }}
 
-#HomeBtn:pressed, #AllNotesBtn:pressed, #TrashBtn:pressed, #SettingsBtn:pressed {{
+#HomeBtn:pressed, #AgendaBtn:pressed, #AllNotesBtn:pressed, #TrashBtn:pressed, #SettingsBtn:pressed {{
     background-color: {p['border_color']};
     color: white;
 }}
 
-#HomeBtn:pressed QLabel, #AllNotesBtn:pressed QLabel, #TrashBtn:pressed QLabel, #SettingsBtn:pressed QLabel {{
+#HomeBtn:pressed QLabel, #AgendaBtn:pressed QLabel, #AllNotesBtn:pressed QLabel, #TrashBtn:pressed QLabel, #SettingsBtn:pressed QLabel {{
     color: white;
 }}
 
-#HomeBtn[active="true"], #AllNotesBtn[active="true"], #TrashBtn[active="true"], #SettingsBtn[active="true"] {{
+#HomeBtn[active="true"], #AgendaBtn[active="true"], #AllNotesBtn[active="true"], #TrashBtn[active="true"], #SettingsBtn[active="true"] {{
     background-color: {p['accent_light']};
     border-left: 4px solid {p['border_focus']};
     border-radius: 8px;
 }}
 
-#HomeBtn[active="true"] QLabel, #AllNotesBtn[active="true"] QLabel, #TrashBtn[active="true"] QLabel, #SettingsBtn[active="true"] QLabel {{
+#HomeBtn[active="true"] QLabel, #AgendaBtn[active="true"] QLabel, #AllNotesBtn[active="true"] QLabel, #TrashBtn[active="true"] QLabel, #SettingsBtn[active="true"] QLabel {{
     color: {p['text_light']};
     font-weight: bold;
 }}
@@ -796,6 +796,106 @@ QDockWidget::title {{
 #TagPill:hover {{
     border-color: {p['border_focus']};
 }}
+
+/* Agenda, Calendar & Daily Notes */
+#AgendaPanel {{
+    background-color: {p['bg_main']};
+}}
+
+#AgendaSectionContainer {{
+    background-color: {p['bg_card']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+}}
+
+#AgendaCalendarWidget {{
+    background-color: {p['bg_card']};
+    border: none;
+    color: {p['text_main']};
+}}
+
+#AgendaCalendarWidget QWidget#qt_calendar_navigationbar {{
+    background-color: {p['bg_input']};
+    border-bottom: 1px solid {p['border_color']};
+    border-top-left-radius: 10px;
+    border-top-right-radius: 10px;
+    min-height: 40px;
+}}
+
+#AgendaCalendarWidget QToolButton {{
+    color: {p['text_main']};
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    padding: 4px 8px;
+    margin: 2px;
+}}
+#AgendaCalendarWidget QToolButton:hover {{
+    background-color: {p['accent_light']};
+    color: {p['text_light']};
+}}
+
+#AgendaCalendarWidget QMenu {{
+    background-color: {p['bg_card']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+}}
+
+#AgendaCalendarWidget QSpinBox {{
+    background-color: {p['bg_input']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 4px;
+}}
+
+#AgendaCalendarWidget QTableView {{
+    background-color: transparent;
+    alternate-background-color: transparent;
+    selection-background-color: {p['accent_color']};
+    selection-color: #FFFFFF;
+    gridline-color: transparent;
+    outline: none;
+    border: none;
+}}
+
+#AgendaCalendarWidget QTableView QHeaderView::section {{
+    background-color: transparent;
+    color: {p['text_muted']};
+    font-size: 11px;
+    font-weight: bold;
+    border: none;
+    padding: 4px 0px;
+}}
+
+#DailyNoteEditor {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 10px;
+    color: {p['text_main']};
+    font-size: 14px;
+    padding: 14px;
+}}
+#DailyNoteEditor:focus {{
+    border: 1px solid {p['border_focus']};
+}}
+
+#TaskItemWidget {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+}}
+#TaskItemWidget:hover {{
+    border: 1px solid {p['border_focus']};
+}}
+
+#PriorityPill {{
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: bold;
+}}
 """
 
 STYLE_SHEET = get_stylesheet("Koyu Gece")
+

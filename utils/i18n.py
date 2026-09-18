@@ -357,6 +357,23 @@ TRANSLATIONS = {
         "notes_new_title": "Yeni Not",
         "detail_no_tags": "Etiket bulunamadı.\nAşağıdan etiket yazıp ekleyebilirsiniz.",
         "detail_no_triggers": "Tetikleyici kelime bulunamadı.\nYukarıdan kelime yazıp ekleyebilirsiniz.",
+        "agenda": "Ajanda",
+        "nav_agenda": "📅   Ajanda",
+        "agenda_calendar_title": "Takvim",
+        "agenda_today_btn": "Bugün",
+        "agenda_daily_note_title": "Günün Notu",
+        "agenda_daily_note_placeholder": "Günün notlarını ve düşüncelerini buraya yazın (Markdown destekli)...",
+        "agenda_tasks_title": "Günün Görevleri",
+        "agenda_tasks_empty": "Bu gün için planlanmış görev yok.",
+        "agenda_task_input_placeholder": "Yeni görev ekle...",
+        "agenda_add_task_btn": "+ Ekle",
+        "agenda_priority_low": "Düşük",
+        "agenda_priority_normal": "Normal",
+        "agenda_priority_high": "Yüksek",
+        "agenda_priority_urgent": "Acil",
+        "agenda_status_saved": "✓ Kaydedildi",
+        "agenda_status_saving": "● Kaydediliyor...",
+        "agenda_delete_task_tooltip": "Görevi Sil",
     },
     "en": {
         "app_title": "Vera Note - Notes and Models",
@@ -714,6 +731,23 @@ TRANSLATIONS = {
         "notes_new_title": "New Note",
         "detail_no_tags": "No tags found.\nYou can enter and add a tag below.",
         "detail_no_triggers": "No trigger words found.\nYou can enter and add a trigger word above.",
+        "agenda": "Agenda",
+        "nav_agenda": "📅   Agenda",
+        "agenda_calendar_title": "Calendar",
+        "agenda_today_btn": "Today",
+        "agenda_daily_note_title": "Daily Note",
+        "agenda_daily_note_placeholder": "Write today's notes and thoughts here (Markdown supported)...",
+        "agenda_tasks_title": "Daily Tasks",
+        "agenda_tasks_empty": "No tasks scheduled for this day.",
+        "agenda_task_input_placeholder": "Add a new task...",
+        "agenda_add_task_btn": "+ Add",
+        "agenda_priority_low": "Low",
+        "agenda_priority_normal": "Normal",
+        "agenda_priority_high": "High",
+        "agenda_priority_urgent": "Urgent",
+        "agenda_status_saved": "✓ Saved",
+        "agenda_status_saving": "● Saving...",
+        "agenda_delete_task_tooltip": "Delete Task",
     }
 }
 
@@ -731,4 +765,28 @@ def set_lang(lang):
 def t(key):
     lang = get_lang()
     return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, TRANSLATIONS["en"].get(key, key))
+
+def format_localized_date(iso_date_str: str, lang: str = None) -> str:
+    """Format an ISO date 'YYYY-MM-DD' into a friendly localized string like '18 Eylül 2026, Cuma'."""
+    import datetime
+    if lang is None:
+        lang = get_lang()
+    try:
+        dt = datetime.date.fromisoformat(iso_date_str)
+    except Exception:
+        return iso_date_str
+
+    tr_months = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+    tr_days = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+
+    en_months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    en_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+    month_idx = dt.month - 1
+    day_idx = dt.weekday() # 0 = Monday, 6 = Sunday
+
+    if lang == "tr":
+        return f"{dt.day} {tr_months[month_idx]} {dt.year}, {tr_days[day_idx]}"
+    else:
+        return f"{en_months[month_idx]} {dt.day}, {dt.year} ({en_days[day_idx]})"
 

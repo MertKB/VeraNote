@@ -218,6 +218,35 @@ def initialize_db():
             );
         """)
 
+        # Daily Notes (Ajanda / Günlük Notlar)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS daily_notes (
+                date TEXT PRIMARY KEY,
+                content TEXT DEFAULT '',
+                summary TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # Tasks (Ajanda Görevleri)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT,
+                is_completed INTEGER DEFAULT 0,
+                due_date TEXT,
+                priority INTEGER DEFAULT 1,
+                daily_note_date TEXT,
+                note_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                completed_at DATETIME,
+                FOREIGN KEY (daily_note_date) REFERENCES daily_notes(date) ON DELETE CASCADE,
+                FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE SET NULL
+            );
+        """)
+
         conn.commit()
 
         # Migrate libraries table if type column is missing
@@ -324,6 +353,9 @@ def initialize_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_models_lib_hidden ON models(library_id, is_hidden);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_pinned_hidden ON notes(is_pinned_corkboard, is_hidden);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_workflows_lib_hidden ON workflows(library_id, is_hidden);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_daily_date ON tasks(daily_note_date);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(is_completed);")
 
         conn.commit()
 
@@ -1090,5 +1122,167 @@ def get_storage_stats():
             return f"{size / (1024 * 1024):.1f} MB"
 
     return format_size(db_size), format_size(assets_size), format_size(db_size + assets_size)
+
+
+# ==========================================
+# AGENDA REPOSITORY (Faz 1 - Daily Notes & Tasks)
+# ==========================================
+
+class AgendaRepository:
+    """Repository for managing daily notes and scheduled agenda tasks."""
+
+    @staticmethod
+    def get_or_create_daily_note(date_str: str) -> dict:
+        """Fetch daily note for the given date (YYYY-MM-DD), or create an empty one if it doesn't exist."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM daily_notes WHERE date = ?;", (date_str,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            
+            cursor.execute("""
+                INSERT INTO daily_notes (date, content, summary, created_at, updated_at)
+                VALUES (?, '', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+            """, (date_str,))
+            conn.commit()
+            
+            cursor.execute("SELECT * FROM daily_notes WHERE date = ?;", (date_str,))
+            return dict(cursor.fetchone())
+
+    @staticmethod
+    def save_daily_note(date_str: str, content: str, summary: str = None) -> bool:
+        """Save or update daily note content and optional summary."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO daily_notes (date, content, summary, created_at, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(date) DO UPDATE SET
+                    content = excluded.content,
+                    summary = COALESCE(excluded.summary, daily_notes.summary),
+                    updated_at = CURRENT_TIMESTAMP;
+            """, (date_str, content, summary))
+            conn.commit()
+            return True
+
+    @staticmethod
+    def get_tasks_for_date(date_str: str) -> list:
+        """Retrieve tasks matching the given due date or daily note date."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM tasks
+                WHERE due_date = ? OR daily_note_date = ?
+                ORDER BY is_completed ASC, priority DESC, id ASC;
+            """, (date_str, date_str))
+            return [dict(row) for row in cursor.fetchall()]
+
+    @staticmethod
+    def get_month_task_indicators(year: int, month: int) -> dict:
+        """
+        Retrieve task indicators and daily note status for all days in a given year/month.
+        Returns a dict mapping date string 'YYYY-MM-DD' to:
+        {'has_note': bool, 'pending_tasks': int, 'completed_tasks': int}
+        """
+        prefix = f"{year:04d}-{month:02d}-%"
+        indicators = {}
+
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            # 1. Check notes with non-empty content
+            cursor.execute("""
+                SELECT date FROM daily_notes
+                WHERE date LIKE ? AND TRIM(content) != '';
+            """, (prefix,))
+            for row in cursor.fetchall():
+                d = row['date']
+                if d not in indicators:
+                    indicators[d] = {'has_note': True, 'pending_tasks': 0, 'completed_tasks': 0}
+                else:
+                    indicators[d]['has_note'] = True
+
+            # 2. Check tasks due or assigned to days in this month
+            cursor.execute("""
+                SELECT 
+                    COALESCE(due_date, daily_note_date) AS task_date,
+                    is_completed,
+                    COUNT(*) AS count
+                FROM tasks
+                WHERE (due_date LIKE ? OR daily_note_date LIKE ?)
+                GROUP BY task_date, is_completed;
+            """, (prefix, prefix))
+            for row in cursor.fetchall():
+                d = row['task_date']
+                if not d:
+                    continue
+                if d not in indicators:
+                    indicators[d] = {'has_note': False, 'pending_tasks': 0, 'completed_tasks': 0}
+                if row['is_completed'] == 1:
+                    indicators[d]['completed_tasks'] += row['count']
+                else:
+                    indicators[d]['pending_tasks'] += row['count']
+
+        return indicators
+
+    @staticmethod
+    def add_task(title: str, description: str = None, due_date: str = None,
+                 priority: int = 1, daily_note_date: str = None, note_id: int = None) -> int:
+        """Add a new task to the database."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO tasks (title, description, is_completed, due_date, priority, daily_note_date, note_id, created_at)
+                VALUES (?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP);
+            """, (title, description, due_date, priority, daily_note_date, note_id))
+            conn.commit()
+            return cursor.lastrowid
+
+    @staticmethod
+    def delete_task(task_id: int) -> bool:
+        """Delete a task by ID."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM tasks WHERE id = ?;", (task_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    @staticmethod
+    def toggle_task_completed(task_id: int, is_completed: int = None) -> int:
+        """Toggle or set the completion status of a task."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            if is_completed is None:
+                cursor.execute("SELECT is_completed FROM tasks WHERE id = ?;", (task_id,))
+                row = cursor.fetchone()
+                current = row['is_completed'] if row else 0
+                new_status = 1 if current == 0 else 0
+            else:
+                new_status = 1 if is_completed else 0
+
+            if new_status == 1:
+                cursor.execute("""
+                    UPDATE tasks
+                    SET is_completed = 1, completed_at = CURRENT_TIMESTAMP
+                    WHERE id = ?;
+                """, (task_id,))
+            else:
+                cursor.execute("""
+                    UPDATE tasks
+                    SET is_completed = 0, completed_at = NULL
+                    WHERE id = ?;
+                """, (task_id,))
+            conn.commit()
+            return new_status
+
+# Convenient module-level aliases
+get_or_create_daily_note = AgendaRepository.get_or_create_daily_note
+save_daily_note = AgendaRepository.save_daily_note
+get_tasks_for_date = AgendaRepository.get_tasks_for_date
+get_month_task_indicators = AgendaRepository.get_month_task_indicators
+add_task = AgendaRepository.add_task
+delete_task = AgendaRepository.delete_task
+toggle_task_completed = AgendaRepository.toggle_task_completed
+
 
 

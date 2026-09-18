@@ -9,6 +9,7 @@ from ui.library_view import LibraryView
 from ui.detail_panel import DetailPanel
 from ui.notes_view import NotesView
 from ui.workflow_view import WorkflowView
+from ui.agenda import AgendaView
 from ui.styles import STYLE_SHEET
 from utils.i18n import t
 
@@ -201,11 +202,14 @@ class MainWindow(QMainWindow):
         self.workflow_view.add_workflow_requested.connect(self.add_workflow_signal.emit)
         self.workflow_view.workflow_favorite_toggled.connect(self.workflow_favorite_toggled_signal.emit)
 
+        self.agenda_view = AgendaView()
+
         self.center_stack.addWidget(self.welcome_screen)  # index 0
         self.center_stack.addWidget(self.library_view)    # index 1
         self.center_stack.addWidget(self.note_editor)     # index 2
         self.center_stack.addWidget(self.notes_view)     # index 3
         self.center_stack.addWidget(self.workflow_view)  # index 4
+        self.center_stack.addWidget(self.agenda_view)    # index 5
         
         self.splitter.addWidget(self.center_stack)
 
@@ -267,6 +271,7 @@ class MainWindow(QMainWindow):
         self.sidebar.new_note_requested.connect(self.create_new_note)
         self.sidebar.settings_requested.connect(self.settings_requested_signal.emit)
         self.sidebar.home_requested.connect(self.show_welcome)
+        self.sidebar.agenda_requested.connect(self.show_agenda)
 
     def set_comfyui_enabled(self, enabled: bool):
         self.sidebar.set_comfyui_visible(enabled)
@@ -280,6 +285,11 @@ class MainWindow(QMainWindow):
     def show_welcome(self):
         self.sidebar.set_active_item('home')
         self.center_stack.setCurrentIndex(0)
+        self.hide_detail_panel()
+
+    def show_agenda(self):
+        self.sidebar.set_active_item('agenda')
+        self.center_stack.setCurrentIndex(5)
         self.hide_detail_panel()
 
     def create_new_note(self):
@@ -375,6 +385,12 @@ class MainWindow(QMainWindow):
         self.welcome_screen.retranslate_ui()
         self.library_view.retranslate_ui()
         self.workflow_view.retranslate_ui()
+        self.agenda_view.retranslate_ui()
         self.detail_panel.retranslate_ui()
         if hasattr(self, 'detail_dock') and self.detail_dock and hasattr(self.detail_dock, 'setWindowTitle'):
             self.detail_dock.setWindowTitle(t("detail_dock_title"))
+
+    def closeEvent(self, event):
+        if hasattr(self, 'agenda_view') and self.agenda_view:
+            self.agenda_view.flush_pending_saves()
+        super().closeEvent(event)

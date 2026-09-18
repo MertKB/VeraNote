@@ -14,6 +14,7 @@ class StaticListWidget(QListWidget):
 class Sidebar(QWidget):
     # Signals
     home_requested = Signal()
+    agenda_requested = Signal()
     all_notes_requested = Signal()
     new_note_requested = Signal()
     trash_requested = Signal()
@@ -96,6 +97,22 @@ class Sidebar(QWidget):
         home_layout.addWidget(self.home_label)
         home_layout.addStretch()
         self.main_layout.addWidget(self.home_btn, 0, Qt.AlignCenter)
+
+        # --- AGENDA BUTTON ---
+        self.agenda_btn = QPushButton()
+        self.agenda_btn.setObjectName("AgendaBtn")
+        self.agenda_btn.setFixedSize(236, 40)
+        self.agenda_btn.clicked.connect(lambda: (self.set_active_item('agenda'), self.agenda_requested.emit()))
+        
+        agenda_layout = QHBoxLayout(self.agenda_btn)
+        agenda_layout.setContentsMargins(20, 0, 20, 0)
+        
+        self.agenda_label = QLabel(t("nav_agenda"))
+        self.agenda_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        
+        agenda_layout.addWidget(self.agenda_label)
+        agenda_layout.addStretch()
+        self.main_layout.addWidget(self.agenda_btn, 0, Qt.AlignCenter)
 
         # --- SECTION: NOTES ---
         self.new_note_btn = QPushButton(t("new_note"))
@@ -207,6 +224,7 @@ class Sidebar(QWidget):
     def set_active_item(self, item_type, name=None):
         buttons = {
             'home': self.home_btn,
+            'agenda': self.agenda_btn,
             'all_notes': self.all_notes_btn,
             'trash': self.trash_btn,
             'settings': self.settings_btn,
@@ -234,6 +252,7 @@ class Sidebar(QWidget):
 
     def retranslate_ui(self):
         self.home_label.setText(t("home"))
+        self.agenda_label.setText(t("nav_agenda"))
         self.new_note_btn.setText(t("new_note"))
         self.all_notes_label.setText("📋   " + t("view_all_notes"))
         self.trash_label.setText("🗑️   " + t("view_recycle_bin"))
