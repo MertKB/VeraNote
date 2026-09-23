@@ -9,6 +9,7 @@ from PySide6.QtCore import Signal, Qt, QSize, QTimer, QThreadPool, Slot, QPoint,
 from PySide6.QtGui import QPixmap, QFontMetrics, QGuiApplication, QImage, QKeyEvent, QCursor
 from utils.i18n import t
 from ui.library_view import get_rounded_pixmap, THUMBNAIL_CACHE, cache_thumbnail, ImageLoadWorker
+from database import resolve_image_path
 
 _STYLE_RE = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL | re.IGNORECASE)
 _HEAD_RE = re.compile(r'<head[^>]*>.*?</head>', re.DOTALL | re.IGNORECASE)
@@ -54,7 +55,7 @@ class NoteCardWidget(QFrame):
         self.is_pinned = bool(self.note_data.get('is_pinned_corkboard', 0))
         self.is_selected = False
         self.display_mode = self.note_data.get('display_mode', 'WITH_IMAGE')
-        self.image_path = self.note_data.get('image_path') or ''
+        self.image_path = resolve_image_path(self.note_data.get('image_path') or '')
         self.image_loaded = False
         self.image_loading = False
         
@@ -178,6 +179,13 @@ class NoteCardWidget(QFrame):
         self.content_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.content_label)
 
+        # Date Label
+        self.date_label = QLabel(self)
+        self.date_label.setObjectName("NoteCardDate")
+        self.date_label.setStyleSheet("color: #71717A; font-size: 10px; font-weight: 500;")
+        self.date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(self.date_label)
+
         # Render layout according to display mode and path
         self.update_layout()
 
@@ -285,6 +293,7 @@ class NoteCardWidget(QFrame):
         self.corkboard_pin_toggled.emit(self.note_data.get('id', 0), self.is_pinned)
 
     def update_layout(self):
+        self.image_path = resolve_image_path(self.image_path or self.note_data.get('image_path') or '')
         show_img = (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
         layout = self.layout()
         if not layout:
@@ -322,6 +331,7 @@ class NoteCardWidget(QFrame):
     def ensure_image_loaded(self):
         if getattr(self, 'image_loaded', False) or getattr(self, 'image_loading', False):
             return
+        self.image_path = resolve_image_path(self.image_path or self.note_data.get('image_path') or '')
         show_img = (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
         if not show_img:
             self.image_loaded = True
@@ -415,6 +425,20 @@ class NoteCardWidget(QFrame):
             if len(display_text) > 250:
                 display_text = display_text[:250] + "..."
             self.content_label.setText(display_text)
+
+        if hasattr(self, 'date_label'):
+            dt_raw = self.note_data.get('updated_at') or self.note_data.get('created_at') or ''
+            date_display = ""
+            if dt_raw:
+                try:
+                    s = str(dt_raw).replace('T', ' ')
+                    parts = s.split(' ')
+                    d_parts = parts[0].split('-')
+                    if len(d_parts) == 3:
+                        date_display = f"{d_parts[2]}.{d_parts[1]}.{d_parts[0]}"
+                except Exception:
+                    date_display = str(dt_raw)[:10]
+            self.date_label.setText(date_display)
 
     def contextMenuEvent(self, event):
         if self.is_trash:

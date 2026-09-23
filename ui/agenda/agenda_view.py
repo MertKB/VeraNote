@@ -14,10 +14,13 @@ class AgendaView(QWidget):
     """
     date_selected = Signal(str)                  # ISO date 'YYYY-MM-DD'
     month_changed = Signal(int, int)             # year, month
+    monthly_stats_requested = Signal(int, int)   # year, month
     note_autosave_requested = Signal(str, str)    # date_str, content
     task_add_requested = Signal(str, int, str)   # title, priority, due_date
     task_toggle_requested = Signal(int, int)     # task_id, is_completed
     task_delete_requested = Signal(int)          # task_id
+    clear_completed_requested = Signal(str)      # date_str
+    routines_dialog_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -40,6 +43,9 @@ class AgendaView(QWidget):
         self.calendar_panel = CalendarPanel(self)
         self.calendar_panel.date_selected.connect(self._on_calendar_date_selected)
         self.calendar_panel.month_changed.connect(self.month_changed.emit)
+        self.calendar_panel.monthly_stats_requested.connect(self.monthly_stats_requested.emit)
+        self.calendar_panel.upcoming_date_selected.connect(self._on_calendar_date_selected)
+        self.calendar_panel.task_toggle_requested.connect(self.task_toggle_requested.emit)
 
         # 2. Middle: Daily Note Panel
         self.daily_note_panel = DailyNotePanel(self)
@@ -50,6 +56,8 @@ class AgendaView(QWidget):
         self.tasks_panel.task_add_requested.connect(self.task_add_requested.emit)
         self.tasks_panel.task_toggle_requested.connect(self.task_toggle_requested.emit)
         self.tasks_panel.task_delete_requested.connect(self.task_delete_requested.emit)
+        self.tasks_panel.clear_completed_requested.connect(self.clear_completed_requested.emit)
+        self.tasks_panel.routines_dialog_requested.connect(self.routines_dialog_requested.emit)
 
         self.splitter.addWidget(self.calendar_panel)
         self.splitter.addWidget(self.daily_note_panel)
@@ -85,6 +93,18 @@ class AgendaView(QWidget):
     def set_indicators(self, indicators: dict):
         """Update calendar cell dots for month."""
         self.calendar_panel.set_indicators(indicators)
+
+    def set_monthly_stats(self, stats: dict):
+        """Update the metrics cards in the calendar's monthly summary panel."""
+        self.calendar_panel.set_monthly_stats(stats)
+
+    def set_calendar_theme(self, theme_config: dict):
+        """Update the calendar's theme colors dynamically."""
+        self.calendar_panel.set_theme_config(theme_config)
+
+    def set_upcoming_tasks(self, tasks_list: list):
+        """Update upcoming tasks mini list in calendar panel."""
+        self.calendar_panel.set_upcoming_tasks(tasks_list)
 
     def set_tasks(self, tasks_list: list, date_str: str = None):
         """Update only the tasks panel (e.g. after adding, deleting, toggling tasks)."""

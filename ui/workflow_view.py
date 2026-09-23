@@ -342,6 +342,7 @@ class WorkflowView(QWidget):
     workflow_hide_requested = Signal(dict)
     workflow_unhide_requested = Signal(dict)
     workflow_favorite_toggled = Signal(int, bool)
+    delete_library_requested = Signal(str) # library_name
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -418,6 +419,27 @@ class WorkflowView(QWidget):
         header_layout.addWidget(self.sort_combo)
 
         header_layout.addStretch()
+
+        self.delete_lib_btn = QPushButton(t("workflow_delete_library"))
+        self.delete_lib_btn.setObjectName("DeleteLibHeaderBtn")
+        self.delete_lib_btn.setFixedHeight(36)
+        self.delete_lib_btn.setStyleSheet("""
+            QPushButton#DeleteLibHeaderBtn {
+                background-color: transparent;
+                border: 1px solid #7F1D1D;
+                color: #F87171;
+                border-radius: 18px;
+                padding: 6px 14px;
+                font-weight: 500;
+            }
+            QPushButton#DeleteLibHeaderBtn:hover {
+                background-color: #7F1D1D;
+                color: #FFFFFF;
+                border-color: #EF4444;
+            }
+        """)
+        self.delete_lib_btn.clicked.connect(self.on_delete_library_clicked)
+        header_layout.addWidget(self.delete_lib_btn)
 
         self.add_btn = QPushButton(t("view_add_workflow"))
         self.add_btn.setObjectName("HeaderAddBtn") # Oval style
@@ -758,6 +780,10 @@ class WorkflowView(QWidget):
             image_path = meta['image_path']
             self.add_workflow_requested.emit(self.library_id, name, file_path, description, image_path)
 
+    def on_delete_library_clicked(self):
+        if self.library_name:
+            self.delete_library_requested.emit(self.library_name)
+
     def tr_lib_name(self, name):
         if name == "Lora Modelleri":
             return "Lora Models" if get_lang() == "en" else "Lora Modelleri"
@@ -770,6 +796,8 @@ class WorkflowView(QWidget):
     def retranslate_ui(self):
         self.title_label.setText(self.tr_lib_name(self.library_name) if self.library_name else t("workflows_title"))
         self.add_btn.setText(t("view_add_workflow"))
+        if hasattr(self, 'delete_lib_btn'):
+            self.delete_lib_btn.setText(t("workflow_delete_library"))
         self.search_edit.setPlaceholderText(t("view_search_workflows_placeholder"))
         self.fav_toggle_btn.setText(t("view_favorites"))
         self.drop_label.setText(t("workflow_drop_zone_hint"))

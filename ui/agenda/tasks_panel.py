@@ -63,6 +63,7 @@ class TaskCardWidget(QFrame):
 
         # Delete Button
         self.delete_btn = QPushButton("🗑️")
+        self.delete_btn.setObjectName("TaskDeleteBtn")
         self.delete_btn.setToolTip(t("agenda_delete_task_tooltip"))
         self.delete_btn.setFixedSize(26, 26)
         self.delete_btn.setCursor(Qt.PointingHandCursor)
@@ -103,11 +104,14 @@ class TaskCardWidget(QFrame):
 class TasksPanel(QFrame):
     """
     Right panel: Task management for the selected day,
-    with checkbox completion toggle, priority badges, and quick-add bar.
+    with checkbox completion toggle, priority badges, routines management,
+    clear completed tasks, and fixed bottom quick-add bar.
     """
     task_add_requested = Signal(str, int, str)   # title, priority, due_date
     task_toggle_requested = Signal(int, int)     # task_id, is_completed
     task_delete_requested = Signal(int)          # task_id
+    clear_completed_requested = Signal(str)      # date_str
+    routines_dialog_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -122,9 +126,10 @@ class TasksPanel(QFrame):
         layout.setContentsMargins(14, 14, 14, 14)
         layout.setSpacing(10)
 
-        # Header Title & Count Badge
+        # Header Title, Count Badge & Action Buttons
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
 
         self.title_label = QLabel(t("agenda_tasks_title"))
         self.title_label.setStyleSheet("color: #E3E3E3; font-size: 15px; font-weight: bold;")
@@ -137,9 +142,57 @@ class TasksPanel(QFrame):
         header_layout.addWidget(self.count_badge)
 
         header_layout.addStretch()
+
+        # Clear Completed Tasks Button
+        self.clear_completed_btn = QPushButton(t("agenda_clear_completed_btn"))
+        self.clear_completed_btn.setToolTip(t("agenda_clear_completed_tooltip"))
+        self.clear_completed_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_completed_btn.setFixedHeight(26)
+        self.clear_completed_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #282A2E;
+                color: #94A3B8;
+                border: 1px solid #3F4248;
+                border-radius: 6px;
+                padding: 2px 8px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #3B1818;
+                color: #F87171;
+                border-color: #7F1D1D;
+            }
+        """)
+        self.clear_completed_btn.clicked.connect(self._on_clear_completed_clicked)
+        header_layout.addWidget(self.clear_completed_btn)
+
+        # Routines Management Button
+        self.routines_btn = QPushButton(t("agenda_routines_btn"))
+        self.routines_btn.setToolTip(t("agenda_routines_desc"))
+        self.routines_btn.setCursor(Qt.PointingHandCursor)
+        self.routines_btn.setFixedHeight(26)
+        self.routines_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #312E81;
+                color: #A5B4FC;
+                border: 1px solid #4338CA;
+                border-radius: 6px;
+                padding: 2px 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3730A3;
+                color: #FFFFFF;
+                border-color: #6366F1;
+            }
+        """)
+        self.routines_btn.clicked.connect(self.routines_dialog_requested.emit)
+        header_layout.addWidget(self.routines_btn)
+
         layout.addLayout(header_layout)
 
-        # Scroll Area for Task Cards
+        # Scroll Area for Task Cards (Stretches to fill space)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -158,18 +211,19 @@ class TasksPanel(QFrame):
         self.tasks_layout = QVBoxLayout(self.tasks_container)
         self.tasks_layout.setContentsMargins(0, 4, 0, 4)
         self.tasks_layout.setSpacing(8)
+
+        # Empty State Label inside container
+        self.empty_label = QLabel(t("agenda_tasks_empty"))
+        self.empty_label.setStyleSheet("color: #71717A; font-size: 13px; font-style: italic; padding: 40px 10px;")
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.tasks_layout.addWidget(self.empty_label)
+
         self.tasks_layout.addStretch()
 
         self.scroll_area.setWidget(self.tasks_container)
         layout.addWidget(self.scroll_area, 1)
 
-        # Empty State Label
-        self.empty_label = QLabel(t("agenda_tasks_empty"))
-        self.empty_label.setStyleSheet("color: #71717A; font-size: 12px; font-style: italic; padding: 20px;")
-        self.empty_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.empty_label)
-
-        # Quick Add Bar at bottom
+        # Quick Add Bar as Fixed Footer at Bottom
         quick_add_frame = QFrame()
         quick_add_frame.setStyleSheet("""
             QFrame {
@@ -237,41 +291,61 @@ class TasksPanel(QFrame):
         self.input_edit.clear()
         self.task_add_requested.emit(title, priority, due_date)
 
+    def _on_clear_completed_clicked(self):
+        from PySide6.QtWidgets import QMessageBox
+        has_completed = any(t_item.get('is_completed', 0) for t_item in self.tasks_list)
+        if not has_completed:
+            return
+        reply = QMessageBox.question(
+            self,
+            t("agenda_clear_completed_btn"),
+            t("agenda_clear_completed_confirm"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self.clear_completed_requested.emit(self.current_date)
+
     def set_tasks(self, tasks: list, current_date: str):
         """Populate the task list for the selected date."""
         self.current_date = current_date
         self.tasks_list = tasks or []
 
-        # Clear existing card widgets
-        while self.tasks_layout.count() > 1:
-            item = self.tasks_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
+        # Remove existing task cards (keep empty_label at index 0 and stretch at end)
+        # We find and delete all TaskCardWidget children
+        for child in self.tasks_container.findChildren(TaskCardWidget):
+            child.deleteLater()
 
         # Update count badge
-        open_count = sum(1 for t_item in self.tasks_list if not t_item.get('is_completed', 0))
         self.count_badge.setText(str(len(self.tasks_list)))
+
+        # Update Clear Completed button state/visibility
+        has_completed = any(t_item.get('is_completed', 0) for t_item in self.tasks_list)
+        self.clear_completed_btn.setEnabled(has_completed)
+        self.clear_completed_btn.setToolTip(t("agenda_clear_completed_tooltip") if has_completed else "")
 
         if not self.tasks_list:
             self.empty_label.show()
-            self.scroll_area.hide()
         else:
             self.empty_label.hide()
-            self.scroll_area.show()
-
             for task_data in self.tasks_list:
                 card = TaskCardWidget(task_data)
                 card.toggle_requested.connect(self.task_toggle_requested.emit)
-                card.delete_requested.connect(self.task_delete_requested.emit)
+                card.delete_requested.connect(self._on_card_delete_requested)
                 # Insert before the bottom stretch
                 self.tasks_layout.insertWidget(self.tasks_layout.count() - 1, card)
+
+    def _on_card_delete_requested(self, task_id: int):
+        self.task_delete_requested.emit(task_id)
 
     def retranslate_ui(self):
         self.title_label.setText(t("agenda_tasks_title"))
         self.empty_label.setText(t("agenda_tasks_empty"))
         self.input_edit.setPlaceholderText(t("agenda_task_input_placeholder"))
         self.add_btn.setText(t("agenda_add_task_btn"))
+        self.clear_completed_btn.setText(t("agenda_clear_completed_btn"))
+        self.routines_btn.setText(t("agenda_routines_btn"))
+        self.routines_btn.setToolTip(t("agenda_routines_desc"))
         curr_idx = self.priority_combo.currentIndex()
         self._populate_priority_combo()
         if 0 <= curr_idx < self.priority_combo.count():

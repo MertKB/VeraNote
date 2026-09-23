@@ -45,6 +45,8 @@ class AppController:
         self.win.sidebar.library_selected.connect(self.on_library_selected)
         self.win.sidebar.workflow_library_selected.connect(self.on_workflow_library_selected)
         self.win.sidebar.new_library_requested.connect(self.on_new_library_requested)
+        self.win.sidebar.delete_workflow_library_requested.connect(self.on_delete_workflow_library)
+        self.win.workflow_view.delete_library_requested.connect(self.on_delete_workflow_library)
         self.win.settings_requested_signal.connect(self.on_settings_requested)
         self.win.save_model_data_signal.connect(self.on_save_model_data)
         self.win.add_trigger_signal.connect(self.on_add_trigger)
@@ -60,6 +62,8 @@ class AppController:
         self.win.bulk_add_tag_signal.connect(self.on_bulk_add_tag)
         self.win.bulk_remove_tag_signal.connect(self.on_bulk_remove_tag)
         self.win.bulk_favorite_signal.connect(self.on_bulk_favorite)
+        self.win.bulk_delete_signal.connect(self.on_bulk_delete)
+        self.win.delete_model_signal.connect(self.on_detail_delete_model)
         
         # Connect Sidebar "Tüm Notlar", "Çöp Kutusu" and "+ Yeni Not" redirect
         self.win.sidebar.all_notes_requested.connect(self.on_all_notes_requested)
@@ -119,10 +123,13 @@ class AppController:
         self.win.sidebar.agenda_requested.connect(self.on_agenda_requested)
         self.win.agenda_view.date_selected.connect(self.on_agenda_date_selected)
         self.win.agenda_view.month_changed.connect(self.on_agenda_month_changed)
+        self.win.agenda_view.monthly_stats_requested.connect(self.on_agenda_monthly_stats_requested)
         self.win.agenda_view.note_autosave_requested.connect(self.on_agenda_note_autosave)
         self.win.agenda_view.task_add_requested.connect(self.on_agenda_task_add)
         self.win.agenda_view.task_toggle_requested.connect(self.on_agenda_task_toggle)
         self.win.agenda_view.task_delete_requested.connect(self.on_agenda_task_delete)
+        self.win.agenda_view.clear_completed_requested.connect(self.on_agenda_clear_completed)
+        self.win.agenda_view.routines_dialog_requested.connect(self.on_agenda_routines_dialog_requested)
 
         # Initialize agenda active date
         import datetime
@@ -261,22 +268,81 @@ class AppController:
     @Slot(str)
     def on_agenda_date_selected(self, date_str: str):
         self.agenda_active_date = date_str
+        # Seed recurring routines for the date (if active, not weekend for weekdays, non-duplicate)
+        database.seed_daily_tasks_from_routines(date_str)
         note = database.get_or_create_daily_note(date_str)
         tasks = database.get_tasks_for_date(date_str)
         self.win.agenda_view.set_date_data(date_str, note.get('content', ''), tasks)
-        # Also refresh indicators for the current month
+        # Also refresh indicators, monthly stats, and upcoming tasks
         try:
             import datetime
             dt = datetime.date.fromisoformat(date_str)
             indicators = database.get_month_task_indicators(dt.year, dt.month)
             self.win.agenda_view.set_indicators(indicators)
+            stats = database.get_monthly_agenda_stats(dt.year, dt.month)
+            self.win.agenda_view.set_monthly_stats(stats)
+            upcoming = database.get_upcoming_tasks(days_ahead=3)
+            self.win.agenda_view.set_upcoming_tasks(upcoming)
         except Exception:
             pass
+
+    @Slot(str)
+    def on_agenda_clear_completed(self, date_str: str):
+        target_date = date_str or getattr(self, 'agenda_active_date', None)
+        if target_date:
+            database.clear_completed_tasks(target_date)
+            tasks = database.get_tasks_for_date(target_date)
+            self.win.agenda_view.set_tasks(tasks, target_date)
+            self.refresh_agenda_indicators()
+
+    @Slot()
+    def on_agenda_routines_dialog_requested(self):
+        from ui.agenda.routine_manager_dialog import RoutineManagerDialog
+        dialog = RoutineManagerDialog(self.win)
+
+        def refresh_dialog_routines():
+            routines = database.get_all_routines()
+            dialog.set_routines(routines)
+
+        def on_add_routine(title, freq, priority):
+            database.add_routine(title, freq, priority)
+            refresh_dialog_routines()
+            target_date = getattr(self, 'agenda_active_date', None)
+            if target_date:
+                seeded = database.seed_daily_tasks_from_routines(target_date)
+                if seeded > 0:
+                    tasks = database.get_tasks_for_date(target_date)
+                    self.win.agenda_view.set_tasks(tasks, target_date)
+                    self.refresh_agenda_indicators()
+
+        def on_toggle_routine(routine_id, is_active):
+            database.toggle_routine(routine_id, is_active)
+            refresh_dialog_routines()
+
+        def on_delete_routine(routine_id):
+            database.delete_routine(routine_id)
+            refresh_dialog_routines()
+
+        dialog.routine_add_requested.connect(on_add_routine)
+        dialog.routine_toggle_requested.connect(on_toggle_routine)
+        dialog.routine_delete_requested.connect(on_delete_routine)
+
+        refresh_dialog_routines()
+        dialog.exec()
 
     @Slot(int, int)
     def on_agenda_month_changed(self, year: int, month: int):
         indicators = database.get_month_task_indicators(year, month)
         self.win.agenda_view.set_indicators(indicators)
+        stats = database.get_monthly_agenda_stats(year, month)
+        self.win.agenda_view.set_monthly_stats(stats)
+        upcoming = database.get_upcoming_tasks(days_ahead=3)
+        self.win.agenda_view.set_upcoming_tasks(upcoming)
+
+    @Slot(int, int)
+    def on_agenda_monthly_stats_requested(self, year: int, month: int):
+        stats = database.get_monthly_agenda_stats(year, month)
+        self.win.agenda_view.set_monthly_stats(stats)
 
     def refresh_agenda_indicators(self):
         import datetime
@@ -289,6 +355,10 @@ class AppController:
             y, m = today.year, today.month
         indicators = database.get_month_task_indicators(y, m)
         self.win.agenda_view.set_indicators(indicators)
+        stats = database.get_monthly_agenda_stats(y, m)
+        self.win.agenda_view.set_monthly_stats(stats)
+        upcoming = database.get_upcoming_tasks(days_ahead=3)
+        self.win.agenda_view.set_upcoming_tasks(upcoming)
 
     @Slot(str, str)
     def on_agenda_note_autosave(self, date_str: str, content: str):
@@ -509,6 +579,40 @@ class AppController:
                 self.win.statusBar().showMessage(i18n.t("view_library_created").format(name=name), 3000)
             else:
                 QMessageBox.warning(self.win, i18n.t("settings_error_path"), i18n.t("view_duplicate_exists").format(name=name), QMessageBox.Ok)
+
+    @Slot(str)
+    def on_delete_workflow_library(self, library_name):
+        lib_name = (library_name or "").strip()
+        wf_libs = database.get_workflow_libraries()
+        target_lib = None
+        for lib in wf_libs:
+            if lib['name'] == lib_name:
+                target_lib = lib
+                break
+        if not target_lib:
+            return
+
+        lib_id = target_lib['id']
+        count = database.get_workflow_count_in_library(lib_id, show_hidden=True)
+
+        reply = QMessageBox.question(
+            self.win,
+            i18n.t("workflow_delete_library"),
+            i18n.t("workflow_delete_library_confirm").format(name=lib_name, count=count),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            database.delete_workflow_library(lib_id)
+            if self.win.detail_panel.isVisible() and self.win.detail_panel.mode == "WORKFLOW":
+                self.win.hide_detail_panel()
+
+            if self.active_workflow_library == lib_name:
+                self.active_workflow_library = None
+                self.win.show_welcome()
+
+            self.refresh_libraries()
+            self.win.show_toast(i18n.t("workflow_delete_library_success").format(name=lib_name), "success")
 
     @Slot(dict)
     def on_workflow_clicked(self, workflow_data):
@@ -936,6 +1040,25 @@ class AppController:
         if self.active_library:
             self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)
             self.win.library_view.apply_filters()
+
+    @Slot(list)
+    def on_bulk_delete(self, model_ids):
+        if not model_ids:
+            return
+        count = len(model_ids)
+        if database.delete_models(model_ids):
+            self.win.show_toast(i18n.t("bulk_delete_models_done").format(count=count), "info")
+            if self.win.detail_panel.isVisible() and self.win.detail_panel.model_data and self.win.detail_panel.model_data.get('id') in model_ids:
+                self.win.hide_detail_panel()
+            if self.active_library:
+                self.win.library_view.clear_selection()
+                self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)
+                self.win.library_view.apply_filters()
+            self.refresh_libraries()
+
+    @Slot(int)
+    def on_detail_delete_model(self, model_id):
+        self.on_bulk_delete([model_id])
 
     def refresh_active_model_details(self, model_id):
         fresh_model_data = database.get_model_by_id(model_id)

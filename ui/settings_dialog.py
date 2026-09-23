@@ -17,7 +17,9 @@ DEFAULT_CUSTOM_COLORS = {
     "bg_input": "#282A2E",
     "accent_color": "#1A73E8",
     "text_main": "#E3E3E3",
-    "text_muted": "#9AA0A6"
+    "text_muted": "#9AA0A6",
+    "cal_weekend_header": "#F472B6",
+    "cal_weekend_text": "#FB7185"
 }
 
 CUSTOM_PRESETS = [
@@ -29,7 +31,9 @@ CUSTOM_PRESETS = [
         "bg_input": "#282A2E",
         "accent_color": "#1A73E8",
         "text_main": "#E3E3E3",
-        "text_muted": "#9AA0A6"
+        "text_muted": "#9AA0A6",
+        "cal_weekend_header": "#F472B6",
+        "cal_weekend_text": "#FB7185"
     }),
     ("custom_preset_amoled", {
         "bg_main": "#18191C",
@@ -39,7 +43,9 @@ CUSTOM_PRESETS = [
         "bg_input": "#222428",
         "accent_color": "#3B82F6",
         "text_main": "#F1F3F5",
-        "text_muted": "#909296"
+        "text_muted": "#909296",
+        "cal_weekend_header": "#60A5FA",
+        "cal_weekend_text": "#F87171"
     }),
     ("custom_preset_midnight", {
         "bg_main": "#120E16",
@@ -49,7 +55,9 @@ CUSTOM_PRESETS = [
         "bg_input": "#2A2033",
         "accent_color": "#A061D8",
         "text_main": "#EAE5ED",
-        "text_muted": "#B5A9BC"
+        "text_muted": "#B5A9BC",
+        "cal_weekend_header": "#D7AEF5",
+        "cal_weekend_text": "#E879F9"
     }),
     ("custom_preset_emerald", {
         "bg_main": "#0C1410",
@@ -59,7 +67,9 @@ CUSTOM_PRESETS = [
         "bg_input": "#182B23",
         "accent_color": "#10B981",
         "text_main": "#E6F4EA",
-        "text_muted": "#829B8C"
+        "text_muted": "#829B8C",
+        "cal_weekend_header": "#34D399",
+        "cal_weekend_text": "#6EE7B7"
     }),
     ("custom_preset_espresso", {
         "bg_main": "#191512",
@@ -69,7 +79,9 @@ CUSTOM_PRESETS = [
         "bg_input": "#2E2620",
         "accent_color": "#D97706",
         "text_main": "#F5EBE6",
-        "text_muted": "#A8988F"
+        "text_muted": "#A8988F",
+        "cal_weekend_header": "#FBBF24",
+        "cal_weekend_text": "#F59E0B"
     })
 ]
 
@@ -82,6 +94,8 @@ COLOR_ATTRIBUTES = [
     ("accent_color", "custom_theme_accent", "custom_theme_accent_tooltip"),
     ("text_main", "custom_theme_text_main", "custom_theme_text_main_tooltip"),
     ("text_muted", "custom_theme_text_muted", "custom_theme_text_muted_tooltip"),
+    ("cal_weekend_header", "custom_theme_cal_weekend_header", "custom_theme_cal_weekend_header_tooltip"),
+    ("cal_weekend_text", "custom_theme_cal_weekend_text", "custom_theme_cal_weekend_text_tooltip"),
 ]
 
 

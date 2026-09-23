@@ -19,6 +19,7 @@ class ModelSection(QWidget):
     add_tag_requested = Signal(int, str) # model_id, tag
     delete_tag_requested = Signal(int, str) # model_id, tag
     image_changed = Signal(int, str) # model_id, file_path
+    delete_model_requested = Signal(int) # model_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -77,12 +78,24 @@ class ModelSection(QWidget):
         self.notes_edit.textChanged.connect(self.check_changes)
         layout.addWidget(self.notes_edit)
 
-        # Save Button
+        # Save & Delete Buttons Container
+        buttons_container = QWidget()
+        buttons_layout = QHBoxLayout(buttons_container)
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
+        buttons_layout.setSpacing(8)
+
         self.save_btn = QPushButton(t("detail_save_changes"))
         self.save_btn.setObjectName("SaveBtn")
         self.save_btn.setEnabled(False)
         self.save_btn.clicked.connect(self.on_save_clicked)
-        layout.addWidget(self.save_btn)
+        buttons_layout.addWidget(self.save_btn)
+
+        self.delete_btn = QPushButton(t("detail_delete_model"))
+        self.delete_btn.setObjectName("DeleteNoteBtn")
+        self.delete_btn.clicked.connect(self.on_delete_model_clicked)
+        buttons_layout.addWidget(self.delete_btn)
+
+        layout.addWidget(buttons_container)
 
         # --- MODEL TAGS SECTION ---
         self.tags_title = QLabel(t("detail_tags_title"))
@@ -169,6 +182,19 @@ class ModelSection(QWidget):
         self.initial_name = name
         self.initial_notes = notes
         self.save_btn.setEnabled(False)
+
+    def on_delete_model_clicked(self):
+        if not self.model_data:
+            return
+        name = self.model_data.get('name', '')
+        confirm = QMessageBox.question(
+            self,
+            t("confirm_delete_models_title"),
+            t("detail_delete_model_confirm").format(name=name),
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if confirm == QMessageBox.Yes:
+            self.delete_model_requested.emit(self.model_data['id'])
 
     def reload_pills(self):
         while self.pills_layout.count():
@@ -300,6 +326,7 @@ class ModelSection(QWidget):
         self.notes_title.setText(t("detail_notes_title"))
         self.notes_edit.setPlaceholderText(t("detail_notes_placeholder_model"))
         self.save_btn.setText(t("detail_save_changes"))
+        self.delete_btn.setText(t("detail_delete_model"))
         self.tags_title.setText(t("detail_tags_title"))
         self.new_tag_edit.setPlaceholderText(t("detail_new_tag_placeholder"))
         self.tw_title.setText(t("detail_triggers_title"))

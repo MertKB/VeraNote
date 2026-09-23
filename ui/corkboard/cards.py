@@ -2,13 +2,99 @@
 Corkboard cards and Quick Note widgets for VeraNote Welcome Screen.
 """
 import os
+import re
+import base64
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QTextEdit, QPushButton, QFrame, QMenu)
-from PySide6.QtCore import Signal, Qt, QSize, QPoint, QThreadPool, QRunnable, QObject
+from PySide6.QtCore import Signal, Qt, QSize, QPoint, QThreadPool, QRunnable, QObject, Slot
 from PySide6.QtGui import (QPainter, QImage, QTextDocument, QFontMetrics, QCursor, 
-                           QGuiApplication, QPen, QColor, QPixmap)
+                           QGuiApplication, QPen, QColor, QPixmap, QTextLayout, QTextOption)
 from utils.i18n import t
-from utils.cache import THUMBNAIL_CACHE
+from utils.cache import THUMBNAIL_CACHE, resolve_image_path
+from ui.library_view import get_rounded_pixmap
+
+
+_DATA_URI_RE = re.compile(r'data:image/[^;\s]+;base64,[A-Za-z0-9+/=]+', re.IGNORECASE)
+
+
+def extract_plain_text(html_content: str) -> str:
+    """Clean HTML content into human-readable plain text without giant base64 data URIs."""
+    if not html_content:
+        return ""
+    cleaned_html = _DATA_URI_RE.sub('[Görsel]', html_content)
+    doc = QTextDocument()
+    doc.setHtml(cleaned_html)
+    return doc.toPlainText().strip()
+
+
+def extract_embedded_image_data(html_content: str):
+    """Extract embedded base64 or file image from HTML content if present."""
+    if not html_content:
+        return None
+    m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
+    if not m:
+        return None
+    src = m.group(1).strip()
+    if src.startswith("data:image/"):
+        try:
+            _, encoded = src.split(",", 1)
+            raw = base64.b64decode(encoded)
+            img = QImage.fromData(raw)
+            if not img.isNull():
+                return img
+        except Exception:
+            return None
+    else:
+        resolved = resolve_image_path(src)
+        if resolved:
+            return resolved
+    return None
+
+
+def get_fit_text(text: str, font, max_w: int, max_h: int) -> str:
+    """Format multiline text into the available width and height dynamically, wrapping words or characters as needed."""
+    if not text:
+        return ""
+    if max_w <= 30 or max_h <= 16:
+        return ""
+    
+    fm = QFontMetrics(font)
+    line_spacing = max(14, fm.lineSpacing())
+    max_lines = max(1, int(max_h // line_spacing))
+    
+    layout = QTextLayout(text, font)
+    opt = QTextOption()
+    opt.setWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+    layout.setTextOption(opt)
+    layout.beginLayout()
+    
+    line_strings = []
+    has_more = False
+    
+    while len(line_strings) < max_lines:
+        line = layout.createLine()
+        if not line.isValid():
+            break
+        line.setLineWidth(max_w)
+        start = line.textStart()
+        length = line.textLength()
+        line_strings.append(text[start:start + length].rstrip('\r\n'))
+        
+    if layout.createLine().isValid():
+        has_more = True
+    layout.endLayout()
+    
+    if not line_strings:
+        return ""
+        
+    total_len = sum(len(s) for s in line_strings)
+    raw_no_newlines = text.replace('\r', '').replace('\n', '')
+    if has_more or total_len < len(raw_no_newlines):
+        last = line_strings[-1]
+        elided = fm.elidedText(last + '...', Qt.ElideRight, max_w)
+        line_strings[-1] = elided
+        
+    return '\n'.join(line_strings)
 
 
 class ImageLoadWorkerSignals(QObject):
@@ -34,7 +120,8 @@ class ImageLoadWorker(QRunnable):
                     Qt.KeepAspectRatioByExpanding,
                     Qt.SmoothTransformation
                 )
-                self.signals.image_loaded.emit(self.image_path, scaled)
+                cropped = scaled.copy(0, 0, self.target_w, self.target_h)
+                self.signals.image_loaded.emit(self.image_path, cropped)
         except Exception:
             pass
 
@@ -225,6 +312,9 @@ class CorkboardNoteCard(QFrame):
         self.drag_start_size = QSize()
         self.drag_start_pos = QPoint()
         self.is_locked = False
+        self._image_worker = None
+        self.current_pixmap = None
+        self.embedded_qimage = None
         
         w = self.note_data.get('corkboard_w') or 220
         h = self.note_data.get('corkboard_h') or 200
@@ -232,14 +322,24 @@ class CorkboardNoteCard(QFrame):
         self.resize(w, h)
         self.setCursor(Qt.PointingHandCursor)
         
-        self.image_path = self.note_data.get('image_path')
+        raw_img_path = self.note_data.get('image_path') or ''
+        self.image_path = resolve_image_path(raw_img_path)
         self.display_mode = self.note_data.get('display_mode', 'WITH_IMAGE')
+        
+        html_content = self.note_data.get('content', '')
+        if not self.image_path:
+            embedded = extract_embedded_image_data(html_content)
+            if isinstance(embedded, QImage):
+                self.embedded_qimage = embedded
+            elif isinstance(embedded, str):
+                self.image_path = resolve_image_path(embedded)
+                
+        self.full_plain_text = extract_plain_text(html_content)
         
         color_hex = self.note_data.get('color_hex') or "default"
         self.apply_card_color(color_hex)
         
-        # Main Layout (Add top margin if NO image to avoid collision with top-right copy button)
-        has_img = self.show_images and (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
+        has_img = self.has_image()
         top_pad = 10 if has_img else 32
         
         self.main_layout = QVBoxLayout(self)
@@ -249,30 +349,18 @@ class CorkboardNoteCard(QFrame):
         # Image Preview Label
         self.image_label = QLabel(self)
         self.image_label.setObjectName("CorkboardCardImage")
-        self.image_label.setFixedHeight(105)
         self.image_label.setScaledContents(True)
         self.image_label.setStyleSheet("border-radius: 8px; background-color: transparent;")
         self.image_label.setVisible(False)
         self.main_layout.addWidget(self.image_label)
 
         # Title Label
-        metrics = QFontMetrics(self.font())
-        title_str = self.note_data.get('title', 'Not')
-        elided_title = metrics.elidedText(title_str, Qt.ElideRight, 150)
-        
-        self.title_label = QLabel(elided_title, self)
+        self.title_label = QLabel(self)
         self.title_label.setStyleSheet("font-weight: bold; font-size: 13px; background: transparent;")
         self.main_layout.addWidget(self.title_label)
 
         # Content body
-        html_content = self.note_data.get('content', '')
-        doc = QTextDocument()
-        doc.setHtml(html_content)
-        plain_text = doc.toPlainText().strip()
-        if len(plain_text) > 110:
-            plain_text = plain_text[:110] + "..."
-            
-        self.content_label = QLabel(plain_text, self)
+        self.content_label = QLabel(self)
         self.content_label.setWordWrap(True)
         self.content_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.content_label.setStyleSheet("font-size: 11px; line-height: 1.3; background: transparent;")
@@ -307,14 +395,21 @@ class CorkboardNoteCard(QFrame):
         top_overlay_layout.addWidget(self.copy_btn)
 
         self.update_image_display()
+        self.update_content_display()
         self.top_overlay_container.raise_()
 
+    def has_image(self) -> bool:
+        if not self.show_images or self.display_mode != 'WITH_IMAGE':
+            return False
+        if self.image_path and os.path.exists(self.image_path):
+            return True
+        if self.embedded_qimage and not self.embedded_qimage.isNull():
+            return True
+        return False
+
     def on_copy_text(self):
-        html_content = self.note_data.get('content', '')
-        doc = QTextDocument()
-        doc.setHtml(html_content)
-        plain_text = doc.toPlainText().strip()
-        QGuiApplication.clipboard().setText(plain_text)
+        text_to_copy = self.full_plain_text or ""
+        QGuiApplication.clipboard().setText(text_to_copy)
         main_win = self.window()
         if hasattr(main_win, 'show_toast'):
             main_win.show_toast(t("toast_copied"), "success")
@@ -322,25 +417,79 @@ class CorkboardNoteCard(QFrame):
             main_win.statusBar().showMessage(t("home_copied_msg"), 2000)
 
     def update_image_display(self):
-        show_img = self.show_images and (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
+        show_img = self.has_image()
         top_pad = 10 if show_img else 32
         self.main_layout.setContentsMargins(10, top_pad, 10, 10)
         
         if show_img:
+            img_h = max(70, min(280, int(self.height() * 0.42)))
+            target_w = max(140, self.width() - 20)
+            self.image_label.setFixedHeight(img_h)
             self.image_label.setVisible(True)
-            if self.image_path in THUMBNAIL_CACHE:
-                self.image_label.setPixmap(THUMBNAIL_CACHE[self.image_path])
-            else:
-                worker = ImageLoadWorker(self.image_path, target_w=216, target_h=105)
-                def on_loaded(path, qimg):
-                    if getattr(self, 'image_path', '') == path and qimg and not qimg.isNull():
-                        pix = QPixmap.fromImage(qimg)
-                        THUMBNAIL_CACHE[path] = pix
-                        self.image_label.setPixmap(pix)
-                worker.signals.image_loaded.connect(on_loaded)
-                QThreadPool.globalInstance().start(worker)
+            
+            if self.embedded_qimage and not self.embedded_qimage.isNull():
+                scaled = self.embedded_qimage.scaled(target_w, img_h, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                cropped = scaled.copy(0, 0, target_w, img_h)
+                pix = QPixmap.fromImage(cropped)
+                rounded = get_rounded_pixmap(pix, radius=10)
+                self.current_pixmap = rounded
+                self.image_label.setPixmap(rounded)
+            elif self.image_path and os.path.exists(self.image_path):
+                cache_key = f"{self.image_path}_{target_w}_{img_h}"
+                if cache_key in THUMBNAIL_CACHE:
+                    self.current_pixmap = THUMBNAIL_CACHE[cache_key]
+                    self.image_label.setPixmap(self.current_pixmap)
+                elif self.image_path in THUMBNAIL_CACHE:
+                    pix = THUMBNAIL_CACHE[self.image_path]
+                    self.current_pixmap = pix
+                    self.image_label.setPixmap(pix)
+                else:
+                    self._image_worker = ImageLoadWorker(self.image_path, target_w=target_w, target_h=img_h)
+                    self._image_worker.signals.image_loaded.connect(self._on_async_image_loaded)
+                    QThreadPool.globalInstance().start(self._image_worker)
         else:
             self.image_label.setVisible(False)
+
+    @Slot(str, object)
+    def _on_async_image_loaded(self, path, qimg):
+        if getattr(self, 'image_path', '') != path:
+            return
+        if qimg and not qimg.isNull():
+            pix = QPixmap.fromImage(qimg)
+            rounded = get_rounded_pixmap(pix, radius=10)
+            target_w = max(140, self.width() - 20)
+            img_h = max(70, min(280, int(self.height() * 0.42)))
+            cache_key = f"{path}_{target_w}_{img_h}"
+            THUMBNAIL_CACHE[cache_key] = rounded
+            self.current_pixmap = rounded
+            self.image_label.setPixmap(rounded)
+            self.image_label.setVisible(True)
+            self.update_content_display()
+
+    def update_content_display(self):
+        # 1. Update Title Label with dynamic elision
+        title_str = self.note_data.get('title', 'Not')
+        avail_title_w = max(40, self.width() - 40)
+        self.title_label.setText(self.title_label.fontMetrics().elidedText(title_str, Qt.ElideRight, avail_title_w))
+        
+        # 2. Dynamic Image Height
+        show_img = self.has_image()
+        img_h = 0
+        if show_img:
+            img_h = max(70, min(280, int(self.height() * 0.42)))
+            self.image_label.setFixedHeight(img_h)
+            if self.current_pixmap:
+                self.image_label.setPixmap(self.current_pixmap)
+                
+        # 3. Dynamic Content text calculation
+        top_pad = 10 if show_img else 32
+        avail_w = max(60, self.width() - 20)
+        title_h = max(18, self.title_label.sizeHint().height())
+        used_h = top_pad + (img_h + 6 if show_img else 0) + title_h + 6 + 10
+        avail_h = max(20, self.height() - used_h)
+        
+        fit_text = get_fit_text(self.full_plain_text, self.content_label.font(), avail_w, avail_h)
+        self.content_label.setText(fit_text)
 
     def apply_card_color(self, color_hex):
         bg, border, text_col = get_palette_colors(color_hex)
@@ -361,6 +510,7 @@ class CorkboardNoteCard(QFrame):
         w = self.width()
         if hasattr(self, 'top_overlay_container') and self.top_overlay_container:
             self.top_overlay_container.setGeometry(6, 6, max(80, w - 12), 26)
+        self.update_content_display()
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
@@ -396,8 +546,8 @@ class CorkboardNoteCard(QFrame):
         if not self.is_locked and self.mode == "free" and (event.buttons() & Qt.LeftButton):
             if self.is_resizing:
                 delta = event.globalPosition().toPoint() - self.drag_start_pos
-                nw = max(160, min(600, self.drag_start_size.width() + delta.x()))
-                nh = max(140, min(500, self.drag_start_size.height() + delta.y()))
+                nw = max(160, min(900, self.drag_start_size.width() + delta.x()))
+                nh = max(140, min(800, self.drag_start_size.height() + delta.y()))
                 self.resize(nw, nh)
             elif self.drag_position is not None:
                 new_pos = event.globalPosition().toPoint() - self.drag_position

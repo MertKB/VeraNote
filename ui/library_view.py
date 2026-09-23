@@ -14,6 +14,26 @@ def cache_thumbnail(path, pixmap, max_size=150):
         return
     THUMBNAIL_CACHE[path] = pixmap
 
+class FileCheckSignals(QObject):
+    checked = Signal(str, bool) # file_path, exists
+
+class FileCheckWorker(QRunnable):
+    def __init__(self, file_path):
+        super().__init__()
+        self.file_path = file_path
+        self.signals = FileCheckSignals()
+
+    def run(self):
+        exists = False
+        try:
+            exists = bool(self.file_path and os.path.exists(self.file_path))
+        except Exception:
+            exists = False
+        try:
+            self.signals.checked.emit(self.file_path, exists)
+        except RuntimeError:
+            pass
+
 class ImageLoadSignals(QObject):
     image_loaded = Signal(str, object, int, int) # image_path, QImage, target_w, target_h
 
@@ -83,6 +103,7 @@ class ModelCardWidget(QFrame):
     hide_requested = Signal(dict)
     unhide_requested = Signal(dict)
     selection_toggled = Signal(dict, bool)
+    delete_requested = Signal(dict)
 
     def __init__(self, model_data, parent=None):
         super().__init__(parent)
@@ -96,14 +117,15 @@ class ModelCardWidget(QFrame):
         filepath = self.model_data.get('file_path', '')
         self.original_filename = os.path.basename(filepath) if filepath else t("unknown_file")
         
-        # Fast initialization without blocking disk stat
         self.file_exists = True
+        self.warning_badge = None
         self.is_fav = bool(self.model_data.get('is_favorite', 0))
         self.is_selected = False
         self.drag_start_pos = None
         
         self.setCursor(Qt.PointingHandCursor)
         self.init_ui()
+        self.check_file_existence()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -126,13 +148,14 @@ class ModelCardWidget(QFrame):
         self.fav_btn.clicked.connect(self.on_fav_clicked)
         self.update_fav_btn_style()
 
-        # Multi-select Checkbox Button Overlay on top-right of image
+        # Multi-select Checkbox Button Overlay on top-right of image (hidden by default)
         self.select_btn = QPushButton(self.image_label)
         self.select_btn.setObjectName("CardSelectBtn")
         self.select_btn.setFixedSize(24, 24)
         self.select_btn.setGeometry(166, 8, 24, 24)
         self.select_btn.setCursor(Qt.PointingHandCursor)
         self.select_btn.clicked.connect(self.on_select_clicked)
+        self.select_btn.setVisible(False)
         self.update_selection_style()
 
         # Bottom Info Panel - Dedicated container for title & filename
@@ -164,6 +187,39 @@ class ModelCardWidget(QFrame):
         self.set_card_image(self.model_data.get('image_path'))
         self.update_texts()
 
+    def check_file_existence(self):
+        filepath = self.model_data.get('file_path', '')
+        if not filepath:
+            self.set_file_exists(False)
+            return
+        worker = FileCheckWorker(filepath)
+        worker.signals.checked.connect(self._on_file_check_result)
+        QThreadPool.globalInstance().start(worker)
+
+    @Slot(str, bool)
+    def _on_file_check_result(self, path, exists):
+        if self.model_data.get('file_path', '') == path:
+            self.set_file_exists(exists)
+
+    def set_file_exists(self, exists: bool):
+        self.file_exists = exists
+        if not exists:
+            if not getattr(self, 'warning_badge', None):
+                self.warning_badge = QLabel(t("not_on_disk"), self.image_label)
+                self.warning_badge.setObjectName("WarningBadge")
+                self.warning_badge.setGeometry(88, 8, 72, 20)
+                self.warning_badge.setAlignment(Qt.AlignCenter)
+                self.warning_badge.setToolTip(t("not_on_disk_tooltip"))
+                self.warning_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+            self.warning_badge.show()
+        else:
+            if getattr(self, 'warning_badge', None):
+                self.warning_badge.hide()
+
+    def set_checkbox_visible(self, visible: bool):
+        if hasattr(self, 'select_btn'):
+            self.select_btn.setVisible(visible)
+
     def update_texts(self):
         metrics = QFontMetrics(self.font())
         
@@ -180,28 +236,56 @@ class ModelCardWidget(QFrame):
         self.filename_label.setText(elided_filename)
         self.filename_label.setToolTip(self.original_filename)
 
-    def contextMenuEvent(self, event):
-        main_win = self.window()
-        if not (main_win and getattr(main_win, 'incognito_active', False)):
-            event.ignore()
-            return
+        if getattr(self, 'warning_badge', None):
+            self.warning_badge.setText(t("not_on_disk"))
+            self.warning_badge.setToolTip(t("not_on_disk_tooltip"))
 
+    def contextMenuEvent(self, event):
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QCursor
+        
+        main_win = self.window()
+        incognito_active = bool(main_win and getattr(main_win, 'incognito_active', False))
+        
         menu = QMenu(self)
         
-        is_hidden = self.model_data.get('is_hidden', 0) == 1
+        # Check parent library view for bulk selection state
+        parent_widget = self.parent()
+        while parent_widget and not hasattr(parent_widget, 'selected_model_ids'):
+            parent_widget = parent_widget.parent()
+            
+        selected_ids = getattr(parent_widget, 'selected_model_ids', set())
         
-        if not is_hidden:
-            hide_action = menu.addAction(t("menu_hide"))
-            action = menu.exec(QCursor.pos())
-            if action == hide_action:
-                self.hide_requested.emit(self.model_data)
+        # Delete action
+        if self.is_selected and len(selected_ids) > 1:
+            del_text = t("menu_delete_selected_models").format(count=len(selected_ids))
+            del_action = menu.addAction(del_text)
+            del_bulk = True
         else:
-            unhide_action = menu.addAction(t("menu_unhide"))
-            action = menu.exec(QCursor.pos())
-            if action == unhide_action:
-                self.unhide_requested.emit(self.model_data)
+            del_text = t("menu_delete_model")
+            del_action = menu.addAction(del_text)
+            del_bulk = False
+            
+        hide_action = None
+        unhide_action = None
+        if incognito_active:
+            menu.addSeparator()
+            is_hidden = self.model_data.get('is_hidden', 0) == 1
+            if not is_hidden:
+                hide_action = menu.addAction(t("menu_hide"))
+            else:
+                unhide_action = menu.addAction(t("menu_unhide"))
+                
+        action = menu.exec(QCursor.pos())
+        if action == del_action:
+            if del_bulk and parent_widget and hasattr(parent_widget, 'on_bulk_delete_clicked'):
+                parent_widget.on_bulk_delete_clicked()
+            else:
+                self.delete_requested.emit(self.model_data)
+        elif hide_action and action == hide_action:
+            self.hide_requested.emit(self.model_data)
+        elif unhide_action and action == unhide_action:
+            self.unhide_requested.emit(self.model_data)
 
     def set_card_image(self, image_path):
         self.current_image_path = image_path
@@ -265,8 +349,9 @@ class ModelCardWidget(QFrame):
         self.image_label.setPixmap(QPixmap())
         self.image_loaded = False
         self.image_loading = False
-        if hasattr(self, 'warning_badge'):
+        if getattr(self, 'warning_badge', None):
             self.warning_badge.deleteLater()
+            self.warning_badge = None
         if hasattr(self, 'fav_btn'):
             self.fav_btn.deleteLater()
         if hasattr(self, 'select_btn'):
@@ -364,6 +449,7 @@ class LibraryView(QWidget):
     bulk_add_tag_requested = Signal(list)
     bulk_remove_tag_requested = Signal(list)
     bulk_favorite_requested = Signal(list, bool)
+    bulk_delete_requested = Signal(list)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -473,6 +559,34 @@ class LibraryView(QWidget):
             QPushButton.bulk_primary_btn:hover {
                 background-color: #A8C7FA;
             }
+            QPushButton.bulk_danger_btn {
+                background-color: #3B1C22;
+                color: #F87171;
+                border: 1px solid #7F1D1D;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton.bulk_danger_btn:hover {
+                background-color: #DC2626;
+                border-color: #EF4444;
+                color: #FFFFFF;
+            }
+            QPushButton.bulk_warning_btn {
+                background-color: #382B12;
+                color: #FBBF24;
+                border: 1px solid #78350F;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton.bulk_warning_btn:hover {
+                background-color: #D97706;
+                border-color: #F59E0B;
+                color: #FFFFFF;
+            }
         """)
         bulk_layout = QHBoxLayout(self.bulk_bar)
         bulk_layout.setContentsMargins(12, 8, 12, 8)
@@ -489,6 +603,13 @@ class LibraryView(QWidget):
         self.bulk_select_all_btn.setCursor(Qt.PointingHandCursor)
         self.bulk_select_all_btn.clicked.connect(self.select_all_cards)
         bulk_layout.addWidget(self.bulk_select_all_btn)
+
+        self.bulk_select_missing_btn = QPushButton(t("bulk_select_missing"))
+        self.bulk_select_missing_btn.setProperty("class", "bulk_warning_btn")
+        self.bulk_select_missing_btn.setCursor(Qt.PointingHandCursor)
+        self.bulk_select_missing_btn.clicked.connect(self.select_missing_cards)
+        self.bulk_select_missing_btn.setVisible(False)
+        bulk_layout.addWidget(self.bulk_select_missing_btn)
 
         self.bulk_clear_btn = QPushButton(t("bulk_clear_selection"))
         self.bulk_clear_btn.setProperty("class", "bulk_btn")
@@ -513,6 +634,12 @@ class LibraryView(QWidget):
         self.bulk_remove_tag_btn.setCursor(Qt.PointingHandCursor)
         self.bulk_remove_tag_btn.clicked.connect(self.on_bulk_remove_tag_clicked)
         bulk_layout.addWidget(self.bulk_remove_tag_btn)
+
+        self.bulk_delete_btn = QPushButton(t("bulk_delete_models"))
+        self.bulk_delete_btn.setProperty("class", "bulk_danger_btn")
+        self.bulk_delete_btn.setCursor(Qt.PointingHandCursor)
+        self.bulk_delete_btn.clicked.connect(self.on_bulk_delete_clicked)
+        bulk_layout.addWidget(self.bulk_delete_btn)
 
         self.bulk_bar.setVisible(False)
         self.main_layout.addWidget(self.bulk_bar)
@@ -574,6 +701,10 @@ class LibraryView(QWidget):
         card.hide_requested.connect(self.model_hide_requested.emit)
         card.unhide_requested.connect(self.model_unhide_requested.emit)
         card.selection_toggled.connect(self.on_card_selection_toggled)
+        card.delete_requested.connect(self.on_single_card_delete_requested)
+        
+        is_sel_active = len(self.selected_model_ids) > 0
+        card.set_checkbox_visible(is_sel_active)
         if card.model_data.get('id') in self.selected_model_ids:
             card.set_selected(True)
         return card
@@ -813,16 +944,24 @@ class LibraryView(QWidget):
 
     def on_card_selection_toggled(self, model_data, is_selected):
         m_id = model_data.get('id')
+        was_active = len(self.selected_model_ids) > 0
         if is_selected:
             self.selected_model_ids.add(m_id)
         else:
             self.selected_model_ids.discard(m_id)
+        is_active = len(self.selected_model_ids) > 0
+        if is_active != was_active:
+            for card in self.cards:
+                if isinstance(card, ModelCardWidget):
+                    card.set_checkbox_visible(is_active)
         self.update_bulk_bar()
 
     def update_bulk_bar(self):
         count = len(self.selected_model_ids)
         if count > 0:
             self.bulk_count_label.setText(t("bulk_models_selected_count").format(count=count))
+            has_missing = any(isinstance(c, ModelCardWidget) and not getattr(c, 'file_exists', True) for c in self.cards)
+            self.bulk_select_missing_btn.setVisible(has_missing)
             self.bulk_bar.setVisible(True)
         else:
             self.bulk_bar.setVisible(False)
@@ -830,16 +969,57 @@ class LibraryView(QWidget):
     def select_all_cards(self):
         for card in self.cards:
             if isinstance(card, ModelCardWidget):
+                card.set_checkbox_visible(True)
                 card.set_selected(True)
                 self.selected_model_ids.add(card.model_data.get('id'))
         self.update_bulk_bar()
 
+    def select_missing_cards(self):
+        for card in self.cards:
+            if isinstance(card, ModelCardWidget) and not getattr(card, 'file_exists', True):
+                card.set_selected(True)
+                self.selected_model_ids.add(card.model_data.get('id'))
+        is_active = len(self.selected_model_ids) > 0
+        for card in self.cards:
+            if isinstance(card, ModelCardWidget):
+                card.set_checkbox_visible(is_active)
+        self.update_bulk_bar()
+
     def clear_selection(self):
         for card in self.cards:
-            if isinstance(card, ModelCardWidget) and card.is_selected:
-                card.set_selected(False)
+            if isinstance(card, ModelCardWidget):
+                if card.is_selected:
+                    card.set_selected(False)
+                card.set_checkbox_visible(False)
         self.selected_model_ids.clear()
         self.update_bulk_bar()
+
+    def on_bulk_delete_clicked(self):
+        if not self.selected_model_ids:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        count = len(self.selected_model_ids)
+        confirm = QMessageBox.question(
+            self,
+            t("confirm_delete_models_title"),
+            t("confirm_delete_models_msg").format(count=count),
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if confirm == QMessageBox.Yes:
+            self.bulk_delete_requested.emit(list(self.selected_model_ids))
+
+    def on_single_card_delete_requested(self, model_data):
+        from PySide6.QtWidgets import QMessageBox
+        m_id = model_data.get('id')
+        name = model_data.get('name', '')
+        confirm = QMessageBox.question(
+            self,
+            t("confirm_delete_models_title"),
+            t("detail_delete_model_confirm").format(name=name),
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if confirm == QMessageBox.Yes:
+            self.bulk_delete_requested.emit([m_id])
 
     def on_bulk_fav_clicked(self, is_fav):
         if self.selected_model_ids:
@@ -856,6 +1036,9 @@ class LibraryView(QWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.selected_model_ids:
             self.clear_selection()
+            return
+        elif event.key() in (Qt.Key_Delete, Qt.Key_Backspace) and self.selected_model_ids:
+            self.on_bulk_delete_clicked()
             return
         super().keyPressEvent(event)
 
@@ -877,10 +1060,12 @@ class LibraryView(QWidget):
         self.fav_toggle_btn.setText(t("view_favorites"))
         self.scan_btn.setText(t("view_scan_library"))
         self.bulk_select_all_btn.setText(t("bulk_select_all"))
+        self.bulk_select_missing_btn.setText(t("bulk_select_missing"))
         self.bulk_clear_btn.setText(t("bulk_clear_selection"))
         self.bulk_fav_btn.setText("⭐ " + t("bulk_set_fav"))
         self.bulk_add_tag_btn.setText("🏷️ " + t("bulk_add_tag"))
         self.bulk_remove_tag_btn.setText("✕ " + t("bulk_remove_tag"))
+        self.bulk_delete_btn.setText(t("bulk_delete_models"))
         if len(self.selected_model_ids) > 0:
             self.bulk_count_label.setText(t("bulk_models_selected_count").format(count=len(self.selected_model_ids)))
         self.populate_grid(use_filtered=True)

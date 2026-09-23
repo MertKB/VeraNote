@@ -28,6 +28,34 @@ os.makedirs(SAVED_IMAGES_DIR, exist_ok=True)
 SAVED_WORKFLOWS_DIR = os.path.join(db_dir, "saved_workflows")
 os.makedirs(SAVED_WORKFLOWS_DIR, exist_ok=True)
 
+def resolve_image_path(path: str) -> str:
+    """Resolve image path handling absolute paths, legacy folder names, and relative paths."""
+    if not path:
+        return ""
+    if os.path.exists(path):
+        return os.path.abspath(path)
+    
+    base = os.path.basename(path)
+    if not base:
+        return ""
+        
+    # Check SAVED_IMAGES_DIR (~/.veranote_data/saved_images/)
+    p_saved = os.path.join(SAVED_IMAGES_DIR, base)
+    if os.path.exists(p_saved):
+        return os.path.abspath(p_saved)
+        
+    # Check root images directory
+    module_dir = os.path.dirname(os.path.abspath(__file__))
+    p_local = os.path.join(module_dir, "images", base)
+    if os.path.exists(p_local):
+        return os.path.abspath(p_local)
+        
+    p_cwd = os.path.join(os.getcwd(), "images", base)
+    if os.path.exists(p_cwd):
+        return os.path.abspath(p_cwd)
+        
+    return ""
+
 # Automatic migration of existing database from legacy app data directories
 for legacy_dir_name in [".veranote_legacy_data"]:
     legacy_db_dir = os.path.join(os.path.expanduser("~"), legacy_dir_name)
@@ -247,6 +275,18 @@ def initialize_db():
             );
         """)
 
+        # Recurring Routines (Ajanda Tekrarlayan Rutinler / Şablonlar)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS recurring_routines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                frequency TEXT DEFAULT 'daily',
+                priority INTEGER DEFAULT 1,
+                is_active INTEGER DEFAULT 1,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
         conn.commit()
 
         # Migrate libraries table if type column is missing
@@ -356,6 +396,7 @@ def initialize_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_daily_date ON tasks(daily_note_date);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(is_completed);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_routines_active ON recurring_routines(is_active);")
 
         conn.commit()
 
@@ -800,6 +841,40 @@ def delete_model_tag(model_id, tag_name):
             print(f"Error deleting tag {tag_name} for model {model_id}: {e}")
             return False
 
+def delete_model(model_id):
+    """Deletes a model and all its associations from VeraNote database."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM model_tags WHERE model_id = ?;", (model_id,))
+            cursor.execute("DELETE FROM trigger_words WHERE model_id = ?;", (model_id,))
+            cursor.execute("DELETE FROM note_models WHERE model_id = ?;", (model_id,))
+            cursor.execute("DELETE FROM models WHERE id = ?;", (model_id,))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error deleting model {model_id}: {e}")
+            return False
+
+def delete_models(model_ids):
+    """Batch deletes multiple models and their associations from VeraNote database in a single transaction."""
+    if not model_ids:
+        return True
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            placeholders = ",".join("?" for _ in model_ids)
+            ids_tuple = tuple(model_ids)
+            cursor.execute(f"DELETE FROM model_tags WHERE model_id IN ({placeholders});", ids_tuple)
+            cursor.execute(f"DELETE FROM trigger_words WHERE model_id IN ({placeholders});", ids_tuple)
+            cursor.execute(f"DELETE FROM note_models WHERE model_id IN ({placeholders});", ids_tuple)
+            cursor.execute(f"DELETE FROM models WHERE id IN ({placeholders});", ids_tuple)
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error bulk deleting models {model_ids}: {e}")
+            return False
+
 # --- NOTE ADDITIONAL CRUD AND RELATION FUNCTIONS ---
 def toggle_note_favorite(note_id, is_fav):
     with get_connection() as conn:
@@ -876,6 +951,39 @@ def add_workflow_library(name):
             return True
         except sqlite3.IntegrityError:
             return False
+
+def delete_workflow_library(library_id):
+    """Deletes a workflow library, all its contained workflows, and their saved files."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, image_path, file_path FROM workflows WHERE library_id = ?;", (library_id,))
+        rows = cursor.fetchall()
+        
+        project_images_dir = os.path.abspath(SAVED_IMAGES_DIR)
+        project_wf_dir = os.path.abspath(SAVED_WORKFLOWS_DIR)
+        
+        for r in rows:
+            img_path = r['image_path']
+            if img_path:
+                abs_img = os.path.abspath(img_path)
+                if os.path.dirname(abs_img) == project_images_dir and os.path.exists(abs_img):
+                    try:
+                        os.remove(abs_img)
+                    except Exception as e:
+                        print(f"Error cleaning workflow image {abs_img}: {e}")
+            wf_file = r['file_path']
+            if wf_file:
+                abs_wf = os.path.abspath(wf_file)
+                if os.path.dirname(abs_wf) == project_wf_dir and os.path.exists(abs_wf):
+                    try:
+                        os.remove(abs_wf)
+                    except Exception as e:
+                        print(f"Error cleaning workflow file {abs_wf}: {e}")
+
+        cursor.execute("DELETE FROM workflows WHERE library_id = ?;", (library_id,))
+        cursor.execute("DELETE FROM libraries WHERE id = ? AND type = 'WORKFLOW';", (library_id,))
+        conn.commit()
+        return True
 
 def add_workflow(library_id, name, file_path, description="", image_path="", notes=""):
     import time
@@ -1226,11 +1334,119 @@ class AgendaRepository:
         return indicators
 
     @staticmethod
+    def get_monthly_agenda_stats(year: int, month: int) -> dict:
+        """
+        Calculate monthly metrics for the Agenda view:
+        - total tasks & completed tasks
+        - completion rate (%)
+        - active note days count & ratio
+        - streak (consecutive active days up to today)
+        - overall productivity score
+        """
+        import calendar
+        import datetime
+        _, num_days = calendar.monthrange(year, month)
+        prefix = f"{year:04d}-{month:02d}-%"
+
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            # 1. Total tasks & completed tasks in month
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) AS total_count,
+                    COALESCE(SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END), 0) AS completed_count
+                FROM tasks
+                WHERE (due_date LIKE ? OR daily_note_date LIKE ?);
+            """, (prefix, prefix))
+            task_row = cursor.fetchone()
+            total_tasks = task_row['total_count'] if task_row else 0
+            completed_tasks = task_row['completed_count'] if task_row else 0
+
+            # 2. Distinct days with non-empty notes in month
+            cursor.execute("""
+                SELECT COUNT(DISTINCT date) AS note_days
+                FROM daily_notes
+                WHERE date LIKE ? AND TRIM(content) != '';
+            """, (prefix,))
+            note_row = cursor.fetchone()
+            active_note_days = note_row['note_days'] if note_row else 0
+
+            # 3. Calculate streak (consecutive active days backwards from today)
+            today = datetime.date.today()
+            cursor.execute("""
+                SELECT DISTINCT date FROM (
+                    SELECT date FROM daily_notes WHERE TRIM(content) != ''
+                    UNION
+                    SELECT COALESCE(due_date, daily_note_date) AS date FROM tasks WHERE is_completed = 1
+                ) WHERE date IS NOT NULL;
+            """)
+            active_dates = {row['date'] for row in cursor.fetchall()}
+
+            streak = 0
+            check_date = today
+            # If today has no activity yet, streak can count backwards from yesterday
+            if check_date.isoformat() not in active_dates:
+                check_date = check_date - datetime.timedelta(days=1)
+
+            while check_date.isoformat() in active_dates:
+                streak += 1
+                check_date = check_date - datetime.timedelta(days=1)
+
+            completion_rate = int((completed_tasks / total_tasks * 100)) if total_tasks > 0 else 0
+            note_ratio = int((active_note_days / num_days) * 100) if num_days > 0 else 0
+            
+            if total_tasks > 0:
+                productivity_score = int(completion_rate * 0.7 + note_ratio * 0.3)
+            elif active_note_days > 0:
+                productivity_score = note_ratio
+            else:
+                productivity_score = 0
+
+            return {
+                "year": year,
+                "month": month,
+                "total_tasks": total_tasks,
+                "completed_tasks": completed_tasks,
+                "completion_rate": completion_rate,
+                "active_note_days": active_note_days,
+                "days_in_month": num_days,
+                "streak_days": streak,
+                "productivity_score": min(100, productivity_score),
+            }
+
+    @staticmethod
+    def get_upcoming_tasks(days_ahead: int = 3) -> list:
+        """
+        Fetch pending (uncompleted) tasks scheduled between today and today + days_ahead.
+        Returns a list of dicts ordered by date ASC, priority DESC, id ASC.
+        """
+        import datetime
+        today = datetime.date.today()
+        end_date = today + datetime.timedelta(days=days_ahead)
+        today_str = today.isoformat()
+        end_str = end_date.isoformat()
+
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM tasks
+                WHERE (due_date BETWEEN ? AND ? OR daily_note_date BETWEEN ? AND ?)
+                  AND is_completed = 0
+                ORDER BY COALESCE(due_date, daily_note_date) ASC, priority DESC, id ASC;
+            """, (today_str, end_str, today_str, end_str))
+            return [dict(row) for row in cursor.fetchall()]
+
+    @staticmethod
     def add_task(title: str, description: str = None, due_date: str = None,
                  priority: int = 1, daily_note_date: str = None, note_id: int = None) -> int:
         """Add a new task to the database."""
         with get_connection() as conn:
             cursor = conn.cursor()
+            if daily_note_date:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO daily_notes (date, content, created_at, updated_at)
+                    VALUES (?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+                """, (daily_note_date,))
             cursor.execute("""
                 INSERT INTO tasks (title, description, is_completed, due_date, priority, daily_note_date, note_id, created_at)
                 VALUES (?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP);
@@ -1275,14 +1491,152 @@ class AgendaRepository:
             conn.commit()
             return new_status
 
+    @staticmethod
+    def clear_completed_tasks(date_str: str) -> int:
+        """Permanently delete all completed tasks for a specific date."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM tasks
+                WHERE (due_date = ? OR daily_note_date = ?) AND is_completed = 1;
+            """, (date_str, date_str))
+            conn.commit()
+            return cursor.rowcount
+
+    @staticmethod
+    def get_active_routines() -> list:
+        """Fetch all active recurring routine templates."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM recurring_routines
+                WHERE is_active = 1
+                ORDER BY priority DESC, id ASC;
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+
+    @staticmethod
+    def get_all_routines() -> list:
+        """Fetch all recurring routine templates."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM recurring_routines
+                ORDER BY is_active DESC, priority DESC, id ASC;
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+
+    @staticmethod
+    def add_routine(title: str, frequency: str = 'daily', priority: int = 1) -> int:
+        """Add a new recurring routine template."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO recurring_routines (title, frequency, priority, is_active, created_at)
+                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP);
+            """, (title.strip(), frequency, priority))
+            conn.commit()
+            return cursor.lastrowid
+
+    @staticmethod
+    def delete_routine(routine_id: int) -> bool:
+        """Delete a recurring routine template."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM recurring_routines WHERE id = ?;", (routine_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    @staticmethod
+    def toggle_routine(routine_id: int, is_active: int = None) -> int:
+        """Toggle or set active status of a recurring routine."""
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            if is_active is None:
+                cursor.execute("SELECT is_active FROM recurring_routines WHERE id = ?;", (routine_id,))
+                row = cursor.fetchone()
+                current = row['is_active'] if row else 1
+                new_status = 0 if current == 1 else 1
+            else:
+                new_status = 1 if is_active else 0
+            cursor.execute("UPDATE recurring_routines SET is_active = ? WHERE id = ?;", (new_status, routine_id))
+            conn.commit()
+            return new_status
+
+    @staticmethod
+    def seed_daily_tasks_from_routines(date_str: str) -> int:
+        """
+        Seeds active routines into the tasks table for date_str if not already present.
+        - Avoids duplicates: checks if a task with identical title already exists for that date.
+        - Respects frequency: routines with frequency='weekdays' are skipped on weekends (Saturday & Sunday).
+        Returns the number of new tasks created.
+        """
+        import datetime
+        try:
+            dt = datetime.date.fromisoformat(date_str)
+            is_weekend = dt.weekday() >= 5  # 5: Saturday, 6: Sunday
+        except Exception:
+            is_weekend = False
+
+        added_count = 0
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM recurring_routines
+                WHERE is_active = 1
+                ORDER BY priority DESC, id ASC;
+            """)
+            routines = [dict(row) for row in cursor.fetchall()]
+
+            for routine in routines:
+                # If routine is weekdays-only and today is a weekend, skip
+                if routine.get('frequency') == 'weekdays' and is_weekend:
+                    continue
+
+                # Check if a task with the same title already exists for this date
+                cursor.execute("""
+                    SELECT id FROM tasks
+                    WHERE (due_date = ? OR daily_note_date = ?) AND title = ?
+                    LIMIT 1;
+                """, (date_str, date_str, routine['title']))
+                if cursor.fetchone():
+                    continue
+
+                # Ensure daily_notes record exists for this date to satisfy foreign key constraint
+                cursor.execute("""
+                    INSERT OR IGNORE INTO daily_notes (date, content, created_at, updated_at)
+                    VALUES (?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+                """, (date_str,))
+
+                # Insert routine as a task for this day
+                cursor.execute("""
+                    INSERT INTO tasks (title, description, is_completed, due_date, priority, daily_note_date, created_at)
+                    VALUES (?, '', 0, ?, ?, ?, CURRENT_TIMESTAMP);
+                """, (routine['title'], date_str, routine['priority'], date_str))
+                added_count += 1
+
+            if added_count > 0:
+                conn.commit()
+
+        return added_count
+
 # Convenient module-level aliases
 get_or_create_daily_note = AgendaRepository.get_or_create_daily_note
 save_daily_note = AgendaRepository.save_daily_note
 get_tasks_for_date = AgendaRepository.get_tasks_for_date
 get_month_task_indicators = AgendaRepository.get_month_task_indicators
+get_monthly_agenda_stats = AgendaRepository.get_monthly_agenda_stats
+get_upcoming_tasks = AgendaRepository.get_upcoming_tasks
 add_task = AgendaRepository.add_task
 delete_task = AgendaRepository.delete_task
 toggle_task_completed = AgendaRepository.toggle_task_completed
+clear_completed_tasks = AgendaRepository.clear_completed_tasks
+get_active_routines = AgendaRepository.get_active_routines
+get_all_routines = AgendaRepository.get_all_routines
+add_routine = AgendaRepository.add_routine
+delete_routine = AgendaRepository.delete_routine
+toggle_routine = AgendaRepository.toggle_routine
+seed_daily_tasks_from_routines = AgendaRepository.seed_daily_tasks_from_routines
 
 
 

@@ -101,3 +101,16 @@ class QPixmapLRUCache:
 
 # Global shared LRU thumbnail cache with max 350 entries and ~180MB RAM limit
 THUMBNAIL_CACHE = QPixmapLRUCache(max_size=350, max_bytes=180 * 1024 * 1024)
+
+def resolve_image_path(path: str) -> str:
+    """Helper to resolve relative image paths against SAVED_IMAGES_DIR if needed."""
+    if not path:
+        return ""
+    import os
+    if os.path.isabs(path) and os.path.exists(path):
+        return path
+    import database
+    rel_in_saved = os.path.join(database.SAVED_IMAGES_DIR, os.path.basename(path))
+    if os.path.exists(rel_in_saved):
+        return rel_in_saved
+    return path

@@ -217,14 +217,14 @@ QMainWindow {{
 /* ScrollBar Styling */
 QScrollBar:vertical {{
     border: none;
-    background: {p['bg_card']};
-    width: 8px;
-    margin: 0px;
-    border-radius: 4px;
+    background: transparent;
+    width: 10px;
+    margin: 4px 2px 4px 2px;
+    border-radius: 5px;
 }}
 QScrollBar::handle:vertical {{
     background: {p['border_color']};
-    min-height: 20px;
+    min-height: 28px;
     border-radius: 4px;
 }}
 QScrollBar::handle:vertical:hover {{
@@ -232,18 +232,24 @@ QScrollBar::handle:vertical:hover {{
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0px;
+    background: none;
+    border: none;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: none;
+    border: none;
 }}
 
 QScrollBar:horizontal {{
     border: none;
-    background: {p['bg_card']};
-    height: 8px;
-    margin: 0px;
-    border-radius: 4px;
+    background: transparent;
+    height: 10px;
+    margin: 2px 4px 2px 4px;
+    border-radius: 5px;
 }}
 QScrollBar::handle:horizontal {{
     background: {p['border_color']};
-    min-width: 20px;
+    min-width: 28px;
     border-radius: 4px;
 }}
 QScrollBar::handle:horizontal:hover {{
@@ -251,6 +257,12 @@ QScrollBar::handle:horizontal:hover {{
 }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
     width: 0px;
+    background: none;
+    border: none;
+}}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+    background: none;
+    border: none;
 }}
 
 /* Splitter and Separator handles */
@@ -888,6 +900,19 @@ QDockWidget::title {{
 #TaskItemWidget:hover {{
     border: 1px solid {p['border_focus']};
 }}
+#TaskDeleteBtn:hover {{
+    background-color: #DC2626 !important;
+    color: #FFFFFF !important;
+}}
+
+#RoutineItemWidget {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+}}
+#RoutineItemWidget:hover {{
+    border: 1px solid {p['border_focus']};
+}}
 
 #PriorityPill {{
     border-radius: 10px;
@@ -895,7 +920,182 @@ QDockWidget::title {{
     font-size: 10px;
     font-weight: bold;
 }}
+
+/* Agenda Monthly Summary & Metrics Panel */
+#AgendaMonthlySummaryPanel {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 10px;
+    padding: 6px;
+}}
+
+#AgendaMetricCard {{
+    background-color: {p['bg_card']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    padding: 6px 8px;
+}}
+#AgendaMetricCard:hover {{
+    border: 1px solid {p['border_focus']};
+    background-color: {p['card_hover']};
+}}
+
+#AgendaMetricTitle {{
+    color: {p['text_muted']};
+    font-size: 11px;
+    font-weight: 600;
+}}
+
+#AgendaMetricValue {{
+    color: {p['text_main']};
+    font-size: 13px;
+    font-weight: bold;
+}}
+
+#AgendaMetricSub {{
+    color: {p['accent_color']};
+    font-size: 10px;
+    font-weight: 600;
+}}
+
+#AgendaMetricProgress {{
+    border: none;
+    border-radius: 2px;
+    background-color: {p['border_color']};
+    text-align: center;
+    max-height: 4px;
+}}
+#AgendaMetricProgress::chunk {{
+    background-color: {p['accent_color']};
+    border-radius: 2px;
+}}
+
+/* Agenda Vertical Splitter between Calendar & Lower Scroll Area */
+#AgendaVerticalSplitter::handle:vertical {{
+    background-color: transparent;
+    height: 8px;
+    margin: 2px 20px;
+    border-radius: 3px;
+}}
+#AgendaVerticalSplitter::handle:vertical:hover {{
+    background-color: {p['border_focus']};
+}}
+
+/* Agenda Left Column Scroll Area */
+#AgendaLeftScrollArea {{
+    background: transparent;
+    border: none;
+}}
+#AgendaLeftScrollArea > QWidget > QWidget {{
+    background: transparent;
+}}
+#AgendaLeftScrollArea QScrollBar:vertical {{
+    border: none;
+    background: transparent;
+    width: 5px;
+    margin: 0px;
+}}
+#AgendaLeftScrollArea QScrollBar::handle:vertical {{
+    background: {p['border_color']};
+    min-height: 20px;
+    border-radius: 2px;
+}}
+#AgendaLeftScrollArea QScrollBar::handle:vertical:hover {{
+    background: {p['accent_color']};
+}}
+#AgendaLeftScrollArea QScrollBar::add-line:vertical,
+#AgendaLeftScrollArea QScrollBar::sub-line:vertical {{
+    height: 0px;
+}}
+
+/* Upcoming Tasks Panel */
+#UpcomingTasksPanel {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 10px;
+    padding: 8px;
+}}
+
+#UpcomingTaskItemWidget {{
+    background-color: {p['bg_card']};
+    border: 1px solid {p['border_color']};
+    border-radius: 7px;
+    padding: 6px 8px;
+}}
+#UpcomingTaskItemWidget:hover {{
+    background-color: {p['card_hover']};
+    border: 1px solid {p['border_focus']};
+}}
+
+#UpcomingDateBadge {{
+    background-color: {p['bg_input']};
+    color: {p['accent_color']};
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: bold;
+}}
+
+#UpcomingEmptyLabel {{
+    color: {p['text_muted']};
+    font-size: 11px;
+    padding: 12px 6px;
+    font-style: italic;
+}}
 """
 
-STYLE_SHEET = get_stylesheet("Koyu Gece")
+def get_calendar_theme_config(theme_name="Koyu Gece", custom_colors=None):
+    """
+    Returns a unified, customizable dictionary for QCalendarWidget styling:
+    - cell backgrounds (normal, other month, hover, today)
+    - weekend/weekday day numbers and header colors
+    - selection and today indicator colors
+    - status indicator dots
+    """
+    p = get_palette(theme_name, custom_colors)
+    if isinstance(custom_colors, str):
+        try:
+            custom_colors = json.loads(custom_colors)
+        except Exception:
+            custom_colors = {}
+    if not isinstance(custom_colors, dict):
+        custom_colors = {}
 
+    # Extract customizable weekend colors
+    w_header = custom_colors.get("cal_weekend_header", "#F472B6")
+    w_text = custom_colors.get("cal_weekend_text", "#FB7185")
+
+    return {
+        # Cell backgrounds
+        "cell_bg_normal": "transparent",
+        "cell_bg_other_month": "transparent",
+        "cell_bg_hover": p.get("card_hover", "#25272C"),
+        "cell_bg_today": "transparent",
+        
+        # Selection
+        "selection_bg": p.get("accent_color", "#1A73E8"),
+        "selection_border": p.get("border_focus", "#8AB4F8"),
+        "selection_text": "#FFFFFF",
+        
+        # Today
+        "today_border": p.get("border_focus", "#8AB4F8"),
+        
+        # Day texts
+        "text_weekday": p.get("text_main", "#E3E3E3"),
+        "text_weekend": w_text,       # User-customizable weekend day numbers!
+        "text_other_month": adjust_brightness(p.get("text_muted", "#9AA0A6"), 0.5),
+        
+        # Column headers
+        "header_weekday": p.get("text_muted", "#9AA0A6"),
+        "header_weekend": w_header,   # User-customizable weekend headers!
+        
+        # Status Dots
+        "dot_pending_tasks": "#F59E0B",    # Amber
+        "dot_completed_tasks": "#10B981",  # Emerald Green
+        "dot_daily_note": "#38BDF8",       # Light Sky Blue
+        
+        # General palette reference
+        "palette": p
+    }
+
+STYLE_SHEET = get_stylesheet("Koyu Gece")

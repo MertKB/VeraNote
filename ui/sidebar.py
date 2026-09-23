@@ -22,6 +22,7 @@ class Sidebar(QWidget):
     note_selected = Signal(int) # note_id
     library_selected = Signal(str) # model_library_name
     workflow_library_selected = Signal(str) # workflow_library_name
+    delete_workflow_library_requested = Signal(str) # workflow_library_name
     settings_requested = Signal()
 
     def __init__(self, parent=None):
@@ -195,6 +196,8 @@ class Sidebar(QWidget):
         self.libraries_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.libraries_list.setFocusPolicy(Qt.NoFocus)
         self.libraries_list.itemClicked.connect(self.on_library_clicked)
+        self.libraries_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.libraries_list.customContextMenuRequested.connect(self.on_workflow_lib_context_menu)
         self.main_layout.addWidget(self.libraries_list)
 
         self.main_layout.addStretch()
@@ -337,6 +340,21 @@ class Sidebar(QWidget):
         if 0 <= row < len(self.workflow_lib_names):
             self.set_active_item('workflow', self.workflow_lib_names[row])
             self.workflow_library_selected.emit(self.workflow_lib_names[row])
+
+    def on_workflow_lib_context_menu(self, pos):
+        item = self.libraries_list.itemAt(pos)
+        if not item:
+            return
+        row = self.libraries_list.row(item)
+        if 0 <= row < len(self.workflow_lib_names):
+            lib_name = self.workflow_lib_names[row]
+            from PySide6.QtWidgets import QMenu
+            from PySide6.QtGui import QCursor
+            menu = QMenu(self)
+            del_action = menu.addAction(t("workflow_delete_library_menu"))
+            action = menu.exec(QCursor.pos())
+            if action == del_action:
+                self.delete_workflow_library_requested.emit(lib_name)
 
     def clear_list_selections(self):
         self.models_list.clearSelection()

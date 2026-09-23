@@ -55,6 +55,20 @@ def test_database_schema():
         assert "idx_tasks_daily_date" in indexes, "idx_tasks_daily_date missing"
         assert "idx_tasks_completed" in indexes, "idx_tasks_completed missing"
 
+        # Check recurring_routines table
+        cursor.execute("PRAGMA table_info(recurring_routines);")
+        routine_cols = {row['name']: row['type'] for row in cursor.fetchall()}
+        assert "id" in routine_cols, "recurring_routines missing 'id' column"
+        assert "title" in routine_cols, "recurring_routines missing 'title' column"
+        assert "frequency" in routine_cols, "recurring_routines missing 'frequency' column"
+        assert "priority" in routine_cols, "recurring_routines missing 'priority' column"
+        assert "is_active" in routine_cols, "recurring_routines missing 'is_active' column"
+        assert "created_at" in routine_cols, "recurring_routines missing 'created_at' column"
+
+        cursor.execute("PRAGMA index_list(recurring_routines);")
+        routine_indexes = [row['name'] for row in cursor.fetchall()]
+        assert "idx_routines_active" in routine_indexes, "idx_routines_active missing"
+
     print("  [OK] Database schema and indexes verified successfully!")
 
 def test_agenda_repository():
@@ -114,11 +128,23 @@ def test_agenda_repository():
     assert t2_reopened["is_completed"] == 0
     assert t2_reopened["completed_at"] is None
 
-    # 6. get_month_task_indicators
+    # 6. get_month_task_indicators & get_monthly_agenda_stats
     indicators = AgendaRepository.get_month_task_indicators(2026, 9)
     assert test_date in indicators, f"{test_date} should be in month indicators"
     assert indicators[test_date]["has_note"] is True
     assert indicators[test_date]["pending_tasks"] >= 2
+
+    stats = AgendaRepository.get_monthly_agenda_stats(2026, 9)
+    assert stats["year"] == 2026
+    assert stats["month"] == 9
+    assert stats["total_tasks"] >= 2
+    assert "completion_rate" in stats
+    assert "streak_days" in stats
+    assert "productivity_score" in stats
+
+    # Test get_upcoming_tasks
+    upcoming = AgendaRepository.get_upcoming_tasks(days_ahead=7)
+    assert isinstance(upcoming, list)
 
     # 7. delete_task
     deleted = AgendaRepository.delete_task(task_id1)
@@ -129,12 +155,89 @@ def test_agenda_repository():
     # Clean up test task 2
     AgendaRepository.delete_task(task_id2)
 
+    # 8. Recurring Routines (Faz 1.5)
+    with database.get_connection() as conn:
+        conn.execute("DELETE FROM recurring_routines WHERE title IN ('Sabah Egzersizi', 'Hafta İçi Model Eğitimi');")
+        conn.execute("DELETE FROM tasks WHERE title IN ('Sabah Egzersizi', 'Hafta İçi Model Eğitimi');")
+        conn.commit()
+
+    r_id1 = AgendaRepository.add_routine(
+        title="Sabah Egzersizi",
+        frequency="daily",
+        priority=2
+    )
+    assert r_id1 > 0, "Routine 1 ID should be positive"
+
+    r_id2 = AgendaRepository.add_routine(
+        title="Hafta İçi Model Eğitimi",
+        frequency="weekdays",
+        priority=3
+    )
+    assert r_id2 > 0, "Routine 2 ID should be positive"
+
+    # get_all_routines
+    all_routines = AgendaRepository.get_all_routines()
+    assert any(r["id"] == r_id1 for r in all_routines)
+    assert any(r["id"] == r_id2 for r in all_routines)
+
+    # toggle_routine
+    toggled_status = AgendaRepository.toggle_routine(r_id2, 0)
+    assert toggled_status == 0
+    active_routines = AgendaRepository.get_active_routines()
+    assert not any(r["id"] == r_id2 for r in active_routines)
+
+    # Reactivate routine 2
+    AgendaRepository.toggle_routine(r_id2, 1)
+    active_routines = AgendaRepository.get_active_routines()
+    assert any(r["id"] == r_id2 for r in active_routines)
+
+    # 9. Seed Daily Tasks from Routines (with duplicate prevention & weekend rules)
+    # 2026-09-18 is Friday (weekday). Both daily and weekdays routines should seed.
+    seed_weekday = "2026-09-18"
+    seeded_count = AgendaRepository.seed_daily_tasks_from_routines(seed_weekday)
+    assert seeded_count >= 2, f"Expected at least 2 seeded routines, got {seeded_count}"
+
+    # Call seed AGAIN on the same date: duplicate prevention must ensure 0 new tasks added
+    reseed_count = AgendaRepository.seed_daily_tasks_from_routines(seed_weekday)
+    assert reseed_count == 0, f"Duplicate seed should return 0, got {reseed_count}"
+
+    # 2026-09-20 is Sunday (weekend). Routine 2 (weekdays) should be skipped!
+    seed_weekend = "2026-09-20"
+    weekend_seeded = AgendaRepository.seed_daily_tasks_from_routines(seed_weekend)
+    weekend_tasks = AgendaRepository.get_tasks_for_date(seed_weekend)
+    assert any(t["title"] == "Sabah Egzersizi" for t in weekend_tasks), "Daily routine should seed on weekend"
+    assert not any(t["title"] == "Hafta İçi Model Eğitimi" for t in weekend_tasks), "Weekdays routine should NOT seed on weekend"
+
+    # 10. clear_completed_tasks
+    # Mark one of the weekend tasks completed
+    weekend_task_id = next(t["id"] for t in weekend_tasks if t["title"] == "Sabah Egzersizi")
+    AgendaRepository.toggle_task_completed(weekend_task_id, 1)
+
+    cleared = AgendaRepository.clear_completed_tasks(seed_weekend)
+    assert cleared >= 1, f"Expected at least 1 cleared task, got {cleared}"
+    weekend_tasks_after_clear = AgendaRepository.get_tasks_for_date(seed_weekend)
+    assert not any(t["id"] == weekend_task_id for t in weekend_tasks_after_clear), "Completed task should be deleted"
+
+    # Clean up test tasks and routines
+    AgendaRepository.delete_routine(r_id1)
+    AgendaRepository.delete_routine(r_id2)
+    with database.get_connection() as conn:
+        conn.execute("DELETE FROM tasks WHERE due_date IN (?, ?);", (seed_weekday, seed_weekend))
+        conn.commit()
+
     print("  [OK] AgendaRepository operations verified successfully!")
 
 def test_mvc_isolation():
     print("Testing MVC isolation (no direct database imports in ui/agenda/)...")
     agenda_dir = r"c:\Users\Victoria\.gemini\antigravity-ide\scratch\VeraNote\ui\agenda"
-    agenda_files = ["calendar_widget.py", "daily_note_panel.py", "tasks_panel.py", "agenda_view.py", "__init__.py"]
+    agenda_files = [
+        "calendar_widget.py", 
+        "daily_note_panel.py", 
+        "tasks_panel.py", 
+        "agenda_view.py", 
+        "routine_manager_dialog.py",
+        "__init__.py"
+    ]
 
     for fname in agenda_files:
         path = os.path.join(agenda_dir, fname)
@@ -152,8 +255,43 @@ def test_ui_components():
     print("Testing UI components (Headless Qt)...")
     from ui.agenda import CalendarPanel, DailyNotePanel, TasksPanel, AgendaView
 
-    # 1. CalendarPanel
+    # 1. CalendarPanel & MonthlySummaryPanel & Theming & UpcomingTasks
     cal = CalendarPanel()
+    assert hasattr(cal, 'summary_panel'), "CalendarPanel should have summary_panel"
+    assert hasattr(cal.summary_panel, 'tasks_progress'), "summary_panel should have tasks_progress bar"
+    assert hasattr(cal, 'vertical_splitter'), "CalendarPanel should have vertical_splitter"
+    assert hasattr(cal, 'upcoming_panel'), "CalendarPanel should have upcoming_panel"
+    
+    # Test setting stats
+    cal.set_monthly_stats({
+        "total_tasks": 10,
+        "completed_tasks": 8,
+        "completion_rate": 80,
+        "active_note_days": 15,
+        "days_in_month": 30,
+        "streak_days": 5,
+        "productivity_score": 82
+    })
+    assert cal.summary_panel.tasks_progress.value() == 80
+    assert "8/10" in cal.summary_panel.lbl_tasks_val.text()
+    assert "5" in cal.summary_panel.lbl_streak_val.text()
+
+    # Test upcoming tasks panel
+    cal.set_upcoming_tasks([
+        {"id": 991, "title": "Check upcoming tasks", "due_date": "2026-09-20", "priority": 3}
+    ])
+    assert cal.upcoming_panel.items_layout.count() == 1
+    assert cal.upcoming_panel.empty_label.isHidden()
+
+    # Test dynamic theming
+    cal.set_theme_config({
+        "text_weekend": "#FF5588",
+        "header_weekend": "#FF77AA",
+        "selection_bg": "#5533AA"
+    })
+    assert cal.calendar.theme["text_weekend"] == "#FF5588"
+    assert cal.calendar.theme["selection_bg"] == "#5533AA"
+
     cal.set_indicators({"2026-09-18": {"has_note": True, "pending_tasks": 2, "completed_tasks": 1}})
     cal.go_to_today()
     assert cal.get_selected_date_str() == QDate.currentDate().toString("yyyy-MM-dd")
@@ -182,11 +320,31 @@ def test_ui_components():
     ]
     tasks_panel.set_tasks(test_tasks, "2026-09-18")
     assert tasks_panel.count_badge.text() == "2"
+    assert tasks_panel.clear_completed_btn.isEnabled() is True
+    assert hasattr(tasks_panel, 'routines_btn')
+    assert hasattr(tasks_panel, 'clear_completed_btn')
 
-    # 4. AgendaView Splitter
+    # 4. RoutineManagerDialog
+    from ui.agenda import RoutineManagerDialog
+    dialog = RoutineManagerDialog()
+    test_routines = [
+        {"id": 1, "title": "Spor Yap", "frequency": "daily", "priority": 2, "is_active": 1},
+        {"id": 2, "title": "Kod İncelemesi", "frequency": "weekdays", "priority": 1, "is_active": 0}
+    ]
+    dialog.set_routines(test_routines)
+    assert not dialog.scroll_area.isHidden(), "Scroll area should be visible"
+    assert dialog.empty_label.isHidden(), "Empty label should be hidden"
+
+    # 5. AgendaView Splitter
     agenda_view = AgendaView()
     agenda_view.set_date_data("2026-09-18", "Not içeriği", test_tasks)
     assert agenda_view.current_date == "2026-09-18"
+    agenda_view.set_calendar_theme({"text_weekend": "#FF3399"})
+    assert agenda_view.calendar_panel.calendar.theme["text_weekend"] == "#FF3399"
+    agenda_view.set_monthly_stats({"total_tasks": 5, "completed_tasks": 4, "completion_rate": 80})
+    assert agenda_view.calendar_panel.summary_panel.tasks_progress.value() == 80
+    agenda_view.set_upcoming_tasks([{"id": 992, "title": "Upcoming Agenda Test", "due_date": "2026-09-20", "priority": 2}])
+    assert agenda_view.calendar_panel.upcoming_panel.items_layout.count() == 1
 
     print("  [OK] UI components tested successfully!")
 
@@ -214,6 +372,13 @@ def test_mainwindow_controller_integration():
     controller.on_agenda_note_autosave("2026-09-18", "Otomatik kayıt notu")
     saved_note = database.get_or_create_daily_note("2026-09-18")
     assert saved_note["content"] == "Otomatik kayıt notu"
+
+    # Simulate task clear completed
+    task_id = database.add_task("Geçici tamamlanan görev", due_date="2026-09-18", daily_note_date="2026-09-18")
+    database.toggle_task_completed(task_id, 1)
+    controller.on_agenda_clear_completed("2026-09-18")
+    tasks = database.get_tasks_for_date("2026-09-18")
+    assert not any(t["id"] == task_id for t in tasks)
 
     print("  [OK] Full MainWindow and AppController integration verified!")
 

@@ -19,7 +19,14 @@ class ResettableDockWidget(QDockWidget):
         super().__init__(title, parent)
         self._main_win = parent
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.topLevelChanged.connect(lambda f: self._wire_close_btn())
+        self.topLevelChanged.connect(self._on_top_level_changed)
+
+    def _on_top_level_changed(self, floating):
+        self._wire_close_btn()
+        if self._main_win and hasattr(self._main_win, 'styleSheet'):
+            sheet = self._main_win.styleSheet()
+            if sheet:
+                self.setStyleSheet(sheet)
 
     def _wire_close_btn(self):
         for b in self.findChildren(object):
@@ -152,6 +159,8 @@ class MainWindow(QMainWindow):
     bulk_add_tag_signal = Signal(list)
     bulk_remove_tag_signal = Signal(list)
     bulk_favorite_signal = Signal(list, bool)
+    bulk_delete_signal = Signal(list)
+    delete_model_signal = Signal(int)
 
     def __init__(self):
         super().__init__()
@@ -188,6 +197,7 @@ class MainWindow(QMainWindow):
         self.library_view.bulk_add_tag_requested.connect(self.bulk_add_tag_signal.emit)
         self.library_view.bulk_remove_tag_requested.connect(self.bulk_remove_tag_signal.emit)
         self.library_view.bulk_favorite_requested.connect(self.bulk_favorite_signal.emit)
+        self.library_view.bulk_delete_requested.connect(self.bulk_delete_signal.emit)
 
         self.note_editor = NoteEditor()
         self.note_editor.save_requested.connect(self.save_note_signal.emit)
@@ -229,6 +239,7 @@ class MainWindow(QMainWindow):
         self.detail_panel.delete_trigger_requested.connect(self.delete_trigger_signal.emit)
         self.detail_panel.add_tag_requested.connect(self.add_tag_signal.emit)
         self.detail_panel.delete_tag_requested.connect(self.delete_tag_signal.emit)
+        self.detail_panel.delete_model_requested.connect(self.delete_model_signal.emit)
         self.detail_panel.image_changed.connect(self.image_changed_signal.emit)
         self.detail_panel.save_note_requested.connect(self.save_note_new_signal.emit)
         self.detail_panel.save_workflow_data_requested.connect(self.save_workflow_data_signal.emit)
@@ -366,8 +377,12 @@ class MainWindow(QMainWindow):
         self.save_note_signal.emit(None, title, content)
 
     def change_theme(self, theme_name, custom_colors=None):
-        from ui.styles import get_stylesheet
+        from ui.styles import get_stylesheet, get_calendar_theme_config
+        from PySide6.QtWidgets import QApplication
         stylesheet = get_stylesheet(theme_name, custom_colors)
+        app = QApplication.instance()
+        if app:
+            app.setStyleSheet(stylesheet)
         self.setStyleSheet(stylesheet)
         self.style().unpolish(self)
         self.style().polish(self)
@@ -376,6 +391,12 @@ class MainWindow(QMainWindow):
             child.style().unpolish(child)
             child.style().polish(child)
             child.update()
+        if hasattr(self, 'agenda_view') and self.agenda_view:
+            cal_theme = get_calendar_theme_config(theme_name, custom_colors)
+            self.agenda_view.set_calendar_theme(cal_theme)
+        if hasattr(self, 'detail_dock') and self.detail_dock:
+            self.detail_dock.setStyleSheet(stylesheet)
+            self.detail_dock.update()
 
     def retranslate_ui(self):
         self.setWindowTitle(t("app_title"))

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QPixmap, QTextCursor
 from utils.i18n import t
+from utils.cache import resolve_image_path
 from .common import ZoomableTextEdit
 
 
@@ -115,17 +116,21 @@ class NoteSection(QWidget):
         note_row2_layout.addWidget(self.display_mode_combo)
         note_hdr_layout.addWidget(note_row2)
 
-        # Row 3: Pin Button
+        # Row 3: Metadata Timestamps & Pin Button
         note_row3 = QWidget()
         note_row3_layout = QHBoxLayout(note_row3)
         note_row3_layout.setContentsMargins(0, 4, 0, 4)
-        note_row3_layout.setSpacing(6)
-        note_row3_layout.addStretch()
+        note_row3_layout.setSpacing(8)
+
+        self.note_timestamps_label = QLabel()
+        self.note_timestamps_label.setStyleSheet("color: #9AA0A6; font-size: 11px; font-weight: 500;")
+        self.note_timestamps_label.setWordWrap(True)
+        note_row3_layout.addWidget(self.note_timestamps_label, 1)
 
         self.pin_corkboard_btn = QPushButton(t("detail_pin_corkboard"))
         self.pin_corkboard_btn.setCursor(Qt.PointingHandCursor)
         self.pin_corkboard_btn.clicked.connect(self.on_toggle_pin_corkboard)
-        note_row3_layout.addWidget(self.pin_corkboard_btn)
+        note_row3_layout.addWidget(self.pin_corkboard_btn, 0)
 
         note_hdr_layout.addWidget(note_row3)
         layout.addWidget(self.note_header_widget)
@@ -139,9 +144,9 @@ class NoteSection(QWidget):
         self.notes_edit = ZoomableTextEdit()
         self.notes_edit.setMinimumWidth(0)
         self.notes_edit.setPlaceholderText(t("detail_notes_placeholder_note"))
-        self.notes_edit.setMinimumHeight(450)
-        self.notes_edit.setMaximumHeight(1500)
-        self.notes_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
+        self.notes_edit.setMinimumHeight(240)
+        self.notes_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.notes_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 8px;")
         self.notes_edit.textChanged.connect(self.check_changes)
         layout.addWidget(self.notes_edit)
 
@@ -234,6 +239,43 @@ class NoteSection(QWidget):
         self.update_char_count()
         self.update_pin_corkboard_btn_text()
         self.update_image()
+        self.update_timestamp_display()
+
+    def update_timestamp_display(self, created_at=None, updated_at=None):
+        if not hasattr(self, 'note_timestamps_label'):
+            return
+        if not self.note_data or not self.note_data.get('id'):
+            self.note_timestamps_label.setText(f"📅 {t('note_not_saved_yet')}")
+            return
+            
+        c_at = created_at or self.note_data.get('created_at')
+        u_at = updated_at or self.note_data.get('updated_at')
+        
+        def format_dt(val):
+            if not val:
+                return ""
+            try:
+                s = str(val).replace('T', ' ')
+                parts = s.split(' ')
+                d_parts = parts[0].split('-')
+                time_part = parts[1][:5] if len(parts) > 1 else ""
+                if len(d_parts) == 3:
+                    date_str = f"{d_parts[2]}.{d_parts[1]}.{d_parts[0]}"
+                    return f"{date_str} {time_part}".strip()
+            except Exception:
+                pass
+            return str(val)
+
+        c_formatted = format_dt(c_at)
+        u_formatted = format_dt(u_at)
+        
+        parts = []
+        if c_formatted:
+            parts.append(t("note_created_at").format(date=c_formatted))
+        if u_formatted:
+            parts.append(t("note_updated_at").format(date=u_formatted))
+            
+        self.note_timestamps_label.setText("   •   ".join(parts) if parts else "")
 
     def get_current_note_display_mode(self):
         text = self.display_mode_combo.currentText().strip()
@@ -288,6 +330,9 @@ class NoteSection(QWidget):
             self.initial_note_content = content
             self.initial_note_display_mode = disp_mode
             self.save_btn.setEnabled(False)
+            import datetime
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.update_timestamp_display(updated_at=now_str)
 
     def on_swatch_color_selected(self, color_hex):
         if self.note_data:
@@ -357,7 +402,7 @@ class NoteSection(QWidget):
         if image_path is not None:
             self.current_image_path = image_path
 
-        path = self.current_image_path
+        path = resolve_image_path(self.current_image_path)
         if self.display_mode_combo.currentText() in ("Sadece Metin", t("detail_display_text_only"), "Text Only"):
             self.note_thumb_preview.setText(t("detail_thumb_text_only"))
             self.note_thumb_preview.setPixmap(QPixmap())
@@ -417,6 +462,9 @@ class NoteSection(QWidget):
         self.initial_note_content = content
         self.initial_note_display_mode = disp_mode
         self.save_btn.setEnabled(False)
+        import datetime
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.update_timestamp_display(updated_at=now_str)
 
     def on_delete_note_clicked(self):
         if not self.note_data:
@@ -455,3 +503,4 @@ class NoteSection(QWidget):
 
         self.update_pin_corkboard_btn_text()
         self.update_char_count()
+        self.update_timestamp_display()

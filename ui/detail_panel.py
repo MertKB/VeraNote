@@ -24,6 +24,7 @@ class DetailPanel(QWidget):
     delete_trigger_requested = Signal(int, str) # model_id, word
     add_tag_requested = Signal(int, str) # model_id, tag_name
     delete_tag_requested = Signal(int, str) # model_id, tag_name
+    delete_model_requested = Signal(int) # model_id
     save_note_requested = Signal(int, str, str, str, str, int, bool) # id, title, content, image_path, display_mode, is_fav, is_auto_save
     delete_note_requested = Signal(int) # note_id
     save_workflow_data_requested = Signal(int, str, str, str) # workflow_id, name, description, notes
@@ -102,7 +103,7 @@ class DetailPanel(QWidget):
 
     def init_ui(self):
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.main_layout.setContentsMargins(12, 10, 12, 10)
         self.main_layout.setSpacing(10)
 
         # Header: Title & Close button
@@ -124,7 +125,7 @@ class DetailPanel(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.scroll_area.setStyleSheet("background-color: transparent; border: none;")
+        self.scroll_area.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
         
         scroll_content = QWidget()
         scroll_content.setStyleSheet("background-color: transparent;")
@@ -132,7 +133,7 @@ class DetailPanel(QWidget):
         scroll_content.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         
         self.scroll_layout = QVBoxLayout(scroll_content)
-        self.scroll_layout.setContentsMargins(0, 0, 0, 0)
+        self.scroll_layout.setContentsMargins(0, 0, 8, 0)
         self.scroll_layout.setSpacing(10)
 
         # QStackedWidget containing modular sections
@@ -146,6 +147,7 @@ class DetailPanel(QWidget):
         self.model_section.add_tag_requested.connect(self.add_tag_requested.emit)
         self.model_section.delete_tag_requested.connect(self.delete_tag_requested.emit)
         self.model_section.image_changed.connect(self.image_changed.emit)
+        self.model_section.delete_model_requested.connect(self.delete_model_requested.emit)
         self.stack.addWidget(self.model_section) # index 0
 
         # 2. Note Section
