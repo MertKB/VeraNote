@@ -101,6 +101,12 @@ def test_png_parser_and_workflow_node_extraction():
         assert comfy_meta["sampler_params"]["steps"] == 25
         assert comfy_meta["sampler_params"]["cfg"] == 7.5
         assert comfy_meta["sampler_params"]["sampler_name"] == "euler_ancestral"
+        assert comfy_meta.get("base_architecture") == "SD 1.5"
+
+        from utils.png_parser import detect_base_architecture
+        assert detect_base_architecture(["flux1-dev.safetensors"]) == "Flux"
+        assert detect_base_architecture(["sd_xl_base_1.0.safetensors"]) == "SDXL"
+        assert detect_base_architecture(["ponyDiffusionV6XL.safetensors"]) == "Pony"
 
         # 4. Test parse_workflow_node_types from dict and from file
         node_counts_from_dict = dict(parse_workflow_node_types(workflow_payload))

@@ -176,6 +176,21 @@ class WorkflowSection(QWidget):
         self.params_title = QLabel(t("workflow_params_title"))
         self.params_title.setObjectName("DetailWordLabel")
         params_hdr.addWidget(self.params_title)
+
+        self.arch_badge = QLabel()
+        self.arch_badge.setStyleSheet("""
+            QLabel {
+                background-color: #1A73E8;
+                color: #FFFFFF;
+                border-radius: 10px;
+                padding: 2px 8px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+        """)
+        self.arch_badge.setVisible(False)
+        params_hdr.addWidget(self.arch_badge)
+
         params_hdr.addStretch()
 
         self.copy_params_btn = QPushButton("📋 " + t("workflow_copy_params"))
@@ -416,6 +431,13 @@ class WorkflowSection(QWidget):
             w = item.widget()
             if w:
                 w.deleteLater()
+
+        arch = meta.get('base_architecture', '')
+        if arch:
+            self.arch_badge.setText(f"⚡ {arch}")
+            self.arch_badge.setVisible(True)
+        else:
+            self.arch_badge.setVisible(False)
 
         if params:
             seed_val = params.get('seed')

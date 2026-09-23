@@ -179,8 +179,13 @@ def extract_comfyui_metadata_from_png(image_path: str) -> dict:
                 if len(text_nodes) > 1 and not res['negative_prompt']:
                     res['negative_prompt'] = text_nodes[1]
 
+    # Detect Base Model Architecture (Flux, SDXL, SD 1.5, Pony, SD3, etc.)
+    res['base_architecture'] = detect_base_architecture(res['models'], prompt_graph, res['workflow'])
+
     # Formatted Summary string
     parts = []
+    if res['base_architecture']:
+        parts.append(f"Architecture: {res['base_architecture']}")
     if res['positive_prompt']:
         parts.append(f"Prompt: {res['positive_prompt']}")
     if res['negative_prompt']:
@@ -193,3 +198,42 @@ def extract_comfyui_metadata_from_png(image_path: str) -> dict:
         
     res['formatted_summary'] = "\n\n".join(parts)
     return res
+
+
+def detect_base_architecture(models_list, prompt_graph=None, workflow_dict=None) -> str:
+    """
+    Detects base model architecture (Flux, SDXL, SD 1.5, Pony, SD3, Illustrious) from metadata.
+    """
+    text_corpus = " ".join(models_list or []).lower()
+    
+    if isinstance(prompt_graph, dict):
+        for nid, ndata in prompt_graph.items():
+            if isinstance(ndata, dict):
+                ctype = str(ndata.get('class_type', '')).lower()
+                text_corpus += " " + ctype
+                inp = ndata.get('inputs', {})
+                if isinstance(inp, dict):
+                    for k, v in inp.items():
+                        if isinstance(v, str):
+                            text_corpus += " " + v.lower()
+                            
+    if isinstance(workflow_dict, dict) and "nodes" in workflow_dict:
+        for node in workflow_dict.get("nodes", []):
+            if isinstance(node, dict) and "type" in node:
+                text_corpus += " " + str(node["type"]).lower()
+
+    if "flux" in text_corpus or "t5xxl" in text_corpus or "dualcliploader" in text_corpus:
+        return "Flux"
+    if "pony" in text_corpus or "autism" in text_corpus or "score_9" in text_corpus:
+        return "Pony"
+    if "illustrious" in text_corpus or "noobai" in text_corpus:
+        return "Illustrious"
+    if "sd3" in text_corpus or "stable-diffusion-3" in text_corpus or "triplecliploader" in text_corpus:
+        return "SD3"
+    if "xl" in text_corpus or "sdxl" in text_corpus:
+        return "SDXL"
+    if "1.5" in text_corpus or "v1-5" in text_corpus or "sd15" in text_corpus or "sd1.5" in text_corpus:
+        return "SD 1.5"
+    if "2.1" in text_corpus or "sd2" in text_corpus:
+        return "SD 2.1"
+    return ""

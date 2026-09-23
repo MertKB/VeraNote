@@ -426,6 +426,7 @@ TRANSLATIONS = {
         "agenda_upcoming_tomorrow": "Yarın",
 
         # Enhancements: Workflow nodes, prompt, library sorting & tags, note models, backup
+        "detail_add_btn": "Ekle",
         "workflow_nodes_title": "🧩 Kullanılan Düğümler",
         "workflow_gen_prompt_title": "✨ Üretim Promptu ve Parametreler",
         "workflow_pos_prompt": "✨ Pozitif Prompt",
@@ -888,6 +889,7 @@ TRANSLATIONS = {
         "agenda_upcoming_tomorrow": "Tomorrow",
 
         # Enhancements: Workflow nodes, prompt, library sorting & tags, note models, backup
+        "detail_add_btn": "Add",
         "workflow_nodes_title": "🧩 Nodes Used",
         "workflow_gen_prompt_title": "✨ Generation Prompt & Settings",
         "workflow_pos_prompt": "✨ Positive Prompt",

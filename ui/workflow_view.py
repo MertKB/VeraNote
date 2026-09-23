@@ -132,6 +132,30 @@ class WorkflowCardWidget(QFrame):
         self.fav_btn.setCursor(Qt.PointingHandCursor)
         self.fav_btn.clicked.connect(self.on_fav_clicked)
 
+        # Quick Copy Prompt Button Overlay on bottom-right of image
+        self.copy_prompt_btn = QPushButton("📋", self.image_label)
+        self.copy_prompt_btn.setObjectName("CardCopyPromptBtn")
+        self.copy_prompt_btn.setFixedSize(26, 26)
+        self.copy_prompt_btn.setGeometry(166, 101, 26, 26)
+        self.copy_prompt_btn.setCursor(Qt.PointingHandCursor)
+        self.copy_prompt_btn.setToolTip(t("workflow_copy_prompt"))
+        self.copy_prompt_btn.setStyleSheet("""
+            QPushButton#CardCopyPromptBtn {
+                background-color: rgba(30, 31, 34, 0.75);
+                border: 1px solid rgba(68, 71, 70, 0.8);
+                border-radius: 13px;
+                color: #C2E7FF;
+                font-size: 11px;
+                padding: 0px;
+            }
+            QPushButton#CardCopyPromptBtn:hover {
+                background-color: rgba(26, 115, 232, 0.9);
+                border-color: #8AB4F8;
+                color: #FFFFFF;
+            }
+        """)
+        self.copy_prompt_btn.clicked.connect(self.on_copy_prompt_clicked)
+
         # Bottom Info Panel
         self.info_panel = QFrame(self)
         self.info_panel.setObjectName("CardInfoPanel")
@@ -180,6 +204,35 @@ class WorkflowCardWidget(QFrame):
         self.workflow_data['is_favorite'] = 1 if new_fav else 0
         self.update_fav_btn_style()
         self.favorite_toggled.emit(self.workflow_data.get('id', 0), new_fav)
+
+    def on_copy_prompt_clicked(self):
+        from utils.png_parser import extract_comfyui_metadata_from_png
+        prompt_text = ""
+        img_path = self.workflow_data.get('image_path', '')
+        file_path = self.workflow_data.get('file_path', '')
+        check_paths = [p for p in [img_path, file_path] if p and os.path.exists(p) and p.lower().endswith('.png')]
+
+        for p in check_paths:
+            try:
+                meta = extract_comfyui_metadata_from_png(p)
+                if meta and meta.get('positive_prompt'):
+                    prompt_text = meta['positive_prompt'].strip()
+                    break
+            except Exception:
+                pass
+
+        if not prompt_text:
+            prompt_text = self.workflow_data.get('description', '') or self.workflow_data.get('name', '')
+
+        if prompt_text:
+            clipboard = QGuiApplication.clipboard()
+            clipboard.setText(prompt_text)
+            self.copy_prompt_btn.setText("✓")
+            self.copy_prompt_btn.setEnabled(False)
+            win = self.window()
+            if win and hasattr(win, 'show_toast'):
+                win.show_toast(t("toast_copied_pos_prompt"), "success")
+            QTimer.singleShot(1500, lambda: [self.copy_prompt_btn.setText("📋"), self.copy_prompt_btn.setEnabled(True)] if hasattr(self, 'copy_prompt_btn') and self.copy_prompt_btn else None)
 
     def update_content(self):
         metrics = QFontMetrics(self.font())

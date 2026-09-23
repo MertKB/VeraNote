@@ -126,7 +126,7 @@ class ModelSection(QWidget):
         self.new_tw_edit.setPlaceholderText(t("detail_new_trigger_placeholder"))
         self.new_tw_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.new_tw_edit.returnPressed.connect(self.on_add_trigger)
-        self.add_tw_btn = QPushButton("+ " + t("new_note").split()[-1])
+        self.add_tw_btn = QPushButton("+ " + t("detail_add_btn"))
         self.add_tw_btn.setStyleSheet("padding: 6px 12px;")
         self.add_tw_btn.clicked.connect(self.on_add_trigger)
         add_tw_layout.addWidget(self.new_tw_edit)
@@ -331,7 +331,7 @@ class ModelSection(QWidget):
         self.new_tag_edit.setPlaceholderText(t("detail_new_tag_placeholder"))
         self.tw_title.setText(t("detail_triggers_title"))
         self.new_tw_edit.setPlaceholderText(t("detail_new_trigger_placeholder"))
-        self.add_tw_btn.setText("+ " + t("new_note").split()[-1])
+        self.add_tw_btn.setText("+ " + t("detail_add_btn"))
         self.copy_all_btn.setText(t("detail_copy_all_words"))
         if self.model_data:
             self.path_label.setText(f"{t('detail_card_path')} {self.model_data.get('file_path', '')}")
