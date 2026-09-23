@@ -82,20 +82,20 @@ class WorkflowSection(QWidget):
         self.nodes_layout = FlowLayout(self.nodes_container, spacing=6)
         layout.addWidget(self.nodes_container)
 
-        # --- GENERATION PROMPT SECTION ---
-        self.gen_prompt_container = QWidget()
-        gen_prompt_layout = QVBoxLayout(self.gen_prompt_container)
-        gen_prompt_layout.setContentsMargins(0, 0, 0, 0)
-        gen_prompt_layout.setSpacing(6)
+        # --- 1. POSITIVE PROMPT SECTION ---
+        self.pos_prompt_container = QWidget()
+        pos_layout = QVBoxLayout(self.pos_prompt_container)
+        pos_layout.setContentsMargins(0, 0, 0, 0)
+        pos_layout.setSpacing(6)
 
-        hdr_row = QHBoxLayout()
-        self.gen_prompt_title = QLabel(t("workflow_gen_prompt_title"))
-        self.gen_prompt_title.setObjectName("DetailWordLabel")
-        hdr_row.addWidget(self.gen_prompt_title)
-        hdr_row.addStretch()
+        pos_hdr = QHBoxLayout()
+        self.pos_prompt_title = QLabel(t("workflow_pos_prompt"))
+        self.pos_prompt_title.setObjectName("DetailWordLabel")
+        pos_hdr.addWidget(self.pos_prompt_title)
+        pos_hdr.addStretch()
 
-        self.copy_prompt_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
-        self.copy_prompt_btn.setStyleSheet("""
+        self.copy_pos_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_pos_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2D2F31;
                 color: #C2E7FF;
@@ -110,20 +110,156 @@ class WorkflowSection(QWidget):
                 border-color: #8AB4F8;
             }
         """)
-        self.copy_prompt_btn.clicked.connect(self.copy_generation_prompt)
-        hdr_row.addWidget(self.copy_prompt_btn)
-        gen_prompt_layout.addLayout(hdr_row)
+        self.copy_pos_btn.clicked.connect(self.copy_positive_prompt)
+        pos_hdr.addWidget(self.copy_pos_btn)
+        pos_layout.addLayout(pos_hdr)
 
-        self.gen_prompt_edit = ZoomableTextEdit()
-        self.gen_prompt_edit.setMinimumWidth(0)
-        self.gen_prompt_edit.setReadOnly(True)
-        self.gen_prompt_edit.setMinimumHeight(80)
-        self.gen_prompt_edit.setMaximumHeight(160)
-        self.gen_prompt_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 8px; color: #D1D5DB; font-size: 11px; padding: 6px;")
-        gen_prompt_layout.addWidget(self.gen_prompt_edit)
+        self.pos_prompt_edit = ZoomableTextEdit()
+        self.pos_prompt_edit.setMinimumWidth(0)
+        self.pos_prompt_edit.setReadOnly(True)
+        self.pos_prompt_edit.setMinimumHeight(60)
+        self.pos_prompt_edit.setMaximumHeight(140)
+        self.pos_prompt_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 8px; color: #D1D5DB; font-size: 11px; padding: 6px;")
+        pos_layout.addWidget(self.pos_prompt_edit)
+        layout.addWidget(self.pos_prompt_container)
+        self.pos_prompt_container.setVisible(False)
 
-        layout.addWidget(self.gen_prompt_container)
-        self.gen_prompt_container.setVisible(False)
+        # --- 2. NEGATIVE PROMPT SECTION ---
+        self.neg_prompt_container = QWidget()
+        neg_layout = QVBoxLayout(self.neg_prompt_container)
+        neg_layout.setContentsMargins(0, 0, 0, 0)
+        neg_layout.setSpacing(6)
+
+        neg_hdr = QHBoxLayout()
+        self.neg_prompt_title = QLabel(t("workflow_neg_prompt"))
+        self.neg_prompt_title.setObjectName("DetailWordLabel")
+        neg_hdr.addWidget(self.neg_prompt_title)
+        neg_hdr.addStretch()
+
+        self.copy_neg_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_neg_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #F28B82;
+                border: 1px solid #444746;
+                border-radius: 12px;
+                padding: 3px 10px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #F28B82;
+            }
+        """)
+        self.copy_neg_btn.clicked.connect(self.copy_negative_prompt)
+        neg_hdr.addWidget(self.copy_neg_btn)
+        neg_layout.addLayout(neg_hdr)
+
+        self.neg_prompt_edit = ZoomableTextEdit()
+        self.neg_prompt_edit.setMinimumWidth(0)
+        self.neg_prompt_edit.setReadOnly(True)
+        self.neg_prompt_edit.setMinimumHeight(45)
+        self.neg_prompt_edit.setMaximumHeight(100)
+        self.neg_prompt_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 8px; color: #D1D5DB; font-size: 11px; padding: 6px;")
+        neg_layout.addWidget(self.neg_prompt_edit)
+        layout.addWidget(self.neg_prompt_container)
+        self.neg_prompt_container.setVisible(False)
+
+        # --- 3. PARAMETERS SECTION (Seed, Steps, CFG, etc.) ---
+        self.params_container = QWidget()
+        params_layout = QVBoxLayout(self.params_container)
+        params_layout.setContentsMargins(0, 0, 0, 0)
+        params_layout.setSpacing(6)
+
+        params_hdr = QHBoxLayout()
+        self.params_title = QLabel(t("workflow_params_title"))
+        self.params_title.setObjectName("DetailWordLabel")
+        params_hdr.addWidget(self.params_title)
+        params_hdr.addStretch()
+
+        self.copy_params_btn = QPushButton("📋 " + t("workflow_copy_params"))
+        self.copy_params_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #C2E7FF;
+                border: 1px solid #444746;
+                border-radius: 12px;
+                padding: 3px 10px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #8AB4F8;
+            }
+        """)
+        self.copy_params_btn.clicked.connect(self.copy_all_params)
+        params_hdr.addWidget(self.copy_params_btn)
+        params_layout.addLayout(params_hdr)
+
+        # Seed row card with dedicated copy button
+        self.seed_card = QWidget()
+        self.seed_card.setStyleSheet("background-color: #1E2022; border: 1px solid #383B3E; border-radius: 8px;")
+        seed_layout = QHBoxLayout(self.seed_card)
+        seed_layout.setContentsMargins(10, 4, 8, 4)
+        seed_layout.setSpacing(8)
+
+        seed_title_lbl = QLabel("🌱 Seed:")
+        seed_title_lbl.setStyleSheet("color: #9AA0A6; font-size: 11px; font-weight: bold;")
+        seed_layout.addWidget(seed_title_lbl)
+
+        self.seed_value_lbl = QLabel("-")
+        self.seed_value_lbl.setStyleSheet("color: #E3E3E3; font-size: 12px; font-family: monospace; font-weight: bold;")
+        self.seed_value_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        seed_layout.addWidget(self.seed_value_lbl)
+        seed_layout.addStretch()
+
+        self.copy_seed_btn = QPushButton("📋")
+        self.copy_seed_btn.setToolTip(t("workflow_copy_seed"))
+        self.copy_seed_btn.setFixedSize(26, 22)
+        self.copy_seed_btn.setCursor(Qt.PointingHandCursor)
+        self.copy_seed_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #A8C7FA;
+                border: 1px solid #444746;
+                border-radius: 4px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #8AB4F8;
+            }
+        """)
+        self.copy_seed_btn.clicked.connect(self.copy_seed_value)
+        seed_layout.addWidget(self.copy_seed_btn)
+        params_layout.addWidget(self.seed_card)
+
+        # Other parameters layout (Steps, CFG, Sampler, Scheduler, Denoise)
+        self.other_params_widget = QWidget()
+        self.other_params_layout = FlowLayout(self.other_params_widget, spacing=6)
+        params_layout.addWidget(self.other_params_widget)
+
+        layout.addWidget(self.params_container)
+        self.params_container.setVisible(False)
+
+        # --- 4. USED MODELS & LORAS SECTION ---
+        self.used_models_container = QWidget()
+        models_layout = QVBoxLayout(self.used_models_container)
+        models_layout.setContentsMargins(0, 0, 0, 0)
+        models_layout.setSpacing(6)
+
+        self.models_title = QLabel(t("workflow_used_models"))
+        self.models_title.setObjectName("DetailWordLabel")
+        models_layout.addWidget(self.models_title)
+
+        self.models_pills_widget = QWidget()
+        self.models_pills_layout = FlowLayout(self.models_pills_widget, spacing=6)
+        models_layout.addWidget(self.models_pills_widget)
+
+        layout.addWidget(self.used_models_container)
+        self.used_models_container.setVisible(False)
 
         # Workflow Description
         self.workflow_desc_title = QLabel(t("detail_workflow_desc"))
@@ -242,36 +378,156 @@ class WorkflowSection(QWidget):
 
     def update_prompt_info(self):
         if not self.workflow_data:
-            self.gen_prompt_container.setVisible(False)
+            self.pos_prompt_container.setVisible(False)
+            self.neg_prompt_container.setVisible(False)
+            self.params_container.setVisible(False)
+            self.used_models_container.setVisible(False)
             return
 
         file_path = self.workflow_data.get('file_path', '')
         img_path = self.current_image_path or file_path
         
-        summary = ""
+        meta = {}
         if img_path and os.path.exists(img_path) and img_path.lower().endswith('.png'):
             meta = extract_comfyui_metadata_from_png(img_path)
-            summary = meta.get('formatted_summary', '')
 
-        if summary:
-            self.gen_prompt_edit.setPlainText(summary)
-            self.gen_prompt_container.setVisible(True)
+        # 1. Positive Prompt
+        pos = (meta.get('positive_prompt') or '').strip()
+        if pos:
+            self.pos_prompt_edit.setPlainText(pos)
+            self.pos_prompt_container.setVisible(True)
         else:
-            self.gen_prompt_edit.clear()
-            self.gen_prompt_container.setVisible(False)
+            self.pos_prompt_edit.clear()
+            self.pos_prompt_container.setVisible(False)
 
-    def copy_generation_prompt(self):
-        text = self.gen_prompt_edit.toPlainText().strip()
+        # 2. Negative Prompt
+        neg = (meta.get('negative_prompt') or '').strip()
+        if neg:
+            self.neg_prompt_edit.setPlainText(neg)
+            self.neg_prompt_container.setVisible(True)
+        else:
+            self.neg_prompt_edit.clear()
+            self.neg_prompt_container.setVisible(False)
+
+        # 3. Parameters (Seed, Steps, CFG, Sampler, Scheduler, Denoise)
+        params = meta.get('sampler_params') or {}
+        while self.other_params_layout.count():
+            item = self.other_params_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        if params:
+            seed_val = params.get('seed')
+            self.seed_value_lbl.setText(str(seed_val) if seed_val is not None else "-")
+
+            param_labels = [
+                ("Steps", params.get('steps')),
+                ("CFG", params.get('cfg')),
+                ("Sampler", params.get('sampler_name')),
+                ("Scheduler", params.get('scheduler')),
+                ("Denoise", params.get('denoise'))
+            ]
+            for label, val in param_labels:
+                if val is not None:
+                    badge = QLabel(f"{label}: {val}")
+                    badge.setStyleSheet("""
+                        QLabel {
+                            background-color: #282A2C;
+                            color: #D1D5DB;
+                            border: 1px solid #3C4043;
+                            border-radius: 6px;
+                            padding: 3px 8px;
+                            font-size: 11px;
+                        }
+                    """)
+                    self.other_params_layout.addWidget(badge)
+            self.params_container.setVisible(True)
+        else:
+            self.seed_value_lbl.setText("-")
+            self.params_container.setVisible(False)
+
+        # 4. Used Models & LoRAs
+        models = meta.get('models') or []
+        while self.models_pills_layout.count():
+            item = self.models_pills_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        if models:
+            for m in models:
+                pill = QPushButton(f"📦 {m}")
+                pill.setCursor(Qt.PointingHandCursor)
+                pill.setToolTip(f"{m} (Kopyalamak için tıkla)")
+                pill.setStyleSheet("""
+                    QPushButton {
+                        background-color: #282A2C;
+                        color: #C2E7FF;
+                        border: 1px solid #3C4043;
+                        border-radius: 12px;
+                        padding: 3px 10px;
+                        font-size: 11px;
+                        font-weight: 500;
+                    }
+                    QPushButton:hover {
+                        background-color: #313438;
+                        border-color: #8AB4F8;
+                    }
+                """)
+                pill.clicked.connect(lambda _, name=m: self.copy_model_name(name))
+                self.models_pills_layout.addWidget(pill)
+            self.used_models_container.setVisible(True)
+        else:
+            self.used_models_container.setVisible(False)
+
+    def copy_positive_prompt(self):
+        text = self.pos_prompt_edit.toPlainText().strip()
         if not text:
             return
-        clipboard = QGuiApplication.clipboard()
-        clipboard.setText(text)
-        self.copy_prompt_btn.setText(t("msg_copied_title") + "! ✓")
-        self.copy_prompt_btn.setEnabled(False)
-        win = self.window()
-        if win and hasattr(win, 'show_toast'):
-            win.show_toast(t("toast_copied"), "success")
-        QTimer.singleShot(1500, lambda: [self.copy_prompt_btn.setText("📋 " + t("workflow_copy_prompt")), self.copy_prompt_btn.setEnabled(True)] if hasattr(self, 'copy_prompt_btn') and self.copy_prompt_btn else None)
+        QGuiApplication.clipboard().setText(text)
+        from ui.toast_notification import ToastNotification
+        ToastNotification.show_toast(self, t("toast_copied_pos_prompt"), duration=2000)
+
+    def copy_negative_prompt(self):
+        text = self.neg_prompt_edit.toPlainText().strip()
+        if not text:
+            return
+        QGuiApplication.clipboard().setText(text)
+        from ui.toast_notification import ToastNotification
+        ToastNotification.show_toast(self, t("toast_copied_neg_prompt"), duration=2000)
+
+    def copy_seed_value(self):
+        seed_txt = self.seed_value_lbl.text().strip()
+        if not seed_txt or seed_txt == "-":
+            return
+        QGuiApplication.clipboard().setText(seed_txt)
+        from ui.toast_notification import ToastNotification
+        ToastNotification.show_toast(self, f"🌱 Seed {seed_txt}: {t('toast_copied_seed')}", duration=2000)
+
+    def copy_all_params(self):
+        file_path = self.workflow_data.get('file_path', '') if self.workflow_data else ''
+        img_path = self.current_image_path or file_path
+        if img_path and os.path.exists(img_path) and img_path.lower().endswith('.png'):
+            meta = extract_comfyui_metadata_from_png(img_path)
+            params = meta.get('sampler_params', {})
+            if params:
+                lines = [f"{k}: {v}" for k, v in params.items()]
+                QGuiApplication.clipboard().setText(", ".join(lines))
+                from ui.toast_notification import ToastNotification
+                ToastNotification.show_toast(self, t("toast_copied_params"), duration=2000)
+                return
+        seed_txt = self.seed_value_lbl.text().strip()
+        if seed_txt and seed_txt != "-":
+            QGuiApplication.clipboard().setText(f"Seed: {seed_txt}")
+            from ui.toast_notification import ToastNotification
+            ToastNotification.show_toast(self, t("toast_copied_params"), duration=2000)
+
+    def copy_model_name(self, model_name):
+        clean_name = model_name.replace("LoRA: ", "").strip()
+        QGuiApplication.clipboard().setText(clean_name)
+        from ui.toast_notification import ToastNotification
+        ToastNotification.show_toast(self, f"📋 {clean_name}", duration=2000)
 
     def check_changes(self):
         if not self.workflow_data:
@@ -395,5 +651,11 @@ class WorkflowSection(QWidget):
         self.save_btn.setText(t("detail_save_workflow"))
         self.delete_btn.setText(t("detail_delete_workflow"))
         self.nodes_title.setText(t("workflow_nodes_title"))
-        self.gen_prompt_title.setText(t("workflow_gen_prompt_title"))
-        self.copy_prompt_btn.setText("📋 " + t("workflow_copy_prompt"))
+        self.pos_prompt_title.setText(t("workflow_pos_prompt"))
+        self.copy_pos_btn.setText("📋 " + t("workflow_copy_prompt"))
+        self.neg_prompt_title.setText(t("workflow_neg_prompt"))
+        self.copy_neg_btn.setText("📋 " + t("workflow_copy_prompt"))
+        self.params_title.setText(t("workflow_params_title"))
+        self.copy_params_btn.setText("📋 " + t("workflow_copy_params"))
+        self.copy_seed_btn.setToolTip(t("workflow_copy_seed"))
+        self.models_title.setText(t("workflow_used_models"))

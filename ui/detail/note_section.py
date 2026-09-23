@@ -162,43 +162,6 @@ class NoteSection(QWidget):
         char_layout.addWidget(self.char_count_label)
         layout.addWidget(self.char_count_container)
 
-        # Associated Models Section (note_models)
-        self.models_container = QWidget()
-        models_main_layout = QVBoxLayout(self.models_container)
-        models_main_layout.setContentsMargins(0, 4, 0, 4)
-        models_main_layout.setSpacing(6)
-
-        models_hdr_layout = QHBoxLayout()
-        self.models_section_title = QLabel(t("note_models_title"))
-        self.models_section_title.setObjectName("DetailWordLabel")
-        models_hdr_layout.addWidget(self.models_section_title)
-        models_hdr_layout.addStretch()
-
-        self.add_model_btn = QPushButton(t("note_add_model_btn"))
-        self.add_model_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #C2E7FF;
-                border: 1px solid #444746;
-                border-radius: 12px;
-                padding: 3px 10px;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #8AB4F8;
-            }
-        """)
-        self.add_model_btn.clicked.connect(self.on_add_model_clicked)
-        models_hdr_layout.addWidget(self.add_model_btn)
-        models_main_layout.addLayout(models_hdr_layout)
-
-        self.models_pills_widget = QWidget()
-        self.models_pills_layout = FlowLayout(self.models_pills_widget, spacing=6)
-        models_main_layout.addWidget(self.models_pills_widget)
-        layout.addWidget(self.models_container)
-
         # Save & Delete Buttons Container
         self.buttons_container = QWidget()
         buttons_layout = QHBoxLayout(self.buttons_container)
@@ -279,7 +242,6 @@ class NoteSection(QWidget):
         self.update_pin_corkboard_btn_text()
         self.update_image()
         self.update_timestamp_display()
-        self.update_associated_models()
 
     def update_timestamp_display(self, created_at=None, updated_at=None):
         if not hasattr(self, 'note_timestamps_label'):
@@ -524,205 +486,6 @@ class NoteSection(QWidget):
         self.update_image()
         self.check_changes()
 
-    def update_associated_models(self):
-        while self.models_pills_layout.count():
-            item = self.models_pills_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-
-        if not self.note_data or not self.note_data.get('id'):
-            self.models_container.setVisible(False)
-            return
-
-        self.models_container.setVisible(True)
-        associated = self.note_data.get('associated_models', [])
-
-        if not associated:
-            empty_lbl = QLabel(t("note_no_models_yet"))
-            empty_lbl.setStyleSheet("color: #8E918F; font-size: 11px; font-style: italic; padding: 2px 4px;")
-            self.models_pills_layout.addWidget(empty_lbl)
-            return
-
-        for m in associated:
-            pill = QWidget()
-            pill.setObjectName("ModelPill")
-            pill.setStyleSheet("""
-                QWidget#ModelPill {
-                    background-color: #282A2C;
-                    border: 1px solid #444746;
-                    border-radius: 12px;
-                }
-                QWidget#ModelPill:hover {
-                    border-color: #8AB4F8;
-                    background-color: #313438;
-                }
-            """)
-            pill_layout = QHBoxLayout(pill)
-            pill_layout.setContentsMargins(8, 2, 6, 2)
-            pill_layout.setSpacing(6)
-
-            m_id = m.get('id')
-            m_name = m.get('name', 'Model')
-            lbl_btn = QPushButton(f"📦 {m_name}")
-            lbl_btn.setCursor(Qt.PointingHandCursor)
-            lbl_btn.setToolTip(f"{m_name} - {t('lib_copy_triggers')}")
-            lbl_btn.setStyleSheet("""
-                QPushButton {
-                    background: transparent;
-                    border: none;
-                    color: #E3E3E3;
-                    font-size: 11px;
-                    font-weight: 500;
-                    text-align: left;
-                    padding: 0;
-                }
-                QPushButton:hover {
-                    color: #A8C7FA;
-                }
-            """)
-            lbl_btn.clicked.connect(lambda _, mid=m_id, mn=m_name: self.on_model_pill_clicked(mid, mn))
-            pill_layout.addWidget(lbl_btn)
-
-            del_btn = QPushButton("✕")
-            del_btn.setFixedSize(14, 14)
-            del_btn.setCursor(Qt.PointingHandCursor)
-            del_btn.setToolTip("Kaldır")
-            del_btn.setStyleSheet("""
-                QPushButton {
-                    background: transparent;
-                    border: none;
-                    color: #9AA0A6;
-                    font-size: 10px;
-                    font-weight: bold;
-                    padding: 0;
-                }
-                QPushButton:hover {
-                    color: #F28B82;
-                }
-            """)
-            del_btn.clicked.connect(lambda _, mid=m_id: self.on_remove_model_clicked(mid))
-            pill_layout.addWidget(del_btn)
-
-            self.models_pills_layout.addWidget(pill)
-
-    def on_model_pill_clicked(self, model_id, model_name):
-        import database
-        triggers = database.get_trigger_words(model_id)
-        if triggers:
-            text = ", ".join(triggers)
-            QGuiApplication.clipboard().setText(text)
-            from ui.toast_notification import ToastNotification
-            ToastNotification.show_toast(self, f"📋 {model_name}: {t('toast_copied_triggers')}", duration=2500)
-        else:
-            QGuiApplication.clipboard().setText(model_name)
-            from ui.toast_notification import ToastNotification
-            ToastNotification.show_toast(self, f"📋 {model_name} {t('lib_no_triggers')}", duration=2000)
-
-    def on_remove_model_clicked(self, model_id):
-        if not self.note_data or not self.note_data.get('id'):
-            return
-        self.dissociate_model_requested.emit(self.note_data['id'], model_id)
-
-    def on_add_model_clicked(self):
-        if not self.note_data or not self.note_data.get('id'):
-            QMessageBox.information(self, t("app_title"), t("note_not_saved_yet"), QMessageBox.Ok)
-            return
-
-        import database
-        all_models = database.get_all_models_for_association()
-        current_ids = {m.get('id') for m in self.note_data.get('associated_models', [])}
-        available_models = [m for m in all_models if m.get('id') not in current_ids]
-
-        if not available_models:
-            QMessageBox.information(self, t("note_models_title"), "Eklenebilecek başka model bulunamadı.", QMessageBox.Ok)
-            return
-
-        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QDialogButtonBox
-        dialog = QDialog(self)
-        dialog.setWindowTitle(t("note_select_model_dialog"))
-        dialog.resize(360, 420)
-        dialog.setStyleSheet("""
-            QDialog {
-                background-color: #1E1F20;
-                color: #E3E3E3;
-            }
-            QLineEdit {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                padding: 6px 10px;
-                color: #E3E3E3;
-                font-size: 12px;
-            }
-            QListWidget {
-                background-color: #282A2C;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                padding: 4px;
-                color: #E3E3E3;
-            }
-            QListWidget::item {
-                padding: 8px;
-                border-radius: 6px;
-            }
-            QListWidget::item:hover {
-                background-color: #3C4043;
-            }
-            QListWidget::item:selected {
-                background-color: #004A77;
-                color: #C2E7FF;
-            }
-            QPushButton {
-                background-color: #004A77;
-                color: #C2E7FF;
-                border: none;
-                border-radius: 6px;
-                padding: 6px 14px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #005B94;
-            }
-        """)
-
-        d_layout = QVBoxLayout(dialog)
-        d_layout.setContentsMargins(16, 16, 16, 16)
-        d_layout.setSpacing(10)
-
-        search_edit = QLineEdit()
-        search_edit.setPlaceholderText(t("search_placeholder"))
-        d_layout.addWidget(search_edit)
-
-        list_widget = QListWidget()
-        for m in available_models:
-            item = QListWidgetItem(f"📦 {m.get('name')}")
-            item.setData(Qt.UserRole, m.get('id'))
-            list_widget.addItem(item)
-        d_layout.addWidget(list_widget)
-
-        def filter_items(text):
-            query = text.strip().lower()
-            for i in range(list_widget.count()):
-                it = list_widget.item(i)
-                it.setHidden(query not in it.text().lower())
-
-        search_edit.textChanged.connect(filter_items)
-
-        bbox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bbox.accepted.connect(dialog.accept)
-        bbox.rejected.connect(dialog.reject)
-        d_layout.addWidget(bbox)
-
-        list_widget.itemDoubleClicked.connect(lambda _: dialog.accept())
-
-        if dialog.exec() == QDialog.Accepted:
-            curr = list_widget.currentItem()
-            if curr:
-                chosen_id = curr.data(Qt.UserRole)
-                if chosen_id:
-                    self.associate_model_requested.emit(self.note_data['id'], chosen_id)
-
     def retranslate_ui(self):
         self.note_title_edit.setPlaceholderText(t("detail_card_title_placeholder"))
         self.select_note_img_btn.setText(t("detail_select_image"))
@@ -731,8 +494,6 @@ class NoteSection(QWidget):
         self.notes_edit.setPlaceholderText(t("detail_notes_placeholder_note"))
         self.save_btn.setText(t("save_note"))
         self.delete_btn.setText(t("detail_delete_note"))
-        self.models_section_title.setText(t("note_models_title"))
-        self.add_model_btn.setText(t("note_add_model_btn"))
 
         self.display_mode_combo.blockSignals(True)
         curr_mode_idx = self.display_mode_combo.currentIndex()
@@ -745,4 +506,3 @@ class NoteSection(QWidget):
         self.update_pin_corkboard_btn_text()
         self.update_char_count()
         self.update_timestamp_display()
-        self.update_associated_models()

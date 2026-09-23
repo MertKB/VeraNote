@@ -428,6 +428,12 @@ TRANSLATIONS = {
         # Enhancements: Workflow nodes, prompt, library sorting & tags, note models, backup
         "workflow_nodes_title": "🧩 Kullanılan Düğümler",
         "workflow_gen_prompt_title": "✨ Üretim Promptu ve Parametreler",
+        "workflow_pos_prompt": "✨ Pozitif Prompt",
+        "workflow_neg_prompt": "🚫 Negatif Prompt",
+        "workflow_params_title": "⚙️ Üretim Parametreleri",
+        "workflow_copy_seed": "Seed Kopyala",
+        "workflow_copy_params": "Parametreleri Kopyala",
+        "workflow_used_models": "📦 Modeller ve LoRA'lar",
         "workflow_copy_prompt": "📋 Promptu Kopyala",
         "workflow_no_nodes": "Düğüm bilgisi bulunamadı",
         "lib_sort_newest": "🕒 En Yeni",
@@ -435,6 +441,7 @@ TRANSLATIONS = {
         "lib_sort_za": "🔤 Z - A",
         "lib_sort_fav_first": "⭐ Favoriler Önce",
         "lib_filter_all_tags": "Tümü",
+        "lib_tag_all": "🏷️ Tüm Etiketler",
         "lib_copy_triggers": "📋 Tetikleyicileri Kopyala",
         "lib_triggers_copied": "Tetikleyici kelimeler kopyalandı!",
         "lib_no_triggers": "Tetikleyici kelime tanımlı değil",
@@ -451,6 +458,10 @@ TRANSLATIONS = {
         "settings_restore_confirm": "Bu işlem mevcut verilerinizin yedeğini alıp seçilen ZIP arşivindeki verileri yükleyecektir. Devam etmek istiyor musunuz?",
         "toast_png_workflow_imported": "ComfyUI iş akışı ve görseli içe aktarıldı!",
         "toast_copied_triggers": "Tetikleyiciler panoya kopyalandı!",
+        "toast_copied_seed": "Seed panoya kopyalandı!",
+        "toast_copied_pos_prompt": "Pozitif prompt panoya kopyalandı!",
+        "toast_copied_neg_prompt": "Negatif prompt panoya kopyalandı!",
+        "toast_copied_params": "Üretim parametreleri panoya kopyalandı!",
     },
     "en": {
         "app_title": "Vera Note - Notes and Models",
@@ -879,6 +890,12 @@ TRANSLATIONS = {
         # Enhancements: Workflow nodes, prompt, library sorting & tags, note models, backup
         "workflow_nodes_title": "🧩 Nodes Used",
         "workflow_gen_prompt_title": "✨ Generation Prompt & Settings",
+        "workflow_pos_prompt": "✨ Positive Prompt",
+        "workflow_neg_prompt": "🚫 Negative Prompt",
+        "workflow_params_title": "⚙️ Generation Parameters",
+        "workflow_copy_seed": "Copy Seed",
+        "workflow_copy_params": "Copy Parameters",
+        "workflow_used_models": "📦 Models & LoRAs",
         "workflow_copy_prompt": "📋 Copy Prompt",
         "workflow_no_nodes": "No node information found",
         "lib_sort_newest": "🕒 Newest",
@@ -886,6 +903,7 @@ TRANSLATIONS = {
         "lib_sort_za": "🔤 Z - A",
         "lib_sort_fav_first": "⭐ Favorites First",
         "lib_filter_all_tags": "All",
+        "lib_tag_all": "🏷️ All Tags",
         "lib_copy_triggers": "📋 Copy Triggers",
         "lib_triggers_copied": "Trigger words copied!",
         "lib_no_triggers": "No trigger words defined",
@@ -902,6 +920,10 @@ TRANSLATIONS = {
         "settings_restore_confirm": "This operation will back up your current data and load the data from the selected ZIP archive. Do you want to continue?",
         "toast_png_workflow_imported": "ComfyUI workflow and image imported!",
         "toast_copied_triggers": "Triggers copied to clipboard!",
+        "toast_copied_seed": "Seed copied to clipboard!",
+        "toast_copied_pos_prompt": "Positive prompt copied to clipboard!",
+        "toast_copied_neg_prompt": "Negative prompt copied to clipboard!",
+        "toast_copied_params": "Generation parameters copied to clipboard!",
     }
 }
 

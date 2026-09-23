@@ -551,6 +551,28 @@ class LibraryView(QWidget):
         self.fav_toggle_btn.clicked.connect(self.on_fav_toggle_clicked)
         header_layout.addWidget(self.fav_toggle_btn)
 
+        # 🏷️ Tag Filter ComboBox (next to Favorites & Sorting)
+        self.tag_combo = QComboBox()
+        self.tag_combo.setObjectName("TagFilterCombo")
+        self.tag_combo.addItem(t("lib_tag_all"), userData=None)
+        self.tag_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #2D2F31;
+                border: 1px solid #444746;
+                border-radius: 8px;
+                color: #E3E3E3;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+        """)
+        self.tag_combo.currentIndexChanged.connect(self.on_tag_combo_changed)
+        header_layout.addWidget(self.tag_combo)
+        self.tag_combo.setVisible(False)
+
         # 🔀 Sorting ComboBox
         self.sort_combo = QComboBox()
         self.sort_combo.addItems([
@@ -586,32 +608,6 @@ class LibraryView(QWidget):
         header_layout.addWidget(self.scan_btn)
 
         self.main_layout.addLayout(header_layout)
-
-        # Tag Filter Bar (Scrollable horizontally)
-        self.tag_bar_container = QWidget()
-        self.tag_bar_container.setObjectName("TagBarContainer")
-        tag_bar_layout = QHBoxLayout(self.tag_bar_container)
-        tag_bar_layout.setContentsMargins(0, 0, 0, 0)
-        tag_bar_layout.setSpacing(6)
-        
-        self.tag_scroll = QScrollArea()
-        self.tag_scroll.setFixedHeight(36)
-        self.tag_scroll.setWidgetResizable(True)
-        self.tag_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.tag_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.tag_scroll.setFrameShape(QFrame.NoFrame)
-        self.tag_scroll.setStyleSheet("background: transparent; border: none;")
-        
-        self.tag_inner_widget = QWidget()
-        self.tag_inner_layout = QHBoxLayout(self.tag_inner_widget)
-        self.tag_inner_layout.setContentsMargins(0, 0, 0, 0)
-        self.tag_inner_layout.setSpacing(6)
-        self.tag_inner_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        
-        self.tag_scroll.setWidget(self.tag_inner_widget)
-        tag_bar_layout.addWidget(self.tag_scroll)
-        self.main_layout.addWidget(self.tag_bar_container)
-        self.tag_bar_container.setVisible(False)
 
         # Bulk Action Bar (Visible only when 1 or more models are selected)
         self.bulk_bar = QFrame()
@@ -928,82 +924,51 @@ class LibraryView(QWidget):
             self.scroll_area.setUpdatesEnabled(True)
 
     def update_tag_bar(self, models):
-        # Clear existing tag buttons
-        while self.tag_inner_layout.count():
-            item = self.tag_inner_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self.tag_buttons.clear()
-
         all_tags = set()
         for m in (models or []):
             for tg in m.get('tags', []):
                 if tg and tg.strip():
                     all_tags.add(tg.strip())
 
-        if not all_tags:
-            self.tag_bar_container.setVisible(False)
-            self.selected_tag = None
+        if not hasattr(self, 'tag_combo'):
             return
 
-        self.tag_bar_container.setVisible(True)
-        
-        # "All / Tümü" button
-        all_btn = QPushButton(t("lib_filter_all_tags"))
-        all_btn.setCheckable(True)
-        all_btn.setChecked(self.selected_tag is None)
-        all_btn.setCursor(Qt.PointingHandCursor)
-        all_btn.setStyleSheet(self._tag_btn_style(self.selected_tag is None))
-        all_btn.clicked.connect(lambda: self.on_tag_filter_clicked(None))
-        self.tag_inner_layout.addWidget(all_btn)
-        self.tag_buttons[None] = all_btn
+        self.tag_combo.blockSignals(True)
+        prev_tag = self.selected_tag
+        self.tag_combo.clear()
+        self.tag_combo.addItem(t("lib_tag_all"), userData=None)
 
-        for tag in sorted(all_tags, key=lambda s: s.lower()):
-            btn = QPushButton(f"🏷️ {tag}")
-            btn.setCheckable(True)
-            is_active = (self.selected_tag == tag)
-            btn.setChecked(is_active)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet(self._tag_btn_style(is_active))
-            btn.clicked.connect(lambda checked=False, t_val=tag: self.on_tag_filter_clicked(t_val))
-            self.tag_inner_layout.addWidget(btn)
-            self.tag_buttons[tag] = btn
+        if not all_tags:
+            self.tag_combo.setVisible(False)
+            self.selected_tag = None
+        else:
+            self.tag_combo.setVisible(True)
+            for tag in sorted(all_tags, key=lambda s: s.lower()):
+                self.tag_combo.addItem(f"🏷️ {tag}", userData=tag)
 
-    def _tag_btn_style(self, active=False):
-        if active:
-            return """
-                QPushButton {
-                    background-color: #8AB4F8;
-                    color: #131314;
-                    font-weight: bold;
-                    border: none;
-                    border-radius: 12px;
-                    padding: 3px 12px;
-                    font-size: 11px;
-                }
-            """
-        return """
-            QPushButton {
-                background-color: #242936;
-                color: #C2E7FF;
-                border: 1px solid #3c4456;
-                border-radius: 12px;
-                padding: 3px 12px;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #303644;
-                border-color: #8AB4F8;
-            }
-        """
+            # Restore previous selection if it still exists
+            if prev_tag:
+                found = False
+                for i in range(self.tag_combo.count()):
+                    if self.tag_combo.itemData(i) == prev_tag:
+                        self.tag_combo.setCurrentIndex(i)
+                        found = True
+                        break
+                if not found:
+                    self.selected_tag = None
+                    self.tag_combo.setCurrentIndex(0)
+            else:
+                self.tag_combo.setCurrentIndex(0)
+
+        self.tag_combo.blockSignals(False)
+
+    def on_tag_combo_changed(self, index):
+        tag_val = self.tag_combo.itemData(index) if hasattr(self, 'tag_combo') else None
+        self.selected_tag = tag_val
+        self.apply_filters()
 
     def on_tag_filter_clicked(self, tag):
         self.selected_tag = tag
-        for t_val, btn in self.tag_buttons.items():
-            is_active = (t_val == tag)
-            btn.setChecked(is_active)
-            btn.setStyleSheet(self._tag_btn_style(is_active))
         self.apply_filters()
 
     def on_sort_changed(self, text=None):
@@ -1267,6 +1232,11 @@ class LibraryView(QWidget):
             if 0 <= curr_sort_idx < self.sort_combo.count():
                 self.sort_combo.setCurrentIndex(curr_sort_idx)
             self.sort_combo.blockSignals(False)
+
+        if hasattr(self, 'tag_combo') and self.tag_combo.count() > 0:
+            self.tag_combo.blockSignals(True)
+            self.tag_combo.setItemText(0, t("lib_tag_all"))
+            self.tag_combo.blockSignals(False)
 
         self.scan_btn.setText(t("view_scan_library"))
         self.bulk_select_all_btn.setText(t("bulk_select_all"))
