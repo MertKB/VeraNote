@@ -203,6 +203,7 @@ def initialize_db():
                 description TEXT,
                 is_favorite INTEGER DEFAULT 0,
                 is_hidden INTEGER DEFAULT 0,
+                base_architecture TEXT,
                 FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
             );
         """)
@@ -375,9 +376,25 @@ def initialize_db():
             columns = [row['name'] for row in cursor.fetchall()]
             if 'is_hidden' not in columns:
                 cursor.execute("ALTER TABLE models ADD COLUMN is_hidden INTEGER DEFAULT 0;")
-                conn.commit()
+            if 'base_architecture' not in columns:
+                cursor.execute("ALTER TABLE models ADD COLUMN base_architecture TEXT;")
+            conn.commit()
+
+            # Auto backfill base_architecture for existing models if empty
+            cursor.execute("SELECT id, name, file_path FROM models WHERE base_architecture IS NULL OR base_architecture = '';")
+            rows = cursor.fetchall()
+            if rows:
+                from utils.png_parser import detect_base_architecture
+                updates = []
+                for r in rows:
+                    arch = detect_base_architecture([r['name'], r['file_path']])
+                    if arch:
+                        updates.append((arch, r['id']))
+                if updates:
+                    cursor.executemany("UPDATE models SET base_architecture = ? WHERE id = ?;", updates)
+                    conn.commit()
         except sqlite3.Error as e:
-            print(f"Error migrating models table (is_hidden): {e}")
+            print(f"Error migrating models table: {e}")
 
         # CREATE INDEXES FOR OPTIMIZED QUERY SPEED
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_models_library_id ON models(library_id);")
@@ -611,8 +628,9 @@ def get_models_in_library(library_name, show_hidden=False, limit=None, offset=No
     with get_connection() as conn:
         cursor = conn.cursor()
         query = """
-            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.is_hidden,
-                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list
+            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.is_hidden, m.base_architecture,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list,
+                   (SELECT GROUP_CONCAT(tw.word, ', ') FROM trigger_words tw WHERE tw.model_id = m.id) as triggers_list
             FROM models m
             JOIN libraries l ON m.library_id = l.id
             WHERE l.name = ?
@@ -637,6 +655,8 @@ def get_models_in_library(library_name, show_hidden=False, limit=None, offset=No
             row_dict = dict(row)
             tags_str = row_dict.get('tags_list')
             row_dict['tags'] = tags_str.split(',') if tags_str else []
+            trig_str = row_dict.get('triggers_list')
+            row_dict['trigger_words'] = [w.strip() for w in trig_str.split(', ')] if trig_str else []
             results.append(row_dict)
         return results
 
@@ -644,8 +664,9 @@ def get_model_by_id(model_id):
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite,
-                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list
+            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.base_architecture,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list,
+                   (SELECT GROUP_CONCAT(tw.word, ', ') FROM trigger_words tw WHERE tw.model_id = m.id) as triggers_list
             FROM models m
             WHERE m.id = ?;
         """, (model_id,))
@@ -655,23 +676,37 @@ def get_model_by_id(model_id):
         row_dict = dict(row)
         tags_str = row_dict.get('tags_list')
         row_dict['tags'] = tags_str.split(',') if tags_str else []
+        trig_str = row_dict.get('triggers_list')
+        row_dict['trigger_words'] = [w.strip() for w in trig_str.split(', ')] if trig_str else []
         return row_dict
 
-def register_model(library_id, name, file_path, file_hash):
+def register_model(library_id, name, file_path, file_hash, base_architecture=None):
     with get_connection() as conn:
         cursor = conn.cursor()
-        # Insert if not exists, otherwise update file_hash
+        if isinstance(library_id, str):
+            lib_row = get_library_id(library_id)
+            if lib_row:
+                library_id = lib_row
+        if not base_architecture:
+            from utils.png_parser import detect_base_architecture
+            base_architecture = detect_base_architecture([name, file_path])
         cursor.execute("""
-            INSERT INTO models (library_id, name, file_path, file_hash) 
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(file_path) DO UPDATE SET file_hash = excluded.file_hash;
-        """, (library_id, name, file_path, file_hash))
+            INSERT INTO models (library_id, name, file_path, file_hash, base_architecture) 
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(file_path) DO UPDATE SET 
+                file_hash = excluded.file_hash,
+                base_architecture = COALESCE(models.base_architecture, excluded.base_architecture);
+        """, (library_id, name, file_path, file_hash, base_architecture))
         conn.commit()
+        return cursor.lastrowid
 
-def update_model_data(model_id, name, notes):
+def update_model_data(model_id, name, notes, base_architecture=None):
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE models SET name = ?, notes = ? WHERE id = ?;", (name, notes, model_id))
+        if base_architecture is not None:
+            cursor.execute("UPDATE models SET name = ?, notes = ?, base_architecture = ? WHERE id = ?;", (name, notes, base_architecture, model_id))
+        else:
+            cursor.execute("UPDATE models SET name = ?, notes = ? WHERE id = ?;", (name, notes, model_id))
         conn.commit()
 
 def update_model_image(model_id, image_path):
@@ -710,11 +745,21 @@ def register_models_batch(models_list):
     with get_connection() as conn:
         cursor = conn.cursor()
         try:
-            cursor.executemany("""
-                INSERT INTO models (library_id, name, file_path, file_hash) 
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(file_path) DO UPDATE SET file_hash = excluded.file_hash;
-            """, models_list)
+            sample = models_list[0]
+            if len(sample) == 5:
+                cursor.executemany("""
+                    INSERT INTO models (library_id, name, file_path, file_hash, base_architecture) 
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(file_path) DO UPDATE SET 
+                        file_hash = excluded.file_hash,
+                        base_architecture = COALESCE(models.base_architecture, excluded.base_architecture);
+                """, models_list)
+            else:
+                cursor.executemany("""
+                    INSERT INTO models (library_id, name, file_path, file_hash) 
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(file_path) DO UPDATE SET file_hash = excluded.file_hash;
+                """, models_list)
             conn.commit()
         except sqlite3.Error as e:
             conn.rollback()
@@ -760,8 +805,9 @@ def get_favorite_models(show_hidden=False, limit=None, offset=None):
     with get_connection() as conn:
         cursor = conn.cursor()
         query = """
-            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.is_hidden,
-                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list
+            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.is_hidden, m.base_architecture,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list,
+                   (SELECT GROUP_CONCAT(tw.word, ', ') FROM trigger_words tw WHERE tw.model_id = m.id) as triggers_list
             FROM models m
             WHERE m.is_favorite = 1
         """
@@ -783,6 +829,8 @@ def get_favorite_models(show_hidden=False, limit=None, offset=None):
             row_dict = dict(row)
             tags_str = row_dict.get('tags_list')
             row_dict['tags'] = tags_str.split(',') if tags_str else []
+            trig_str = row_dict.get('triggers_list')
+            row_dict['trigger_words'] = [w.strip() for w in trig_str.split(', ')] if trig_str else []
             results.append(row_dict)
         return results
 

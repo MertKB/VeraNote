@@ -923,9 +923,9 @@ class AppController:
         scanner.finished_signal.connect(on_finished)
         scanner.start()
 
-    @Slot(int, str, str)
-    def on_save_model_data(self, model_id, name, notes):
-        database.update_model_data(model_id, name, notes)
+    @Slot(int, str, str, str)
+    def on_save_model_data(self, model_id, name, notes, base_architecture=""):
+        database.update_model_data(model_id, name, notes, base_architecture)
         self.win.statusBar().showMessage(i18n.t("status_model_saved"), 3000)
         self.win.show_toast(i18n.t("toast_saved"), "success")
         
@@ -934,7 +934,7 @@ class AppController:
         if model_data:
             self.win.detail_panel.set_model(model_data, trigger_words)
         
-        self.win.library_view.update_card_name(model_id, name)
+        self.win.library_view.update_card_model_data(model_id, name, base_architecture)
 
     @Slot(int, str)
     def on_add_trigger(self, model_id, word):

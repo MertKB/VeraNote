@@ -71,7 +71,7 @@ def test_cards_and_custom_theme():
 
     print("4. Checking SettingsDialog custom theme controls and presets...")
     dialog = SettingsDialog()
-    assert len(dialog.color_buttons) == 8, f"Expected 8 color buttons, got {len(dialog.color_buttons)}"
+    assert len(dialog.color_buttons) == 10, f"Expected 10 color buttons, got {len(dialog.color_buttons)}"
     assert len(dialog.preset_buttons) == len(CUSTOM_PRESETS)
 
     # Test applying a preset

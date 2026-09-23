@@ -180,6 +180,29 @@ def test_backup_and_restore_zip():
             os.remove(zip_path)
 
 
+def test_model_base_architecture():
+    import time
+    lib_name = "Arch Test Lib"
+    database.add_library(lib_name)
+    lib_id = database.get_library_id(lib_name)
+    
+    unique_path = f"/path/to/flux1-schnell-{time.time()}.safetensors"
+    # 1. Register model with auto-detected architecture
+    database.register_model(lib_id, "flux1-schnell-lora", unique_path, "h1")
+    models = database.get_models_in_library(lib_name)
+    assert len(models) >= 1
+    m = [x for x in models if x['file_path'] == unique_path][0]
+    assert m['base_architecture'] == "Flux"
+    
+    # 2. Update model architecture manually
+    database.update_model_data(m['id'], "flux1-schnell-lora", "Notes", "Flux Dev")
+    m_updated = database.get_model_by_id(m['id'])
+    assert m_updated['base_architecture'] == "Flux Dev"
+
+    # Cleanup
+    database.delete_models([m['id']])
+
+
 if __name__ == "__main__":
     print("Running test_png_parser_and_workflow_node_extraction...")
     test_png_parser_and_workflow_node_extraction()
@@ -187,6 +210,10 @@ if __name__ == "__main__":
 
     print("Running test_note_model_association...")
     test_note_model_association()
+    print("  -> Passed!")
+
+    print("Running test_model_base_architecture...")
+    test_model_base_architecture()
     print("  -> Passed!")
 
     print("Running test_backup_and_restore_zip...")

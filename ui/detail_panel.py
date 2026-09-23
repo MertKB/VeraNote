@@ -18,7 +18,7 @@ from .detail.workflow_section import WorkflowSection
 class DetailPanel(QWidget):
     """Modular coordinator panel delegating to ModelSection, NoteSection, or WorkflowSection."""
     close_requested = Signal()
-    save_model_data_requested = Signal(int, str, str) # model_id, name, notes
+    save_model_data_requested = Signal(int, str, str, str) # model_id, name, notes, base_architecture
     image_changed = Signal(int, str) # model_id, new_image_path
     add_trigger_requested = Signal(int, str) # model_id, word
     delete_trigger_requested = Signal(int, str) # model_id, word

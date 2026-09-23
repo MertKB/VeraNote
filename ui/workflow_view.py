@@ -156,6 +156,23 @@ class WorkflowCardWidget(QFrame):
         """)
         self.copy_prompt_btn.clicked.connect(self.on_copy_prompt_clicked)
 
+        # Architecture Badge Overlay on bottom-left of image
+        self.arch_badge = QLabel(self.image_label)
+        self.arch_badge.setObjectName("CardArchBadge")
+        self.arch_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.arch_badge.setStyleSheet("""
+            QLabel#CardArchBadge {
+                background-color: rgba(20, 21, 24, 0.85);
+                border: 1px solid rgba(138, 180, 248, 0.5);
+                border-radius: 4px;
+                color: #8AB4F8;
+                font-size: 10px;
+                font-weight: bold;
+                padding: 1px 5px;
+            }
+        """)
+        self.arch_badge.setVisible(False)
+
         # Bottom Info Panel
         self.info_panel = QFrame(self)
         self.info_panel.setObjectName("CardInfoPanel")
@@ -251,6 +268,20 @@ class WorkflowCardWidget(QFrame):
 
         # Update fav button style
         self.update_fav_btn_style()
+
+        # Architecture badge
+        if hasattr(self, 'arch_badge'):
+            arch = self.workflow_data.get('base_architecture') or ""
+            if not arch:
+                from utils.png_parser import detect_base_architecture
+                arch = detect_base_architecture([name, filename])
+            if arch:
+                self.arch_badge.setText(f"⚡ {arch}")
+                self.arch_badge.adjustSize()
+                self.arch_badge.move(8, 107)
+                self.arch_badge.setVisible(True)
+            else:
+                self.arch_badge.setVisible(False)
 
         # Set image
         if image_path and os.path.exists(image_path):

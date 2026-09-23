@@ -182,6 +182,23 @@ class ModelCardWidget(QFrame):
         """)
         self.copy_triggers_btn.clicked.connect(self.on_copy_triggers_clicked)
 
+        # Architecture Badge Overlay on bottom-left of image
+        self.arch_badge = QLabel(self.image_label)
+        self.arch_badge.setObjectName("CardArchBadge")
+        self.arch_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.arch_badge.setStyleSheet("""
+            QLabel#CardArchBadge {
+                background-color: rgba(20, 21, 24, 0.85);
+                border: 1px solid rgba(138, 180, 248, 0.5);
+                border-radius: 4px;
+                color: #8AB4F8;
+                font-size: 10px;
+                font-weight: bold;
+                padding: 1px 5px;
+            }
+        """)
+        self.arch_badge.setVisible(False)
+
         # Bottom Info Panel - Dedicated container for title & filename
         self.info_panel = QFrame(self)
         self.info_panel.setObjectName("CardInfoPanel")
@@ -264,10 +281,22 @@ class ModelCardWidget(QFrame):
             self.warning_badge.setText(t("not_on_disk"))
             self.warning_badge.setToolTip(t("not_on_disk_tooltip"))
 
+        # Base architecture badge
+        if hasattr(self, 'arch_badge'):
+            arch = self.model_data.get('base_architecture') or ""
+            if not arch:
+                from utils.png_parser import detect_base_architecture
+                arch = detect_base_architecture([self.model_data.get('name', ''), self.model_data.get('file_path', '')])
+            if arch:
+                self.arch_badge.setText(f"⚡ {arch}")
+                self.arch_badge.adjustSize()
+                self.arch_badge.move(8, 148)
+                self.arch_badge.setVisible(True)
+            else:
+                self.arch_badge.setVisible(False)
+
     def on_copy_triggers_clicked(self):
-        import database
-        model_id = self.model_data.get('id')
-        words = database.get_trigger_words(model_id) if model_id else []
+        words = self.model_data.get('trigger_words') or []
         if words:
             clip_text = ", ".join(words)
         else:
@@ -572,6 +601,29 @@ class LibraryView(QWidget):
         self.tag_combo.currentIndexChanged.connect(self.on_tag_combo_changed)
         header_layout.addWidget(self.tag_combo)
         self.tag_combo.setVisible(False)
+
+        # ⚡ Architecture Filter ComboBox
+        self.arch_combo = QComboBox()
+        self.arch_combo.setObjectName("ArchFilterCombo")
+        self.arch_combo.addItem(t("lib_arch_all"), userData=None)
+        for arch in ["Flux", "SDXL", "SD 1.5", "Pony", "SD3", "Illustrious", "SD 2.1"]:
+            self.arch_combo.addItem(f"⚡ {arch}", userData=arch)
+        self.arch_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #2D2F31;
+                border: 1px solid #444746;
+                border-radius: 8px;
+                color: #E3E3E3;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+        """)
+        self.arch_combo.currentIndexChanged.connect(self.on_arch_combo_changed)
+        header_layout.addWidget(self.arch_combo)
 
         # 🔀 Sorting ComboBox
         self.sort_combo = QComboBox()
@@ -967,6 +1019,9 @@ class LibraryView(QWidget):
         self.selected_tag = tag_val
         self.apply_filters()
 
+    def on_arch_combo_changed(self, index):
+        self.apply_filters()
+
     def on_tag_filter_clicked(self, tag):
         self.selected_tag = tag
         self.apply_filters()
@@ -978,6 +1033,7 @@ class LibraryView(QWidget):
         query = self.local_search.text().strip().lower()
         show_only_favs = self.fav_toggle_btn.isChecked()
         selected_tag = getattr(self, 'selected_tag', None)
+        selected_arch = self.arch_combo.itemData(self.arch_combo.currentIndex()) if hasattr(self, 'arch_combo') else None
         
         filtered = []
         for m in self.models_data:
@@ -987,12 +1043,21 @@ class LibraryView(QWidget):
             # 2. Tag filter condition
             if selected_tag and selected_tag not in m.get('tags', []):
                 continue
-            # 3. Search query condition
+            # 3. Architecture filter condition
+            if selected_arch:
+                m_arch = m.get('base_architecture') or ""
+                if not m_arch:
+                    from utils.png_parser import detect_base_architecture
+                    m_arch = detect_base_architecture([m.get('name', ''), m.get('file_path', '')])
+                if m_arch != selected_arch:
+                    continue
+            # 4. Search query condition
             if query:
                 name_match = query in m.get('name', '').lower()
                 file_match = query in os.path.basename(m.get('file_path', '')).lower()
                 tag_match = any(query in tag.lower() for tag in m.get('tags', []))
-                if not (name_match or file_match or tag_match):
+                arch_match = query in (m.get('base_architecture', '') or '').lower()
+                if not (name_match or file_match or tag_match or arch_match):
                     continue
             filtered.append(m)
 
@@ -1034,16 +1099,25 @@ class LibraryView(QWidget):
                 break
 
     def update_card_name(self, model_id, name):
+        self.update_card_model_data(model_id, name)
+
+    def update_card_model_data(self, model_id, name, base_architecture=None):
         for m in self.models_data:
             if m.get('id') == model_id:
                 m['name'] = name
+                if base_architecture is not None:
+                    m['base_architecture'] = base_architecture
         for m in self.filtered_models_data:
             if m.get('id') == model_id:
                 m['name'] = name
+                if base_architecture is not None:
+                    m['base_architecture'] = base_architecture
 
         for card in self.cards:
             if isinstance(card, ModelCardWidget) and card.model_data.get('id') == model_id:
                 card.model_data['name'] = name
+                if base_architecture is not None:
+                    card.model_data['base_architecture'] = base_architecture
                 card.update_texts()
                 break
 
@@ -1237,6 +1311,11 @@ class LibraryView(QWidget):
             self.tag_combo.blockSignals(True)
             self.tag_combo.setItemText(0, t("lib_tag_all"))
             self.tag_combo.blockSignals(False)
+
+        if hasattr(self, 'arch_combo') and self.arch_combo.count() > 0:
+            self.arch_combo.blockSignals(True)
+            self.arch_combo.setItemText(0, t("lib_arch_all"))
+            self.arch_combo.blockSignals(False)
 
         self.scan_btn.setText(t("view_scan_library"))
         self.bulk_select_all_btn.setText(t("bulk_select_all"))

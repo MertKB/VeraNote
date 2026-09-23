@@ -131,7 +131,7 @@ class MainWindow(QMainWindow):
     save_note_signal = Signal(object, str, str) # id, title, content
     save_note_new_signal = Signal(int, str, str, str, str, int, bool) # id, title, content, image_path, display_mode, is_fav, is_auto_save
     delete_note_signal = Signal(int)
-    save_model_data_signal = Signal(int, str, str) # model_id, name, notes
+    save_model_data_signal = Signal(int, str, str, str) # model_id, name, notes, base_architecture
     add_trigger_signal = Signal(int, str) # model_id, word
     delete_trigger_signal = Signal(int, str) # model_id, word
     scan_library_signal = Signal(str)

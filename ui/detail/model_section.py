@@ -4,8 +4,8 @@ Encapsulates model preview, name, notes, trigger words, and tags.
 """
 import os
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QLineEdit, QPushButton, QMessageBox, QFileDialog, QSizePolicy)
-from PySide6.QtCore import Signal, Qt
+                             QLineEdit, QPushButton, QMessageBox, QFileDialog, QSizePolicy, QComboBox)
+from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QPixmap, QGuiApplication
 from utils.i18n import t
 from .common import ZoomableTextEdit, FlowLayout, TriggerPillButton, TagPillWidget
@@ -13,7 +13,7 @@ from .common import ZoomableTextEdit, FlowLayout, TriggerPillButton, TagPillWidg
 
 class ModelSection(QWidget):
     """Encapsulates all model metadata display, trigger words, and tagging."""
-    save_model_data_requested = Signal(int, str, str) # model_id, name, notes
+    save_model_data_requested = Signal(int, str, str, str) # model_id, name, notes, base_architecture
     add_trigger_requested = Signal(int, str) # model_id, word
     delete_trigger_requested = Signal(int, str) # model_id, word
     add_tag_requested = Signal(int, str) # model_id, tag
@@ -28,6 +28,7 @@ class ModelSection(QWidget):
         self.current_image_path = ""
         self.initial_name = ""
         self.initial_notes = ""
+        self.initial_arch = ""
         self.init_ui()
 
     def init_ui(self):
@@ -57,6 +58,41 @@ class ModelSection(QWidget):
         self.name_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.name_edit.textChanged.connect(self.check_changes)
         layout.addWidget(self.name_edit)
+
+        # Base Architecture Selection
+        arch_row = QHBoxLayout()
+        self.arch_label = QLabel(t("detail_arch_label") + ":")
+        self.arch_label.setObjectName("DetailWordLabel")
+        self.arch_label.setStyleSheet("color: #E3E3E3; font-weight: bold; font-size: 12px;")
+        arch_row.addWidget(self.arch_label)
+
+        self.arch_combo = QComboBox()
+        self.arch_combo.addItems([
+            t("detail_arch_auto"),
+            "Flux",
+            "SDXL",
+            "SD 1.5",
+            "Pony",
+            "SD3",
+            "Illustrious",
+            "SD 2.1",
+            "Diğer"
+        ])
+        self.arch_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #2D2F31;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                color: #8AB4F8;
+                font-weight: bold;
+                padding: 4px 10px;
+                font-size: 12px;
+            }
+        """)
+        self.arch_combo.currentIndexChanged.connect(self.check_changes)
+        arch_row.addWidget(self.arch_combo)
+        arch_row.addStretch()
+        layout.addLayout(arch_row)
 
         # File Path Info
         self.path_label = QLabel(t("detail_card_path"))
@@ -141,12 +177,91 @@ class ModelSection(QWidget):
         self.copy_all_btn.clicked.connect(self.on_copy_all_clicked)
         layout.addWidget(self.copy_all_btn)
 
+        # --- SAMPLE GENERATION INFO SECTION (from ComfyUI PNG) ---
+        self.sample_info_container = QWidget()
+        sample_layout = QVBoxLayout(self.sample_info_container)
+        sample_layout.setContentsMargins(0, 10, 0, 0)
+        sample_layout.setSpacing(6)
+
+        self.sample_title = QLabel(t("detail_sample_prompt_title"))
+        self.sample_title.setObjectName("DetailWordLabel")
+        sample_layout.addWidget(self.sample_title)
+
+        # Positive prompt box
+        self.sample_pos_box = QWidget()
+        pos_layout = QVBoxLayout(self.sample_pos_box)
+        pos_layout.setContentsMargins(0, 0, 0, 0)
+        pos_layout.setSpacing(4)
+        pos_hdr = QHBoxLayout()
+        self.sample_pos_lbl = QLabel(t("detail_sample_prompt_pos"))
+        self.sample_pos_lbl.setStyleSheet("color: #8AB4F8; font-size: 11px; font-weight: bold;")
+        pos_hdr.addWidget(self.sample_pos_lbl)
+        pos_hdr.addStretch()
+        self.copy_sample_pos_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_sample_pos_btn.setStyleSheet("""
+            QPushButton { background-color: #2D2F31; color: #8AB4F8; border: 1px solid #444746; border-radius: 12px; padding: 2px 8px; font-size: 11px; }
+            QPushButton:hover { background-color: #3C4043; border-color: #8AB4F8; }
+        """)
+        self.copy_sample_pos_btn.clicked.connect(self.copy_sample_pos)
+        pos_hdr.addWidget(self.copy_sample_pos_btn)
+        pos_layout.addLayout(pos_hdr)
+
+        self.sample_pos_edit = ZoomableTextEdit()
+        self.sample_pos_edit.setReadOnly(True)
+        self.sample_pos_edit.setMaximumHeight(85)
+        self.sample_pos_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 6px; color: #D1D5DB; font-size: 11px; padding: 4px;")
+        pos_layout.addWidget(self.sample_pos_edit)
+        sample_layout.addWidget(self.sample_pos_box)
+
+        # Negative prompt box
+        self.sample_neg_box = QWidget()
+        neg_layout = QVBoxLayout(self.sample_neg_box)
+        neg_layout.setContentsMargins(0, 0, 0, 0)
+        neg_layout.setSpacing(4)
+        neg_hdr = QHBoxLayout()
+        self.sample_neg_lbl = QLabel(t("detail_sample_prompt_neg"))
+        self.sample_neg_lbl.setStyleSheet("color: #F28B82; font-size: 11px; font-weight: bold;")
+        neg_hdr.addWidget(self.sample_neg_lbl)
+        neg_hdr.addStretch()
+        self.copy_sample_neg_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_sample_neg_btn.setStyleSheet("""
+            QPushButton { background-color: #2D2F31; color: #F28B82; border: 1px solid #444746; border-radius: 12px; padding: 2px 8px; font-size: 11px; }
+            QPushButton:hover { background-color: #3C4043; border-color: #F28B82; }
+        """)
+        self.copy_sample_neg_btn.clicked.connect(self.copy_sample_neg)
+        neg_hdr.addWidget(self.copy_sample_neg_btn)
+        neg_layout.addLayout(neg_hdr)
+
+        self.sample_neg_edit = ZoomableTextEdit()
+        self.sample_neg_edit.setReadOnly(True)
+        self.sample_neg_edit.setMaximumHeight(65)
+        self.sample_neg_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 6px; color: #D1D5DB; font-size: 11px; padding: 4px;")
+        neg_layout.addWidget(self.sample_neg_edit)
+        sample_layout.addWidget(self.sample_neg_box)
+
+        layout.addWidget(self.sample_info_container)
+        self.sample_info_container.setVisible(False)
+
     def set_model(self, model_data, trigger_words):
         self.model_data = model_data
         self.trigger_words = trigger_words or []
         self.initial_name = model_data.get('name', '')
         self.initial_notes = model_data.get('notes', '')
         self.current_image_path = model_data.get('image_path') or ""
+
+        arch = model_data.get('base_architecture') or ""
+        if not arch:
+            from utils.png_parser import detect_base_architecture
+            arch = detect_base_architecture([model_data.get('name', ''), model_data.get('file_path', '')])
+        self.initial_arch = arch or t("detail_arch_auto")
+
+        self.arch_combo.blockSignals(True)
+        idx = self.arch_combo.findText(arch)
+        if idx >= 0:
+            self.arch_combo.setCurrentIndex(idx)
+        else:
+            self.arch_combo.setCurrentIndex(0)
+        self.arch_combo.blockSignals(False)
 
         self.name_edit.blockSignals(True)
         self.notes_edit.blockSignals(True)
@@ -159,6 +274,7 @@ class ModelSection(QWidget):
         self.save_btn.setEnabled(False)
 
         self.update_image()
+        self.update_sample_generation_info()
         self.reload_tags()
         self.reload_pills()
 
@@ -167,7 +283,12 @@ class ModelSection(QWidget):
             return
         current_name = self.name_edit.text().strip()
         current_notes = self.notes_edit.toPlainText().strip()
-        has_changed = (current_name != self.initial_name) or (current_notes != self.initial_notes)
+        current_arch = self.arch_combo.currentText().strip()
+        has_changed = (
+            current_name != self.initial_name or 
+            current_notes != self.initial_notes or 
+            current_arch != self.initial_arch
+        )
         self.save_btn.setEnabled(has_changed)
 
     def on_save_clicked(self):
@@ -175,12 +296,17 @@ class ModelSection(QWidget):
             return
         name = self.name_edit.text().strip()
         notes = self.notes_edit.toPlainText().strip()
+        current_arch = self.arch_combo.currentText().strip()
+        if current_arch == t("detail_arch_auto"):
+            from utils.png_parser import detect_base_architecture
+            current_arch = detect_base_architecture([name, self.model_data.get('file_path', '')])
         if not name:
             QMessageBox.warning(self, t("msg_copy_error_title"), t("msg_model_name_empty"), QMessageBox.Ok)
             return
-        self.save_model_data_requested.emit(self.model_data['id'], name, notes)
+        self.save_model_data_requested.emit(self.model_data['id'], name, notes, current_arch)
         self.initial_name = name
         self.initial_notes = notes
+        self.initial_arch = self.arch_combo.currentText().strip()
         self.save_btn.setEnabled(False)
 
     def on_delete_model_clicked(self):
@@ -294,9 +420,51 @@ class ModelSection(QWidget):
             else:
                 QMessageBox.information(self, t("msg_copied_title"), t("msg_all_triggers_copied_text"), QMessageBox.Ok)
 
+    def copy_sample_pos(self):
+        text = self.sample_pos_edit.toPlainText().strip()
+        if text:
+            QGuiApplication.clipboard().setText(text)
+            self.copy_sample_pos_btn.setText("✓ " + t("workflow_copy_prompt"))
+            self.copy_sample_pos_btn.setEnabled(False)
+            win = self.window()
+            if win and hasattr(win, 'show_toast'):
+                win.show_toast(t("toast_copied_pos_prompt"), "success")
+            QTimer.singleShot(1500, lambda: [self.copy_sample_pos_btn.setText("📋 " + t("workflow_copy_prompt")), self.copy_sample_pos_btn.setEnabled(True)] if hasattr(self, 'copy_sample_pos_btn') and self.copy_sample_pos_btn else None)
+
+    def copy_sample_neg(self):
+        text = self.sample_neg_edit.toPlainText().strip()
+        if text:
+            QGuiApplication.clipboard().setText(text)
+            self.copy_sample_neg_btn.setText("✓ " + t("workflow_copy_prompt"))
+            self.copy_sample_neg_btn.setEnabled(False)
+            win = self.window()
+            if win and hasattr(win, 'show_toast'):
+                win.show_toast(t("toast_copied_neg_prompt"), "success")
+            QTimer.singleShot(1500, lambda: [self.copy_sample_neg_btn.setText("📋 " + t("workflow_copy_prompt")), self.copy_sample_neg_btn.setEnabled(True)] if hasattr(self, 'copy_sample_neg_btn') and self.copy_sample_neg_btn else None)
+
+    def update_sample_generation_info(self):
+        from utils.png_parser import extract_comfyui_metadata_from_png
+        img_path = self.current_image_path or (self.model_data.get('image_path') if self.model_data else '')
+        if img_path and os.path.exists(img_path) and img_path.lower().endswith('.png'):
+            try:
+                meta = extract_comfyui_metadata_from_png(img_path)
+                pos = meta.get('positive_prompt', '').strip()
+                neg = meta.get('negative_prompt', '').strip()
+                if pos or neg:
+                    self.sample_info_container.setVisible(True)
+                    self.sample_pos_box.setVisible(bool(pos))
+                    self.sample_pos_edit.setPlainText(pos)
+                    self.sample_neg_box.setVisible(bool(neg))
+                    self.sample_neg_edit.setPlainText(neg)
+                    return
+            except Exception:
+                pass
+        self.sample_info_container.setVisible(False)
+
     def update_image(self, image_path=None):
         if image_path is not None:
             self.current_image_path = image_path
+        self.update_sample_generation_info()
         path = self.current_image_path
         if path and os.path.exists(path):
             pixmap = QPixmap(path)
@@ -323,6 +491,7 @@ class ModelSection(QWidget):
     def retranslate_ui(self):
         self.name_title.setText(t("detail_card_title"))
         self.name_edit.setPlaceholderText(t("detail_card_title_placeholder"))
+        self.arch_label.setText(t("detail_arch_label") + ":")
         self.notes_title.setText(t("detail_notes_title"))
         self.notes_edit.setPlaceholderText(t("detail_notes_placeholder_model"))
         self.save_btn.setText(t("detail_save_changes"))
@@ -333,6 +502,12 @@ class ModelSection(QWidget):
         self.new_tw_edit.setPlaceholderText(t("detail_new_trigger_placeholder"))
         self.add_tw_btn.setText("+ " + t("detail_add_btn"))
         self.copy_all_btn.setText(t("detail_copy_all_words"))
+        if hasattr(self, 'sample_title'):
+            self.sample_title.setText(t("detail_sample_prompt_title"))
+            self.sample_pos_lbl.setText(t("detail_sample_prompt_pos"))
+            self.sample_neg_lbl.setText(t("detail_sample_prompt_neg"))
+            self.copy_sample_pos_btn.setText("📋 " + t("workflow_copy_prompt"))
+            self.copy_sample_neg_btn.setText("📋 " + t("workflow_copy_prompt"))
         if self.model_data:
             self.path_label.setText(f"{t('detail_card_path')} {self.model_data.get('file_path', '')}")
             self.reload_tags()

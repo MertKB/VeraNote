@@ -133,7 +133,7 @@ def test_detail_subpackage(app):
 
     # Model signal emission test
     emitted_model_saves = []
-    panel.save_model_data_requested.connect(lambda mid, name, notes: emitted_model_saves.append((mid, name, notes)))
+    panel.save_model_data_requested.connect(lambda mid, name, notes, arch="": emitted_model_saves.append((mid, name, notes)))
     panel.model_section.name_edit.setText("Protogen v2.2 Updated")
     panel.model_section.on_save_clicked()
     assert len(emitted_model_saves) == 1
