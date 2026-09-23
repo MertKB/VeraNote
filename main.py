@@ -83,6 +83,9 @@ class AppController:
         self.win.notes_view.note_perm_delete_requested.connect(self.on_note_perm_delete_requested)
         self.win.notes_view.empty_trash_requested.connect(self.on_empty_trash)
         self.win.detail_panel.delete_note_requested.connect(self.on_detail_delete_note)
+        self.win.note_associate_model_signal.connect(self.on_note_associate_model)
+        self.win.note_dissociate_model_signal.connect(self.on_note_dissociate_model)
+        self.win.file_dropped_signal.connect(self.on_global_file_dropped)
         
         # Connect library model click to retrieve details & trigger words
         self.win.library_view.model_clicked.connect(self.on_model_clicked)
@@ -540,7 +543,80 @@ class AppController:
             self.open_note_in_drawer(note_id)
             self.win.statusBar().showMessage(i18n.t("note_saved"), 2000)
 
+    @Slot(int, int)
+    def on_note_associate_model(self, note_id, model_id):
+        database.associate_note_model(note_id, model_id)
+        note = database.get_note_by_id(note_id)
+        if note and self.active_note_id == note_id:
+            all_models = database.get_all_models_for_association()
+            self.win.detail_panel.set_note(note, all_models)
 
+    @Slot(int, int)
+    def on_note_dissociate_model(self, note_id, model_id):
+        database.dissociate_note_model(note_id, model_id)
+        note = database.get_note_by_id(note_id)
+        if note and self.active_note_id == note_id:
+            all_models = database.get_all_models_for_association()
+            self.win.detail_panel.set_note(note, all_models)
+
+    @Slot(str)
+    def on_global_file_dropped(self, file_path):
+        if not file_path or not os.path.exists(file_path):
+            return
+
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in ('.png', '.json'):
+            is_workflow = ext == '.json'
+            if ext == '.png':
+                from utils.png_parser import extract_comfyui_metadata_from_png
+                meta = extract_comfyui_metadata_from_png(file_path)
+                if meta.get('workflow') or meta.get('prompt') or meta.get('positive_prompt'):
+                    is_workflow = True
+
+            if is_workflow:
+                wf_libs = database.get_workflow_libraries()
+                target_lib_id = None
+                target_lib_name = ""
+
+                if self.active_workflow_library:
+                    for l in wf_libs:
+                        if l['name'] == self.active_workflow_library:
+                            target_lib_id = l['id']
+                            target_lib_name = l['name']
+                            break
+
+                if not target_lib_id:
+                    if wf_libs:
+                        target_lib_id = wf_libs[0]['id']
+                        target_lib_name = wf_libs[0]['name']
+                    else:
+                        default_name = "ComfyUI Workflows"
+                        database.add_workflow_library(default_name)
+                        wf_libs = database.get_workflow_libraries()
+                        if wf_libs:
+                            target_lib_id = wf_libs[0]['id']
+                            target_lib_name = wf_libs[0]['name']
+
+                if target_lib_id:
+                    wf_name = os.path.splitext(os.path.basename(file_path))[0]
+                    new_wf_id = database.add_workflow(target_lib_id, wf_name, file_path, "", file_path if ext == '.png' else "")
+                    if new_wf_id:
+                        self.refresh_workflow_libraries()
+                        self.on_workflow_library_selected(target_lib_name)
+                        wf_data = database.get_workflow_by_id(new_wf_id)
+                        if wf_data:
+                            self.on_workflow_clicked(wf_data)
+                        from ui.toast_notification import ToastNotification
+                        ToastNotification.show_toast(self.win, f"✨ {wf_name}: {i18n.t('toast_png_workflow_imported')}", duration=3000)
+                        return
+
+        # If user dropped an image while editing a note in the detail panel
+        if ext in ('.png', '.jpg', '.jpeg', '.webp', '.bmp'):
+            if hasattr(self.win, 'detail_panel') and getattr(self.win.detail_panel, 'mode', None) == "NOTE":
+                self.win.detail_panel.update_image(file_path)
+                self.win.detail_panel.note_section.check_changes()
+                from ui.toast_notification import ToastNotification
+                ToastNotification.show_toast(self.win, f"🖼️ {os.path.basename(file_path)}", duration=2000)
 
     @Slot(str)
     def on_library_selected(self, library_name):
@@ -774,6 +850,15 @@ class AppController:
         custom_colors = database.get_setting("custom_theme_colors", "{}")
         
         dialog.set_settings(lora_path, ckpt_path, int(auto_save_enabled), float(auto_save_interval), theme, lang, custom_colors, comfyui_enabled=comfyui_enabled)
+
+        def on_backup_restored(path):
+            self.refresh_libraries()
+            self.refresh_workflow_libraries()
+            self.refresh_notes()
+            self.load_corkboard_notes()
+            self.win.statusBar().showMessage(i18n.t("settings_restore_success"), 3000)
+
+        dialog.backup_restored.connect(on_backup_restored)
 
         if dialog.exec():
             settings = dialog.get_settings()

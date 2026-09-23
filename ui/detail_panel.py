@@ -32,6 +32,8 @@ class DetailPanel(QWidget):
     workflow_image_changed = Signal(int, str) # workflow_id, new_image_path
     corkboard_pin_toggled = Signal(int, bool)
     note_color_changed = Signal(int, str)
+    associate_model_requested = Signal(int, int) # note_id, model_id
+    dissociate_model_requested = Signal(int, int) # note_id, model_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -156,6 +158,8 @@ class DetailPanel(QWidget):
         self.note_section.corkboard_pin_toggled.connect(self.corkboard_pin_toggled.emit)
         self.note_section.note_color_changed.connect(self.note_color_changed.emit)
         self.note_section.delete_note_requested.connect(self.delete_note_requested.emit)
+        self.note_section.associate_model_requested.connect(self.associate_model_requested.emit)
+        self.note_section.dissociate_model_requested.connect(self.dissociate_model_requested.emit)
         self.stack.addWidget(self.note_section) # index 1
 
         # 3. Workflow Section

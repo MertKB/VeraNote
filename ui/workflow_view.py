@@ -748,12 +748,13 @@ class WorkflowView(QWidget):
     def on_add_png_workflow(self, file_path):
         if not self.library_id:
             return
-        from utils.png_parser import extract_workflow_from_png
+        from utils.png_parser import extract_comfyui_metadata_from_png
         
-        workflow = extract_workflow_from_png(file_path)
-        if workflow:
+        meta = extract_comfyui_metadata_from_png(file_path)
+        if meta.get('workflow'):
             base_name = os.path.splitext(os.path.basename(file_path))[0]
-            self.add_workflow_requested.emit(self.library_id, base_name, file_path, "", file_path)
+            desc = meta.get('formatted_summary', '')
+            self.add_workflow_requested.emit(self.library_id, base_name, file_path, desc, file_path)
         else:
             QMessageBox.warning(
                 self,

@@ -161,6 +161,7 @@ class MainWindow(QMainWindow):
     bulk_favorite_signal = Signal(list, bool)
     bulk_delete_signal = Signal(list)
     delete_model_signal = Signal(int)
+    file_dropped_signal = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -171,6 +172,7 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
         self.resize(1200, 800)
         self.setMinimumSize(960, 600)
+        self.setAcceptDrops(True)
 
         self.init_ui()
         self.setStyleSheet(STYLE_SHEET)
@@ -245,6 +247,8 @@ class MainWindow(QMainWindow):
         self.detail_panel.save_workflow_data_requested.connect(self.save_workflow_data_signal.emit)
         self.detail_panel.delete_workflow_requested.connect(self.delete_workflow_signal.emit)
         self.detail_panel.workflow_image_changed.connect(self.workflow_image_changed_signal.emit)
+        self.detail_panel.associate_model_requested.connect(self.note_associate_model_signal.emit)
+        self.detail_panel.dissociate_model_requested.connect(self.note_dissociate_model_signal.emit)
 
         self.setObjectName("MainWindow")
 
@@ -410,6 +414,34 @@ class MainWindow(QMainWindow):
         self.detail_panel.retranslate_ui()
         if hasattr(self, 'detail_dock') and self.detail_dock and hasattr(self.detail_dock, 'setWindowTitle'):
             self.detail_dock.setWindowTitle(t("detail_dock_title"))
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                fn = url.toLocalFile().lower()
+                if fn.endswith('.png') or fn.endswith('.json'):
+                    event.acceptProposedAction()
+                    return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                fn = url.toLocalFile().lower()
+                if fn.endswith('.png') or fn.endswith('.json'):
+                    event.acceptProposedAction()
+                    return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls():
+            for url in event.mimeData().urls():
+                file_path = url.toLocalFile()
+                if file_path.lower().endswith('.png') or file_path.lower().endswith('.json'):
+                    event.acceptProposedAction()
+                    self.file_dropped_signal.emit(file_path)
+                    return
+        super().dropEvent(event)
 
     def closeEvent(self, event):
         if hasattr(self, 'agenda_view') and self.agenda_view:

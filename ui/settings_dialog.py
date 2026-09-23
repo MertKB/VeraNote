@@ -4,8 +4,8 @@ import json
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QFileDialog, QDialogButtonBox,
                              QCheckBox, QDoubleSpinBox, QComboBox, QWidget, QColorDialog,
-                             QApplication, QGridLayout, QScrollArea, QFrame)
-from PySide6.QtCore import Qt, QObject, QEvent
+                             QApplication, QGridLayout, QScrollArea, QFrame, QMessageBox)
+from PySide6.QtCore import Qt, QObject, QEvent, Signal
 from PySide6.QtGui import QColor
 from utils.i18n import t, get_lang
 
@@ -124,6 +124,9 @@ class AutoSaveOnOutsideClickFilter(QObject):
 
 
 class SettingsDialog(QDialog):
+    backup_exported = Signal(str)
+    backup_restored = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._child_dialog_open = False
@@ -428,6 +431,58 @@ class SettingsDialog(QDialog):
         )
         self.storage_info_lbl.setStyleSheet("color: #9AA0A6; font-size: 12px;")
         storage_layout.addWidget(self.storage_info_lbl)
+
+        # Backup & Restore Actions
+        self.backup_desc_lbl = QLabel(t("settings_backup_desc"))
+        self.backup_desc_lbl.setStyleSheet("color: #9AA0A6; font-size: 11px;")
+        self.backup_desc_lbl.setWordWrap(True)
+        storage_layout.addWidget(self.backup_desc_lbl)
+
+        backup_btn_layout = QHBoxLayout()
+        backup_btn_layout.setSpacing(10)
+
+        self.export_backup_btn = QPushButton(t("settings_backup_export"))
+        self.export_backup_btn.setCursor(Qt.PointingHandCursor)
+        self.export_backup_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #C2E7FF;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #8AB4F8;
+            }
+        """)
+        self.export_backup_btn.clicked.connect(self.on_export_backup)
+        backup_btn_layout.addWidget(self.export_backup_btn)
+
+        self.import_backup_btn = QPushButton(t("settings_backup_import"))
+        self.import_backup_btn.setCursor(Qt.PointingHandCursor)
+        self.import_backup_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #FBBF24;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-size: 12px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #F59E0B;
+            }
+        """)
+        self.import_backup_btn.clicked.connect(self.on_import_backup)
+        backup_btn_layout.addWidget(self.import_backup_btn)
+        backup_btn_layout.addStretch()
+
+        storage_layout.addLayout(backup_btn_layout)
         layout.addLayout(storage_layout)
 
         self.scroll_area.setWidget(self.content_widget)
@@ -635,3 +690,57 @@ class SettingsDialog(QDialog):
         self.storage_info_lbl.setText(
             t("settings_storage_info").format(db=db_sz, assets=assets_sz, total=tot_sz)
         )
+        if hasattr(self, 'backup_desc_lbl'):
+            self.backup_desc_lbl.setText(t("settings_backup_desc"))
+        if hasattr(self, 'export_backup_btn'):
+            self.export_backup_btn.setText(t("settings_backup_export"))
+        if hasattr(self, 'import_backup_btn'):
+            self.import_backup_btn.setText(t("settings_backup_import"))
+
+    def on_export_backup(self):
+        import database
+        import datetime
+        self._child_dialog_open = True
+        try:
+            today_str = datetime.date.today().isoformat()
+            default_fn = f"veranote_backup_{today_str}.zip"
+            target_path, _ = QFileDialog.getSaveFileName(
+                self, t("settings_backup_export"), default_fn, "ZIP Archive (*.zip)"
+            )
+            if target_path:
+                if database.export_backup_zip(target_path):
+                    QMessageBox.information(
+                        self, t("msg_saved_title"),
+                        t("settings_backup_success").format(path=target_path)
+                    )
+                    self.backup_exported.emit(target_path)
+                else:
+                    QMessageBox.critical(self, t("msg_copy_error_title"), "Backup export failed.")
+        finally:
+            self._child_dialog_open = False
+
+    def on_import_backup(self):
+        import database
+        self._child_dialog_open = True
+        try:
+            source_path, _ = QFileDialog.getOpenFileName(
+                self, t("settings_backup_import"), "", "ZIP Archive (*.zip)"
+            )
+            if source_path:
+                reply = QMessageBox.question(
+                    self, t("settings_backup_import"),
+                    t("settings_restore_confirm"),
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    if database.import_backup_zip(source_path):
+                        QMessageBox.information(
+                            self, t("msg_saved_title"),
+                            t("settings_restore_success")
+                        )
+                        self.backup_restored.emit(source_path)
+                        self.accept()
+                    else:
+                        QMessageBox.critical(self, t("msg_copy_error_title"), "Restore failed.")
+        finally:
+            self._child_dialog_open = False

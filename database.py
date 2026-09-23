@@ -13,6 +13,8 @@ import sqlite3
 import shutil
 import contextlib
 import threading
+import zipfile
+import time
 
 # Thread-local storage for persistent per-thread SQLite connections
 _thread_local = threading.local()
@@ -932,6 +934,73 @@ def get_all_models_for_association():
         cursor.execute("SELECT id, name FROM models ORDER BY name ASC;")
         return [dict(row) for row in cursor.fetchall()]
 
+associate_model_with_note = associate_note_model
+dissociate_model_from_note = dissociate_note_model
+
+# --- BACKUP & RESTORE UTILITIES ---
+def export_backup_zip(target_zip_path: str) -> bool:
+    """Creates a compressed .zip backup containing veranote.db, saved_images/, and saved_workflows/."""
+    try:
+        # Checkpoint SQLite WAL journal into main db file before archiving
+        with get_connection() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+
+        with zipfile.ZipFile(target_zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # 1. Add database file
+            if os.path.exists(DB_NAME):
+                zf.write(DB_NAME, arcname="veranote.db")
+            
+            # 2. Add saved_images
+            if os.path.exists(SAVED_IMAGES_DIR):
+                for root, dirs, files in os.walk(SAVED_IMAGES_DIR):
+                    for file in files:
+                        fp = os.path.join(root, file)
+                        arc = os.path.relpath(fp, db_dir)
+                        zf.write(fp, arcname=arc)
+
+            # 3. Add saved_workflows
+            if os.path.exists(SAVED_WORKFLOWS_DIR):
+                for root, dirs, files in os.walk(SAVED_WORKFLOWS_DIR):
+                    for file in files:
+                        fp = os.path.join(root, file)
+                        arc = os.path.relpath(fp, db_dir)
+                        zf.write(fp, arcname=arc)
+        return True
+    except Exception as e:
+        print(f"Error creating backup ZIP {target_zip_path}: {e}")
+        return False
+
+def import_backup_zip(source_zip_path: str) -> bool:
+    """Restores database and images from a backup .zip, preserving a safety copy of current db."""
+    if not source_zip_path or not os.path.exists(source_zip_path):
+        return False
+
+    try:
+        # Close any active connection
+        close_db_connection()
+
+        # Create a timestamped backup copy of current DB if exists
+        if os.path.exists(DB_NAME):
+            bak_path = DB_NAME + f".{int(time.time())}.bak"
+            try:
+                shutil.copy2(DB_NAME, bak_path)
+            except Exception:
+                pass
+
+        with zipfile.ZipFile(source_zip_path, 'r') as zf:
+            for member in zf.namelist():
+                # Prevent path traversal vulnerabilities
+                if member.startswith("/") or ".." in member:
+                    continue
+                zf.extract(member, db_dir)
+
+        # Re-initialize DB tables/migrations
+        initialize_db()
+        return True
+    except Exception as e:
+        print(f"Error restoring backup ZIP {source_zip_path}: {e}")
+        return False
+
 # --- WORKFLOW CRUD FUNCTIONS ---
 def get_workflow_libraries():
     with get_connection() as conn:
@@ -1003,8 +1072,9 @@ def add_workflow(library_id, name, file_path, description="", image_path="", not
     
     # 1. Extract JSON from file_path (PNG metadata or direct JSON file)
     if file_path.lower().endswith('.png'):
-        from utils.png_parser import extract_workflow_from_png
-        workflow_dict = extract_workflow_from_png(file_path)
+        from utils.png_parser import extract_comfyui_metadata_from_png
+        meta = extract_comfyui_metadata_from_png(file_path)
+        workflow_dict = meta.get('workflow')
         if workflow_dict:
             workflow_json_content = json.dumps(workflow_dict, indent=2)
             dest_json_path = os.path.join(SAVED_WORKFLOWS_DIR, f"{safe_name}_{timestamp}_{rand_suffix}.json")
@@ -1015,6 +1085,8 @@ def add_workflow(library_id, name, file_path, description="", image_path="", not
                 print(f"Error saving local workflow json copy: {e}")
             # If the user dropped a PNG, that PNG is also the preview image!
             image_path = file_path
+        if not description and meta.get('formatted_summary'):
+            description = meta['formatted_summary']
     elif file_path.lower().endswith('.json'):
         if os.path.exists(file_path):
             try:

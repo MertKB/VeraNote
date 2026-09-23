@@ -2,7 +2,7 @@
 import os
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QScrollArea, QGridLayout, QFrame, 
-                             QSizePolicy, QLineEdit)
+                             QSizePolicy, QLineEdit, QComboBox)
 from PySide6.QtCore import Signal, Qt, QSize, QTimer, QRunnable, QThreadPool, QObject, Slot, QPoint, QRect, QMimeData, QUrl
 from PySide6.QtGui import QPixmap, QFontMetrics, QPainter, QPainterPath, QImage, QDrag, QGuiApplication
 from utils.i18n import t, get_lang
@@ -158,6 +158,30 @@ class ModelCardWidget(QFrame):
         self.select_btn.setVisible(False)
         self.update_selection_style()
 
+        # Quick Copy Triggers Button Overlay on bottom-right of image
+        self.copy_triggers_btn = QPushButton("📋", self.image_label)
+        self.copy_triggers_btn.setObjectName("CardCopyTriggersBtn")
+        self.copy_triggers_btn.setFixedSize(26, 26)
+        self.copy_triggers_btn.setGeometry(166, 142, 26, 26)
+        self.copy_triggers_btn.setCursor(Qt.PointingHandCursor)
+        self.copy_triggers_btn.setToolTip(t("lib_copy_triggers"))
+        self.copy_triggers_btn.setStyleSheet("""
+            QPushButton#CardCopyTriggersBtn {
+                background-color: rgba(30, 31, 34, 0.75);
+                border: 1px solid rgba(68, 71, 70, 0.8);
+                border-radius: 13px;
+                color: #C2E7FF;
+                font-size: 11px;
+                padding: 0px;
+            }
+            QPushButton#CardCopyTriggersBtn:hover {
+                background-color: rgba(26, 115, 232, 0.9);
+                border-color: #8AB4F8;
+                color: #FFFFFF;
+            }
+        """)
+        self.copy_triggers_btn.clicked.connect(self.on_copy_triggers_clicked)
+
         # Bottom Info Panel - Dedicated container for title & filename
         self.info_panel = QFrame(self)
         self.info_panel.setObjectName("CardInfoPanel")
@@ -239,6 +263,25 @@ class ModelCardWidget(QFrame):
         if getattr(self, 'warning_badge', None):
             self.warning_badge.setText(t("not_on_disk"))
             self.warning_badge.setToolTip(t("not_on_disk_tooltip"))
+
+    def on_copy_triggers_clicked(self):
+        import database
+        model_id = self.model_data.get('id')
+        words = database.get_trigger_words(model_id) if model_id else []
+        if words:
+            clip_text = ", ".join(words)
+        else:
+            clip_text = self.model_data.get('name', '')
+            
+        clipboard = QGuiApplication.clipboard()
+        clipboard.setText(clip_text)
+        
+        self.copy_triggers_btn.setText("✓")
+        self.copy_triggers_btn.setEnabled(False)
+        win = self.window()
+        if win and hasattr(win, 'show_toast'):
+            win.show_toast(t("toast_copied_triggers"), "success")
+        QTimer.singleShot(1500, lambda: [self.copy_triggers_btn.setText("📋"), self.copy_triggers_btn.setEnabled(True)] if hasattr(self, 'copy_triggers_btn') and self.copy_triggers_btn else None)
 
     def contextMenuEvent(self, event):
         from PySide6.QtWidgets import QMenu
@@ -460,7 +503,8 @@ class LibraryView(QWidget):
         self.cards = []
         self.selected_model_ids = set()
         self.current_columns = -1
-        
+        self.selected_tag = None
+        self.tag_buttons = {}
 
         self.search_debounce_timer = QTimer(self)
         self.search_debounce_timer.setSingleShot(True)
@@ -496,7 +540,7 @@ class LibraryView(QWidget):
         self.local_search = QLineEdit()
         self.local_search.setPlaceholderText(t("search_placeholder"))
         self.local_search.setMinimumWidth(100)
-        self.local_search.setMaximumWidth(320)
+        self.local_search.setMaximumWidth(280)
         self.local_search.textChanged.connect(self.on_local_search_changed)
         header_layout.addWidget(self.local_search)
 
@@ -506,6 +550,31 @@ class LibraryView(QWidget):
         self.fav_toggle_btn.setObjectName("FavToggleBtn")
         self.fav_toggle_btn.clicked.connect(self.on_fav_toggle_clicked)
         header_layout.addWidget(self.fav_toggle_btn)
+
+        # 🔀 Sorting ComboBox
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems([
+            t("lib_sort_newest"),
+            t("lib_sort_az"),
+            t("lib_sort_za"),
+            t("lib_sort_fav_first")
+        ])
+        self.sort_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #2D2F31;
+                border: 1px solid #444746;
+                border-radius: 8px;
+                color: #E3E3E3;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+        """)
+        self.sort_combo.currentTextChanged.connect(self.on_sort_changed)
+        header_layout.addWidget(self.sort_combo)
 
         header_layout.addStretch()
 
@@ -517,6 +586,32 @@ class LibraryView(QWidget):
         header_layout.addWidget(self.scan_btn)
 
         self.main_layout.addLayout(header_layout)
+
+        # Tag Filter Bar (Scrollable horizontally)
+        self.tag_bar_container = QWidget()
+        self.tag_bar_container.setObjectName("TagBarContainer")
+        tag_bar_layout = QHBoxLayout(self.tag_bar_container)
+        tag_bar_layout.setContentsMargins(0, 0, 0, 0)
+        tag_bar_layout.setSpacing(6)
+        
+        self.tag_scroll = QScrollArea()
+        self.tag_scroll.setFixedHeight(36)
+        self.tag_scroll.setWidgetResizable(True)
+        self.tag_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.tag_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.tag_scroll.setFrameShape(QFrame.NoFrame)
+        self.tag_scroll.setStyleSheet("background: transparent; border: none;")
+        
+        self.tag_inner_widget = QWidget()
+        self.tag_inner_layout = QHBoxLayout(self.tag_inner_widget)
+        self.tag_inner_layout.setContentsMargins(0, 0, 0, 0)
+        self.tag_inner_layout.setSpacing(6)
+        self.tag_inner_layout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        
+        self.tag_scroll.setWidget(self.tag_inner_widget)
+        tag_bar_layout.addWidget(self.tag_scroll)
+        self.main_layout.addWidget(self.tag_bar_container)
+        self.tag_bar_container.setVisible(False)
 
         # Bulk Action Bar (Visible only when 1 or more models are selected)
         self.bulk_bar = QFrame()
@@ -692,6 +787,9 @@ class LibraryView(QWidget):
         self.local_search.clear()
         self.local_search.blockSignals(False)
 
+        self.selected_tag = None
+        self.update_tag_bar(models)
+
         self.retranslate_ui()
 
     def _create_card(self, model):
@@ -829,16 +927,102 @@ class LibraryView(QWidget):
             self.grid_container.setUpdatesEnabled(True)
             self.scroll_area.setUpdatesEnabled(True)
 
+    def update_tag_bar(self, models):
+        # Clear existing tag buttons
+        while self.tag_inner_layout.count():
+            item = self.tag_inner_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.tag_buttons.clear()
+
+        all_tags = set()
+        for m in (models or []):
+            for tg in m.get('tags', []):
+                if tg and tg.strip():
+                    all_tags.add(tg.strip())
+
+        if not all_tags:
+            self.tag_bar_container.setVisible(False)
+            self.selected_tag = None
+            return
+
+        self.tag_bar_container.setVisible(True)
+        
+        # "All / Tümü" button
+        all_btn = QPushButton(t("lib_filter_all_tags"))
+        all_btn.setCheckable(True)
+        all_btn.setChecked(self.selected_tag is None)
+        all_btn.setCursor(Qt.PointingHandCursor)
+        all_btn.setStyleSheet(self._tag_btn_style(self.selected_tag is None))
+        all_btn.clicked.connect(lambda: self.on_tag_filter_clicked(None))
+        self.tag_inner_layout.addWidget(all_btn)
+        self.tag_buttons[None] = all_btn
+
+        for tag in sorted(all_tags, key=lambda s: s.lower()):
+            btn = QPushButton(f"🏷️ {tag}")
+            btn.setCheckable(True)
+            is_active = (self.selected_tag == tag)
+            btn.setChecked(is_active)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(self._tag_btn_style(is_active))
+            btn.clicked.connect(lambda checked=False, t_val=tag: self.on_tag_filter_clicked(t_val))
+            self.tag_inner_layout.addWidget(btn)
+            self.tag_buttons[tag] = btn
+
+    def _tag_btn_style(self, active=False):
+        if active:
+            return """
+                QPushButton {
+                    background-color: #8AB4F8;
+                    color: #131314;
+                    font-weight: bold;
+                    border: none;
+                    border-radius: 12px;
+                    padding: 3px 12px;
+                    font-size: 11px;
+                }
+            """
+        return """
+            QPushButton {
+                background-color: #242936;
+                color: #C2E7FF;
+                border: 1px solid #3c4456;
+                border-radius: 12px;
+                padding: 3px 12px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #303644;
+                border-color: #8AB4F8;
+            }
+        """
+
+    def on_tag_filter_clicked(self, tag):
+        self.selected_tag = tag
+        for t_val, btn in self.tag_buttons.items():
+            is_active = (t_val == tag)
+            btn.setChecked(is_active)
+            btn.setStyleSheet(self._tag_btn_style(is_active))
+        self.apply_filters()
+
+    def on_sort_changed(self, text=None):
+        self.apply_filters()
+
     def apply_filters(self):
         query = self.local_search.text().strip().lower()
         show_only_favs = self.fav_toggle_btn.isChecked()
+        selected_tag = getattr(self, 'selected_tag', None)
         
         filtered = []
         for m in self.models_data:
             # 1. Favorite condition
             if show_only_favs and not m.get('is_favorite', 0):
                 continue
-            # 2. Search query condition
+            # 2. Tag filter condition
+            if selected_tag and selected_tag not in m.get('tags', []):
+                continue
+            # 3. Search query condition
             if query:
                 name_match = query in m.get('name', '').lower()
                 file_match = query in os.path.basename(m.get('file_path', '')).lower()
@@ -846,6 +1030,17 @@ class LibraryView(QWidget):
                 if not (name_match or file_match or tag_match):
                     continue
             filtered.append(m)
+
+        # 4. Sorting
+        sort_mode = self.sort_combo.currentText() if hasattr(self, 'sort_combo') else ""
+        if sort_mode == t("lib_sort_az"):
+            filtered.sort(key=lambda x: x.get('name', '').lower())
+        elif sort_mode == t("lib_sort_za"):
+            filtered.sort(key=lambda x: x.get('name', '').lower(), reverse=True)
+        elif sort_mode == t("lib_sort_fav_first"):
+            filtered.sort(key=lambda x: (not bool(x.get('is_favorite', 0)), x.get('name', '').lower()))
+        elif sort_mode == t("lib_sort_newest"):
+            filtered.sort(key=lambda x: x.get('id', 0), reverse=True)
             
         self.filtered_models_data = filtered
         self.populate_grid(use_filtered=True)
@@ -1058,6 +1253,21 @@ class LibraryView(QWidget):
         self.title_label.setText(self.tr_lib_name(self.library_name) if self.library_name else t("app_title").split()[0])
         self.local_search.setPlaceholderText(t("search_placeholder"))
         self.fav_toggle_btn.setText(t("view_favorites"))
+        
+        curr_sort_idx = self.sort_combo.currentIndex() if hasattr(self, 'sort_combo') else -1
+        if hasattr(self, 'sort_combo'):
+            self.sort_combo.blockSignals(True)
+            self.sort_combo.clear()
+            self.sort_combo.addItems([
+                t("lib_sort_newest"),
+                t("lib_sort_az"),
+                t("lib_sort_za"),
+                t("lib_sort_fav_first")
+            ])
+            if 0 <= curr_sort_idx < self.sort_combo.count():
+                self.sort_combo.setCurrentIndex(curr_sort_idx)
+            self.sort_combo.blockSignals(False)
+
         self.scan_btn.setText(t("view_scan_library"))
         self.bulk_select_all_btn.setText(t("bulk_select_all"))
         self.bulk_select_missing_btn.setText(t("bulk_select_missing"))

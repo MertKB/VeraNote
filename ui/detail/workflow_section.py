@@ -1,16 +1,20 @@
 """
 Workflow detail section widget for VeraNote Detail Panel.
 Encapsulates workflow image preview, workflow name, description,
-notes, file path, copying workflow JSON to clipboard, and deletion.
+notes, file path, copying workflow JSON to clipboard, node types analysis,
+generation prompt parameters preview, and deletion.
 """
 import os
+import json
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QTextEdit, QPushButton, QMessageBox, 
                              QFileDialog, QSizePolicy)
 from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QPixmap, QGuiApplication
 from utils.i18n import t
-from .common import ZoomableTextEdit
+from utils.workflow_parser import parse_workflow_node_types
+from utils.png_parser import extract_comfyui_metadata_from_png
+from .common import ZoomableTextEdit, FlowLayout
 
 
 class WorkflowSection(QWidget):
@@ -26,6 +30,7 @@ class WorkflowSection(QWidget):
         self.initial_workflow_name = ""
         self.initial_workflow_description = ""
         self.initial_workflow_notes = ""
+        self.node_widgets = []
         self.init_ui()
 
     def init_ui(self):
@@ -67,6 +72,58 @@ class WorkflowSection(QWidget):
         self.copy_clip_btn.setObjectName("CopyClipBtn")
         self.copy_clip_btn.clicked.connect(self.copy_workflow_to_clipboard)
         layout.addWidget(self.copy_clip_btn)
+
+        # --- NODES USED SECTION ---
+        self.nodes_title = QLabel(t("workflow_nodes_title"))
+        self.nodes_title.setObjectName("DetailWordLabel")
+        layout.addWidget(self.nodes_title)
+
+        self.nodes_container = QWidget()
+        self.nodes_layout = FlowLayout(self.nodes_container, spacing=6)
+        layout.addWidget(self.nodes_container)
+
+        # --- GENERATION PROMPT SECTION ---
+        self.gen_prompt_container = QWidget()
+        gen_prompt_layout = QVBoxLayout(self.gen_prompt_container)
+        gen_prompt_layout.setContentsMargins(0, 0, 0, 0)
+        gen_prompt_layout.setSpacing(6)
+
+        hdr_row = QHBoxLayout()
+        self.gen_prompt_title = QLabel(t("workflow_gen_prompt_title"))
+        self.gen_prompt_title.setObjectName("DetailWordLabel")
+        hdr_row.addWidget(self.gen_prompt_title)
+        hdr_row.addStretch()
+
+        self.copy_prompt_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_prompt_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #C2E7FF;
+                border: 1px solid #444746;
+                border-radius: 12px;
+                padding: 3px 10px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #8AB4F8;
+            }
+        """)
+        self.copy_prompt_btn.clicked.connect(self.copy_generation_prompt)
+        hdr_row.addWidget(self.copy_prompt_btn)
+        gen_prompt_layout.addLayout(hdr_row)
+
+        self.gen_prompt_edit = ZoomableTextEdit()
+        self.gen_prompt_edit.setMinimumWidth(0)
+        self.gen_prompt_edit.setReadOnly(True)
+        self.gen_prompt_edit.setMinimumHeight(80)
+        self.gen_prompt_edit.setMaximumHeight(160)
+        self.gen_prompt_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 8px; color: #D1D5DB; font-size: 11px; padding: 6px;")
+        gen_prompt_layout.addWidget(self.gen_prompt_edit)
+
+        layout.addWidget(self.gen_prompt_container)
+        self.gen_prompt_container.setVisible(False)
 
         # Workflow Description
         self.workflow_desc_title = QLabel(t("detail_workflow_desc"))
@@ -136,6 +193,85 @@ class WorkflowSection(QWidget):
 
         self.save_btn.setEnabled(False)
         self.update_image()
+        self.update_node_badges()
+        self.update_prompt_info()
+
+    def update_node_badges(self):
+        # Clear previous node badges
+        while self.nodes_layout.count():
+            item = self.nodes_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.node_widgets.clear()
+
+        if not self.workflow_data:
+            return
+
+        # Determine source for nodes: raw JSON in db or file_path
+        src = self.workflow_data.get('workflow_json') or self.workflow_data.get('file_path', '')
+        node_counts = parse_workflow_node_types(src)
+        
+        # If node_counts empty and file is PNG, extract from PNG
+        if not node_counts and self.current_image_path and self.current_image_path.lower().endswith('.png'):
+            meta = extract_comfyui_metadata_from_png(self.current_image_path)
+            if meta.get('workflow'):
+                node_counts = parse_workflow_node_types(meta['workflow'])
+
+        if not node_counts:
+            lbl = QLabel(t("workflow_no_nodes"))
+            lbl.setStyleSheet("color: #71767B; font-size: 11px; font-style: italic;")
+            self.nodes_layout.addWidget(lbl)
+            self.node_widgets.append(lbl)
+            return
+
+        for node_type, count in node_counts[:16]: # Top 16 node types
+            pill = QLabel(f"{node_type} ×{count}" if count > 1 else node_type)
+            pill.setStyleSheet("""
+                QLabel {
+                    background-color: #242936;
+                    color: #A8C7FA;
+                    border: 1px solid #3c4456;
+                    border-radius: 10px;
+                    padding: 3px 8px;
+                    font-size: 11px;
+                    font-weight: 500;
+                }
+            """)
+            self.nodes_layout.addWidget(pill)
+            self.node_widgets.append(pill)
+
+    def update_prompt_info(self):
+        if not self.workflow_data:
+            self.gen_prompt_container.setVisible(False)
+            return
+
+        file_path = self.workflow_data.get('file_path', '')
+        img_path = self.current_image_path or file_path
+        
+        summary = ""
+        if img_path and os.path.exists(img_path) and img_path.lower().endswith('.png'):
+            meta = extract_comfyui_metadata_from_png(img_path)
+            summary = meta.get('formatted_summary', '')
+
+        if summary:
+            self.gen_prompt_edit.setPlainText(summary)
+            self.gen_prompt_container.setVisible(True)
+        else:
+            self.gen_prompt_edit.clear()
+            self.gen_prompt_container.setVisible(False)
+
+    def copy_generation_prompt(self):
+        text = self.gen_prompt_edit.toPlainText().strip()
+        if not text:
+            return
+        clipboard = QGuiApplication.clipboard()
+        clipboard.setText(text)
+        self.copy_prompt_btn.setText(t("msg_copied_title") + "! ✓")
+        self.copy_prompt_btn.setEnabled(False)
+        win = self.window()
+        if win and hasattr(win, 'show_toast'):
+            win.show_toast(t("toast_copied"), "success")
+        QTimer.singleShot(1500, lambda: [self.copy_prompt_btn.setText("📋 " + t("workflow_copy_prompt")), self.copy_prompt_btn.setEnabled(True)] if hasattr(self, 'copy_prompt_btn') and self.copy_prompt_btn else None)
 
     def check_changes(self):
         if not self.workflow_data:
@@ -180,6 +316,7 @@ class WorkflowSection(QWidget):
             self.current_image_path = file_path
             self.update_image()
             self.workflow_image_changed.emit(self.workflow_data['id'], file_path)
+            self.update_prompt_info()
             self.check_changes()
 
     def copy_workflow_to_clipboard(self):
@@ -257,3 +394,6 @@ class WorkflowSection(QWidget):
         self.notes_title.setText(t("detail_workflow_notes"))
         self.save_btn.setText(t("detail_save_workflow"))
         self.delete_btn.setText(t("detail_delete_workflow"))
+        self.nodes_title.setText(t("workflow_nodes_title"))
+        self.gen_prompt_title.setText(t("workflow_gen_prompt_title"))
+        self.copy_prompt_btn.setText("📋 " + t("workflow_copy_prompt"))
