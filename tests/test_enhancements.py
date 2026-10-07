@@ -201,6 +201,9 @@ def test_model_base_architecture():
 
     # Cleanup
     database.delete_models([m['id']])
+    with database.get_connection() as conn:
+        conn.cursor().execute("DELETE FROM libraries WHERE id = ?;", (lib_id,))
+        conn.commit()
 
 
 if __name__ == "__main__":
