@@ -582,7 +582,7 @@ class NotesView(QWidget):
         self.main_layout.setSpacing(16)
 
         header_layout = QHBoxLayout()
-        self.title_label = QLabel(t("view_all_notes"))
+        self.title_label = QLabel(t("trash") if self.is_trash else t("notes"))
         self.title_label.setStyleSheet("color: #E3E3E3; font-size: 24px; font-weight: bold;")
         header_layout.addWidget(self.title_label)
 
@@ -1052,7 +1052,7 @@ class NotesView(QWidget):
             self.empty_trash_requested.emit()
 
     def retranslate_ui(self):
-        self.title_label.setText(t("view_recycle_bin") if self.is_trash else t("view_all_notes"))
+        self.title_label.setText(t("trash") if self.is_trash else t("notes"))
         self.search_edit.setPlaceholderText(t("view_search_notes_placeholder"))
         self.fav_toggle_btn.setText(t("view_favorites"))
         self.empty_trash_btn.setText(f"  {t('trash_empty_title')}")

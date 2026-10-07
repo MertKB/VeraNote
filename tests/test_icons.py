@@ -36,12 +36,24 @@ class TestIconManager(unittest.TestCase):
         self.assertFalse(sidebar.settings_icon.pixmap().isNull())
         self.assertFalse(sidebar.new_note_btn.icon().isNull())
         self.assertFalse(sidebar.new_lib_btn.icon().isNull())
+        # Verify section headers have vector icons
+        self.assertFalse(sidebar.models_icon.pixmap().isNull())
+        self.assertFalse(sidebar.lib_icon.pixmap().isNull())
+        # Verify subitems do NOT have icons
+        sidebar.update_models_list([("Lora Modelleri", 10), ("Checkpoint Modelleri", 5)])
+        self.assertTrue(sidebar.models_list.item(0).icon().isNull())
+        self.assertTrue(sidebar.models_list.item(1).icon().isNull())
 
     def test_notes_view_trash_icon(self):
         from ui.notes_view import NotesView
         notes_view = NotesView()
         self.assertFalse(notes_view.empty_trash_btn.icon().isNull())
         self.assertFalse(notes_view.new_note_btn.icon().isNull())
+
+    def test_welcome_screen_home_settings_icon(self):
+        from ui.welcome_screen import WelcomeScreen
+        ws = WelcomeScreen()
+        self.assertFalse(ws.home_settings_btn.icon().isNull())
 
 if __name__ == "__main__":
     unittest.main()

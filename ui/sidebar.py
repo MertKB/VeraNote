@@ -95,10 +95,10 @@ class Sidebar(QWidget):
         home_layout.setSpacing(12)
         
         self.home_icon = QLabel()
-        self.home_icon.setFixedSize(18, 18)
+        self.home_icon.setFixedSize(20, 20)
         self.home_icon.setScaledContents(True)
         self.home_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.home_icon.setPixmap(get_pixmap("home", "#8AB4F8", 18))
+        self.home_icon.setPixmap(get_pixmap("home", "#8AB4F8", 20))
         
         self.home_label = QLabel(t("home"))
         self.home_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -119,10 +119,10 @@ class Sidebar(QWidget):
         agenda_layout.setSpacing(12)
         
         self.agenda_icon = QLabel()
-        self.agenda_icon.setFixedSize(18, 18)
+        self.agenda_icon.setFixedSize(20, 20)
         self.agenda_icon.setScaledContents(True)
         self.agenda_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.agenda_icon.setPixmap(get_pixmap("calendar", "#9AA0A6", 18))
+        self.agenda_icon.setPixmap(get_pixmap("calendar", "#E3E3E3", 20))
         
         self.agenda_label = QLabel(t("nav_agenda"))
         self.agenda_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -135,8 +135,8 @@ class Sidebar(QWidget):
         # --- SECTION: NOTES ---
         self.new_note_btn = QPushButton(f"  {t('new_note')}")
         self.new_note_btn.setObjectName("NewNoteBtn")
-        self.new_note_btn.setIcon(get_icon("add", "#FFFFFF", 16))
-        self.new_note_btn.setIconSize(QSize(16, 16))
+        self.new_note_btn.setIcon(get_icon("add", "#FFFFFF", 18))
+        self.new_note_btn.setIconSize(QSize(18, 18))
         self.new_note_btn.setFixedSize(236, 40)
         self.new_note_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_note_requested.emit()))
         self.main_layout.addWidget(self.new_note_btn, 0, Qt.AlignCenter)
@@ -152,12 +152,12 @@ class Sidebar(QWidget):
         all_notes_layout.setSpacing(12)
         
         self.all_notes_icon = QLabel()
-        self.all_notes_icon.setFixedSize(18, 18)
+        self.all_notes_icon.setFixedSize(20, 20)
         self.all_notes_icon.setScaledContents(True)
         self.all_notes_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.all_notes_icon.setPixmap(get_pixmap("notes", "#9AA0A6", 18))
+        self.all_notes_icon.setPixmap(get_pixmap("notes", "#E3E3E3", 20))
         
-        self.all_notes_label = QLabel(t("view_all_notes"))
+        self.all_notes_label = QLabel(t("notes"))
         self.all_notes_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
         self.all_notes_badge = QLabel("0")
@@ -183,12 +183,12 @@ class Sidebar(QWidget):
         trash_layout.setSpacing(12)
         
         self.trash_icon = QLabel()
-        self.trash_icon.setFixedSize(18, 18)
+        self.trash_icon.setFixedSize(20, 20)
         self.trash_icon.setScaledContents(True)
         self.trash_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.trash_icon.setPixmap(get_pixmap("trash", "#9AA0A6", 18))
+        self.trash_icon.setPixmap(get_pixmap("trash", "#E3E3E3", 20))
         
-        self.trash_label = QLabel(t("view_recycle_bin"))
+        self.trash_label = QLabel(t("trash"))
         self.trash_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
         self.trash_badge = QLabel("0")
@@ -204,12 +204,26 @@ class Sidebar(QWidget):
         self.main_layout.addWidget(self.trash_btn, 0, Qt.AlignCenter)
 
         # --- SECTION: MODELS (MODELLER) ---
+        self.models_header = QWidget()
+        models_h_layout = QHBoxLayout(self.models_header)
+        models_h_layout.setContentsMargins(8, 12, 8, 2)
+        models_h_layout.setSpacing(8)
+        
+        self.models_icon = QLabel()
+        self.models_icon.setFixedSize(16, 16)
+        self.models_icon.setScaledContents(True)
+        self.models_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.models_icon.setPixmap(get_pixmap("models", "#B5A9BC", 16))
+        
         self.models_label = QLabel(t("models_title"))
-        self.models_label.setStyleSheet("color: #9AA0A6; font-size: 11px; font-weight: bold; margin-top: 8px; padding-left: 8px;")
-        self.main_layout.addWidget(self.models_label)
+        self.models_label.setStyleSheet("color: #B5A9BC; font-size: 11px; font-weight: bold;")
+        
+        models_h_layout.addWidget(self.models_icon)
+        models_h_layout.addWidget(self.models_label)
+        models_h_layout.addStretch()
+        self.main_layout.addWidget(self.models_header)
 
         self.models_list = StaticListWidget()
-        self.models_list.setIconSize(QSize(18, 18))
         self.models_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.models_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.models_list.setFocusPolicy(Qt.NoFocus)
@@ -219,18 +233,32 @@ class Sidebar(QWidget):
         # --- SECTION: WORKFLOW LIBRARIES (KİTAPLIKLAR) ---
         self.new_lib_btn = QPushButton(f"  {t('new_lib')}")
         self.new_lib_btn.setObjectName("NewLibBtn")
-        self.new_lib_btn.setIcon(get_icon("add", "#FFFFFF", 16))
-        self.new_lib_btn.setIconSize(QSize(16, 16))
+        self.new_lib_btn.setIcon(get_icon("add", "#FFFFFF", 18))
+        self.new_lib_btn.setIconSize(QSize(18, 18))
         self.new_lib_btn.setFixedSize(236, 40)
         self.new_lib_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_library_requested.emit()))
         self.main_layout.addWidget(self.new_lib_btn, 0, Qt.AlignCenter)
 
+        self.lib_header = QWidget()
+        lib_h_layout = QHBoxLayout(self.lib_header)
+        lib_h_layout.setContentsMargins(8, 12, 8, 2)
+        lib_h_layout.setSpacing(8)
+        
+        self.lib_icon = QLabel()
+        self.lib_icon.setFixedSize(16, 16)
+        self.lib_icon.setScaledContents(True)
+        self.lib_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.lib_icon.setPixmap(get_pixmap("workflows", "#B5A9BC", 16))
+
         self.lib_label = QLabel(t("workflows_title"))
-        self.lib_label.setStyleSheet("color: #9AA0A6; font-size: 11px; font-weight: bold; margin-top: 8px; padding-left: 8px;")
-        self.main_layout.addWidget(self.lib_label)
+        self.lib_label.setStyleSheet("color: #B5A9BC; font-size: 11px; font-weight: bold;")
+
+        lib_h_layout.addWidget(self.lib_icon)
+        lib_h_layout.addWidget(self.lib_label)
+        lib_h_layout.addStretch()
+        self.main_layout.addWidget(self.lib_header)
 
         self.libraries_list = StaticListWidget()
-        self.libraries_list.setIconSize(QSize(18, 18))
         self.libraries_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.libraries_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.libraries_list.setFocusPolicy(Qt.NoFocus)
@@ -252,10 +280,10 @@ class Sidebar(QWidget):
         settings_layout.setSpacing(12)
         
         self.settings_icon = QLabel()
-        self.settings_icon.setFixedSize(18, 18)
+        self.settings_icon.setFixedSize(20, 20)
         self.settings_icon.setScaledContents(True)
         self.settings_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.settings_icon.setPixmap(get_pixmap("settings", "#9AA0A6", 18))
+        self.settings_icon.setPixmap(get_pixmap("settings", "#E3E3E3", 20))
         
         self.settings_label = QLabel(t("settings"))
         self.settings_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -289,12 +317,12 @@ class Sidebar(QWidget):
 
         # Update dynamic icon colors for active vs inactive state
         active_color = "#8AB4F8"
-        inactive_color = "#9AA0A6"
-        self.home_icon.setPixmap(get_pixmap("home", active_color if item_type == 'home' else inactive_color, 18))
-        self.agenda_icon.setPixmap(get_pixmap("calendar", active_color if item_type == 'agenda' else inactive_color, 18))
-        self.all_notes_icon.setPixmap(get_pixmap("notes", active_color if item_type == 'all_notes' else inactive_color, 18))
-        self.trash_icon.setPixmap(get_pixmap("trash", active_color if item_type == 'trash' else inactive_color, 18))
-        self.settings_icon.setPixmap(get_pixmap("settings", active_color if item_type == 'settings' else inactive_color, 18))
+        inactive_color = "#E3E3E3"
+        self.home_icon.setPixmap(get_pixmap("home", active_color if item_type == 'home' else inactive_color, 20))
+        self.agenda_icon.setPixmap(get_pixmap("calendar", active_color if item_type == 'agenda' else inactive_color, 20))
+        self.all_notes_icon.setPixmap(get_pixmap("notes", active_color if item_type == 'all_notes' else inactive_color, 20))
+        self.trash_icon.setPixmap(get_pixmap("trash", active_color if item_type == 'trash' else inactive_color, 20))
+        self.settings_icon.setPixmap(get_pixmap("settings", active_color if item_type == 'settings' else inactive_color, 20))
 
         if item_type != 'model':
             self.models_list.clearSelection()
@@ -314,8 +342,8 @@ class Sidebar(QWidget):
         self.home_label.setText(t("home"))
         self.agenda_label.setText(t("nav_agenda"))
         self.new_note_btn.setText(f"  {t('new_note')}")
-        self.all_notes_label.setText(t("view_all_notes"))
-        self.trash_label.setText(t("view_recycle_bin"))
+        self.all_notes_label.setText(t("notes"))
+        self.trash_label.setText(t("trash"))
         self.models_label.setText(t("models_title"))
         self.new_lib_btn.setText(f"  {t('new_lib')}")
         self.lib_label.setText(t("workflows_title"))
@@ -332,10 +360,12 @@ class Sidebar(QWidget):
 
     def set_comfyui_visible(self, visible: bool):
         self.comfyui_visible = visible
-        self.models_label.setVisible(visible)
+        if hasattr(self, 'models_header'):
+            self.models_header.setVisible(visible)
         self.models_list.setVisible(visible)
         self.new_lib_btn.setVisible(visible)
-        self.lib_label.setVisible(visible)
+        if hasattr(self, 'lib_header'):
+            self.lib_header.setVisible(visible)
         self.libraries_list.setVisible(visible)
 
     def tr_lib_name(self, name):
@@ -359,9 +389,8 @@ class Sidebar(QWidget):
         self.models_list.clear()
         self.model_lib_names = []
         for lib_name, count in models_with_counts:
-            # Display name with model count badge and vector icon
-            item = QListWidgetItem(f"  {self.tr_lib_name(lib_name)} ({count})")
-            item.setIcon(get_icon("models", color_hex="#9AA0A6", size=18))
+            # Sub-items indented without icon per user request
+            item = QListWidgetItem(f"   {self.tr_lib_name(lib_name)} ({count})")
             self.models_list.addItem(item)
             self.model_lib_names.append(lib_name)
             if selected_model_lib and lib_name == selected_model_lib:
@@ -379,9 +408,8 @@ class Sidebar(QWidget):
         self.libraries_list.clear()
         self.workflow_lib_names = []
         for lib_name, count in workflow_libs_with_counts:
-            # Display name with workflow count badge and vector icon
-            item = QListWidgetItem(f"  {self.tr_lib_name(lib_name)} ({count})")
-            item.setIcon(get_icon("workflows", color_hex="#9AA0A6", size=18))
+            # Sub-items indented without icon per user request
+            item = QListWidgetItem(f"   {self.tr_lib_name(lib_name)} ({count})")
             self.libraries_list.addItem(item)
             self.workflow_lib_names.append(lib_name)
             if selected_workflow_lib and lib_name == selected_workflow_lib:

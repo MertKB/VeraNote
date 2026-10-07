@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
 from PySide6.QtCore import Signal, Qt, QSize
 from PySide6.QtGui import QPainter, QImage, QFontMetrics, QFont
 from utils.i18n import t
+from utils.icon_manager import get_icon
 
 from ui.corkboard import (
     CorkboardNoteCard, QuickNoteCardWidget, EditableLabel, HomePageSettingsDialog,
@@ -177,7 +178,9 @@ class WelcomeScreen(QWidget):
         footer_layout.setSpacing(8)
         footer_layout.addStretch()
 
-        self.home_settings_btn = QPushButton(t("home_settings_btn"), self)
+        self.home_settings_btn = QPushButton(f"  {t('home_settings_btn')}", self)
+        self.home_settings_btn.setIcon(get_icon("settings", "#8AB4F8", 16))
+        self.home_settings_btn.setIconSize(QSize(16, 16))
         self.home_settings_btn.setStyleSheet("""
             QPushButton {
                 background-color: rgba(45, 47, 49, 0.85);
@@ -621,7 +624,8 @@ class WelcomeScreen(QWidget):
         if hasattr(self, 'quick_note_card') and self.quick_note_card:
             self.quick_note_card.retranslate_ui()
         if hasattr(self, 'home_settings_btn'):
-            self.home_settings_btn.setText(t("home_settings_btn"))
+            self.home_settings_btn.setText(f"  {t('home_settings_btn')}")
+            self.home_settings_btn.setIcon(get_icon("settings", "#8AB4F8", 16))
         if hasattr(self, 'corkboard_notes') and self.corkboard_notes:
             self.render_corkboard(self.corkboard_notes)
 
