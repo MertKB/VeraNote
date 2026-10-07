@@ -76,7 +76,9 @@ class RoutineItemWidget(QFrame):
         layout.addWidget(priority_badge)
 
         # Delete Button
-        self.delete_btn = QPushButton("🗑️")
+        self.delete_btn = QPushButton()
+        from utils.icon_manager import get_icon
+        self.delete_btn.setIcon(get_icon("trash", "#C02E26", 14))
         self.delete_btn.setToolTip(t("agenda_routine_delete_tooltip"))
         self.delete_btn.setFixedSize(26, 26)
         self.delete_btn.setCursor(Qt.PointingHandCursor)
@@ -148,7 +150,7 @@ class RoutineManagerDialog(QDialog):
         header_layout = QVBoxLayout()
         header_layout.setSpacing(4)
 
-        title_lbl = QLabel(f"⚡  {t('agenda_routines_dialog_title')}")
+        title_lbl = QLabel(t('agenda_routines_dialog_title'))
         title_lbl.setStyleSheet("color: #E3E3E3; font-size: 16px; font-weight: bold;")
         header_layout.addWidget(title_lbl)
 
@@ -238,8 +240,8 @@ class RoutineManagerDialog(QDialog):
                 font-size: 12px;
             }
         """)
-        self.freq_combo.addItem(f"📅 {t('agenda_routine_freq_daily')}", "daily")
-        self.freq_combo.addItem(f"💼 {t('agenda_routine_freq_weekdays')}", "weekdays")
+        self.freq_combo.addItem(t('agenda_routine_freq_daily'), "daily")
+        self.freq_combo.addItem(t('agenda_routine_freq_weekdays'), "weekdays")
         row2_layout.addWidget(self.freq_combo)
 
         self.priority_combo = QComboBox()
@@ -253,10 +255,10 @@ class RoutineManagerDialog(QDialog):
                 font-size: 12px;
             }
         """)
-        self.priority_combo.addItem(f"🟢 {t('agenda_priority_normal')}", 1)
-        self.priority_combo.addItem(f"🔵 {t('agenda_priority_low')}", 0)
-        self.priority_combo.addItem(f"🟠 {t('agenda_priority_high')}", 2)
-        self.priority_combo.addItem(f"🔴 {t('agenda_priority_urgent')}", 3)
+        self.priority_combo.addItem(t('agenda_priority_normal'), 1)
+        self.priority_combo.addItem(t('agenda_priority_low'), 0)
+        self.priority_combo.addItem(t('agenda_priority_high'), 2)
+        self.priority_combo.addItem(t('agenda_priority_urgent'), 3)
         row2_layout.addWidget(self.priority_combo)
 
         row2_layout.addStretch()

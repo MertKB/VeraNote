@@ -134,7 +134,9 @@ class WorkflowCardWidget(QFrame):
         self.fav_btn.clicked.connect(self.on_fav_clicked)
 
         # Quick Copy Prompt Button Overlay on bottom-right of image
-        self.copy_prompt_btn = QPushButton("📋", self.image_label)
+        self.copy_prompt_btn = QPushButton(self.image_label)
+        from utils.icon_manager import get_icon
+        self.copy_prompt_btn.setIcon(get_icon("notes", "#C2E7FF", 12))
         self.copy_prompt_btn.setObjectName("CardCopyPromptBtn")
         self.copy_prompt_btn.setFixedSize(26, 26)
         self.copy_prompt_btn.setGeometry(166, 101, 26, 26)
@@ -250,13 +252,16 @@ class WorkflowCardWidget(QFrame):
             win = self.window()
             if win and hasattr(win, 'show_toast'):
                 win.show_toast(t("toast_copied_pos_prompt"), "success")
-            QTimer.singleShot(1500, lambda: [self.copy_prompt_btn.setText("📋"), self.copy_prompt_btn.setEnabled(True)] if hasattr(self, 'copy_prompt_btn') and self.copy_prompt_btn else None)
+            self.copy_prompt_btn.setText("✓")
+            self.copy_prompt_btn.setIcon(QIcon())
+            from utils.icon_manager import get_icon
+            QTimer.singleShot(1500, lambda: [self.copy_prompt_btn.setText(""), self.copy_prompt_btn.setIcon(get_icon("notes", "#C2E7FF", 12)), self.copy_prompt_btn.setEnabled(True)] if hasattr(self, 'copy_prompt_btn') and self.copy_prompt_btn else None)
 
     def update_content(self):
         metrics = QFontMetrics(self.font())
         name = self.workflow_data.get('name', t("unknown_workflow"))
         if self.workflow_data.get('is_hidden', 0) == 1:
-            name = "🔒 " + name
+            name = f"[{t('menu_hide')}] " + name
         file_path = self.workflow_data.get('file_path', '')
         filename = os.path.basename(file_path) if file_path else 'workflow.json'
         description = self.workflow_data.get('description', '') or t("no_description")
@@ -277,7 +282,7 @@ class WorkflowCardWidget(QFrame):
                 from utils.png_parser import detect_base_architecture
                 arch = detect_base_architecture([name, filename])
             if arch:
-                self.arch_badge.setText(f"⚡ {arch}")
+                self.arch_badge.setText(arch)
                 self.arch_badge.adjustSize()
                 self.arch_badge.move(8, 107)
                 self.arch_badge.setVisible(True)
@@ -347,13 +352,11 @@ class WorkflowCardWidget(QFrame):
         self.image_loading = False
 
     def show_default_placeholder(self):
-        # Default Flow placeholder (emoji / styling)
-        self.image_label.setText("🧩")
-        self.image_label.setPixmap(QPixmap())
+        # Default Flow placeholder (vector icon styling)
+        self.image_label.setText("")
+        from utils.icon_manager import get_pixmap
+        self.image_label.setPixmap(get_pixmap("workflows", "#8AB4F8", 48))
         self.image_label.setStyleSheet("""
-            color: #8ab4f8; 
-            font-size: 48px; 
-            font-weight: bold; 
             background-color: #2D2F31; 
             border-radius: 8px;
         """)

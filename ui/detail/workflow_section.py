@@ -68,7 +68,9 @@ class WorkflowSection(QWidget):
         layout.addWidget(self.path_label)
 
         # Copy to Clipboard Button
-        self.copy_clip_btn = QPushButton("📋 " + t("detail_copy_clipboard"))
+        self.copy_clip_btn = QPushButton(t("detail_copy_clipboard"))
+        from utils.icon_manager import get_icon
+        self.copy_clip_btn.setIcon(get_icon("notes", "#FFFFFF", 14))
         self.copy_clip_btn.setObjectName("CopyClipBtn")
         self.copy_clip_btn.clicked.connect(self.copy_workflow_to_clipboard)
         layout.addWidget(self.copy_clip_btn)
@@ -94,7 +96,8 @@ class WorkflowSection(QWidget):
         pos_hdr.addWidget(self.pos_prompt_title)
         pos_hdr.addStretch()
 
-        self.copy_pos_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_pos_btn = QPushButton(t("workflow_copy_prompt"))
+        self.copy_pos_btn.setIcon(get_icon("notes", "#C2E7FF", 12))
         self.copy_pos_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2D2F31;
@@ -136,7 +139,8 @@ class WorkflowSection(QWidget):
         neg_hdr.addWidget(self.neg_prompt_title)
         neg_hdr.addStretch()
 
-        self.copy_neg_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_neg_btn = QPushButton(t("workflow_copy_prompt"))
+        self.copy_neg_btn.setIcon(get_icon("notes", "#F28B82", 12))
         self.copy_neg_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2D2F31;
@@ -193,7 +197,8 @@ class WorkflowSection(QWidget):
 
         params_hdr.addStretch()
 
-        self.copy_params_btn = QPushButton("📋 " + t("workflow_copy_params"))
+        self.copy_params_btn = QPushButton(t("workflow_copy_params"))
+        self.copy_params_btn.setIcon(get_icon("notes", "#C2E7FF", 12))
         self.copy_params_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2D2F31;
@@ -220,7 +225,7 @@ class WorkflowSection(QWidget):
         seed_layout.setContentsMargins(10, 4, 8, 4)
         seed_layout.setSpacing(8)
 
-        seed_title_lbl = QLabel("🌱 Seed:")
+        seed_title_lbl = QLabel("Seed:")
         seed_title_lbl.setStyleSheet("color: #9AA0A6; font-size: 11px; font-weight: bold;")
         seed_layout.addWidget(seed_title_lbl)
 
@@ -230,7 +235,8 @@ class WorkflowSection(QWidget):
         seed_layout.addWidget(self.seed_value_lbl)
         seed_layout.addStretch()
 
-        self.copy_seed_btn = QPushButton("📋")
+        self.copy_seed_btn = QPushButton()
+        self.copy_seed_btn.setIcon(get_icon("notes", "#A8C7FA", 12))
         self.copy_seed_btn.setToolTip(t("workflow_copy_seed"))
         self.copy_seed_btn.setFixedSize(26, 22)
         self.copy_seed_btn.setCursor(Qt.PointingHandCursor)
@@ -434,7 +440,7 @@ class WorkflowSection(QWidget):
 
         arch = meta.get('base_architecture', '')
         if arch:
-            self.arch_badge.setText(f"⚡ {arch}")
+            self.arch_badge.setText(arch)
             self.arch_badge.setVisible(True)
         else:
             self.arch_badge.setVisible(False)
@@ -479,7 +485,7 @@ class WorkflowSection(QWidget):
 
         if models:
             for m in models:
-                pill = QPushButton(f"📦 {m}")
+                pill = QPushButton(m)
                 pill.setCursor(Qt.PointingHandCursor)
                 pill.setToolTip(f"{m} (Kopyalamak için tıkla)")
                 pill.setStyleSheet("""
@@ -525,7 +531,7 @@ class WorkflowSection(QWidget):
             return
         QGuiApplication.clipboard().setText(seed_txt)
         from ui.toast_notification import ToastNotification
-        ToastNotification.show_toast(self, f"🌱 Seed {seed_txt}: {t('toast_copied_seed')}", duration=2000)
+        ToastNotification.show_toast(self, f"Seed {seed_txt}: {t('toast_copied_seed')}", duration=2000)
 
     def copy_all_params(self):
         file_path = self.workflow_data.get('file_path', '') if self.workflow_data else ''
@@ -549,7 +555,7 @@ class WorkflowSection(QWidget):
         clean_name = model_name.replace("LoRA: ", "").strip()
         QGuiApplication.clipboard().setText(clean_name)
         from ui.toast_notification import ToastNotification
-        ToastNotification.show_toast(self, f"📋 {clean_name}", duration=2000)
+        ToastNotification.show_toast(self, clean_name, duration=2000)
 
     def check_changes(self):
         if not self.workflow_data:
@@ -580,7 +586,7 @@ class WorkflowSection(QWidget):
                 self.image_label.setStyleSheet("background-color: transparent; border-radius: 8px;")
                 return
 
-        self.image_label.setText("🧩\n" + t("detail_select_image"))
+        self.image_label.setText(t("detail_select_image"))
         self.image_label.setPixmap(QPixmap())
         self.image_label.setStyleSheet("color: #8AB4F8; font-size: 12px; background-color: #131314; border-radius: 8px; border: 2px dashed #444746; qproperty-alignment: AlignCenter;")
 
@@ -607,12 +613,12 @@ class WorkflowSection(QWidget):
             try:
                 clipboard = QGuiApplication.clipboard()
                 clipboard.setText(workflow_json)
-                self.copy_clip_btn.setText(t("msg_copied_title") + "! ✓")
+                self.copy_clip_btn.setText(t("msg_copied_title"))
                 self.copy_clip_btn.setEnabled(False)
                 win = self.window()
                 if win and hasattr(win, 'show_toast'):
                     win.show_toast(t("toast_copied"), "success")
-                QTimer.singleShot(1500, lambda: [self.copy_clip_btn.setText("📋 " + t("detail_copy_clipboard")), self.copy_clip_btn.setEnabled(True)] if hasattr(self, 'copy_clip_btn') and self.copy_clip_btn else None)
+                QTimer.singleShot(1500, lambda: [self.copy_clip_btn.setText(t("detail_copy_clipboard")), self.copy_clip_btn.setEnabled(True)] if hasattr(self, 'copy_clip_btn') and self.copy_clip_btn else None)
                 return
             except Exception as e:
                 QMessageBox.critical(self, t("msg_copy_error_title"), t("msg_file_read_error").format(error=e))
@@ -628,12 +634,12 @@ class WorkflowSection(QWidget):
                 content = f.read()
             clipboard = QGuiApplication.clipboard()
             clipboard.setText(content)
-            self.copy_clip_btn.setText(t("msg_copied_title") + "! ✓")
+            self.copy_clip_btn.setText(t("msg_copied_title"))
             self.copy_clip_btn.setEnabled(False)
             win = self.window()
             if win and hasattr(win, 'show_toast'):
                 win.show_toast(t("toast_copied"), "success")
-            QTimer.singleShot(1500, lambda: [self.copy_clip_btn.setText("📋 " + t("detail_copy_clipboard")), self.copy_clip_btn.setEnabled(True)] if hasattr(self, 'copy_clip_btn') and self.copy_clip_btn else None)
+            QTimer.singleShot(1500, lambda: [self.copy_clip_btn.setText(t("detail_copy_clipboard")), self.copy_clip_btn.setEnabled(True)] if hasattr(self, 'copy_clip_btn') and self.copy_clip_btn else None)
         except Exception as e:
             QMessageBox.critical(self, t("msg_copy_error_title"), t("msg_file_read_error").format(error=e))
 
@@ -666,7 +672,7 @@ class WorkflowSection(QWidget):
         self.name_title.setText(t("detail_workflow_name"))
         self.name_edit.setPlaceholderText(t("detail_card_title_placeholder"))
         self.path_label.setText(t("detail_card_path"))
-        self.copy_clip_btn.setText("📋 " + t("detail_copy_clipboard"))
+        self.copy_clip_btn.setText(t("detail_copy_clipboard"))
         self.workflow_desc_title.setText(t("detail_workflow_desc"))
         self.workflow_desc_edit.setPlaceholderText(t("detail_workflow_desc_placeholder"))
         self.notes_title.setText(t("detail_workflow_notes"))
@@ -674,10 +680,10 @@ class WorkflowSection(QWidget):
         self.delete_btn.setText(t("detail_delete_workflow"))
         self.nodes_title.setText(t("workflow_nodes_title"))
         self.pos_prompt_title.setText(t("workflow_pos_prompt"))
-        self.copy_pos_btn.setText("📋 " + t("workflow_copy_prompt"))
+        self.copy_pos_btn.setText(t("workflow_copy_prompt"))
         self.neg_prompt_title.setText(t("workflow_neg_prompt"))
-        self.copy_neg_btn.setText("📋 " + t("workflow_copy_prompt"))
+        self.copy_neg_btn.setText(t("workflow_copy_prompt"))
         self.params_title.setText(t("workflow_params_title"))
-        self.copy_params_btn.setText("📋 " + t("workflow_copy_params"))
+        self.copy_params_btn.setText(t("workflow_copy_params"))
         self.copy_seed_btn.setToolTip(t("workflow_copy_seed"))
         self.models_title.setText(t("workflow_used_models"))

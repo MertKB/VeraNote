@@ -124,7 +124,7 @@ class HomePageSettingsDialog(QDialog):
         layout.setSpacing(14)
 
         # --- SECTION 1: LAYOUT & POSITIONS ---
-        sec1_hdr = QLabel("📌 " + t("home_layout_mode"), scroll_content)
+        sec1_hdr = QLabel(t("home_layout_mode"), scroll_content)
         sec1_hdr.setObjectName("SectionHeader")
         layout.addWidget(sec1_hdr)
 
@@ -299,7 +299,7 @@ class HomePageSettingsDialog(QDialog):
         layout.addLayout(font_size_layout)
 
         # Title Box Size Section
-        title_size_hdr = QLabel("📐 " + t("title_size_title"), scroll_content)
+        title_size_hdr = QLabel(t("title_size_title"), scroll_content)
         title_size_hdr.setStyleSheet("color: #E3E3E3; font-weight: bold; font-size: 13px; padding-top: 4px;")
         layout.addWidget(title_size_hdr)
 
@@ -367,7 +367,7 @@ class HomePageSettingsDialog(QDialog):
         layout.addLayout(frame_colors_layout)
 
         # --- SECTION 3: QUICK NOTE STYLE SETTINGS ---
-        sec3_hdr = QLabel("⚡ " + t("qn_style_title"), scroll_content)
+        sec3_hdr = QLabel(t("qn_style_title"), scroll_content)
         sec3_hdr.setObjectName("SectionHeader")
         layout.addWidget(sec3_hdr)
 
@@ -377,7 +377,7 @@ class HomePageSettingsDialog(QDialog):
         layout.addWidget(self.qn_cb)
 
         # Quick Note Size Controls
-        qn_size_hdr = QLabel("📐 " + t("qn_size_title"), scroll_content)
+        qn_size_hdr = QLabel(t("qn_size_title"), scroll_content)
         qn_size_hdr.setStyleSheet("color: #E3E3E3; font-weight: bold; font-size: 13px; padding-top: 4px;")
         layout.addWidget(qn_size_hdr)
 
@@ -428,7 +428,7 @@ class HomePageSettingsDialog(QDialog):
         layout.addWidget(self.show_img_cb)
 
         # --- SECTION 5: WALLPAPER ---
-        sec5_hdr = QLabel("🖼️ " + t("home_wallpaper_section"), scroll_content)
+        sec5_hdr = QLabel(t("home_wallpaper_section"), scroll_content)
         sec5_hdr.setObjectName("SectionHeader")
         layout.addWidget(sec5_hdr)
 

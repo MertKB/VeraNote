@@ -197,7 +197,7 @@ class QuickNoteCardWidget(QFrame):
         btn_layout.setContentsMargins(0, 0, 0, 0)
         btn_layout.addStretch()
         
-        self.save_btn = QPushButton("💾 " + t("workflow_dialog_save"), self)
+        self.save_btn = QPushButton(t("workflow_dialog_save"), self)
         self.save_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1A73E8;
@@ -228,7 +228,7 @@ class QuickNoteCardWidget(QFrame):
 
     def retranslate_ui(self):
         self.note_edit.setPlaceholderText(t("welcome_placeholder"))
-        self.save_btn.setText("💾 " + t("workflow_dialog_save"))
+        self.save_btn.setText(t("workflow_dialog_save"))
 
     def on_save(self):
         content = self.note_edit.toPlainText().strip()
@@ -372,7 +372,9 @@ class CorkboardNoteCard(QFrame):
         top_overlay_layout.setContentsMargins(0, 0, 0, 0)
         top_overlay_layout.addStretch()
 
-        self.copy_btn = QPushButton("📋", self.top_overlay_container)
+        self.copy_btn = QPushButton(self.top_overlay_container)
+        from utils.icon_manager import get_icon
+        self.copy_btn.setIcon(get_icon("notes", "#E3E3E3", 12))
         self.copy_btn.setCursor(Qt.PointingHandCursor)
         self.copy_btn.setToolTip(t("home_copy_note"))
         self.copy_btn.setStyleSheet("""

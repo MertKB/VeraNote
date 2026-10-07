@@ -86,7 +86,9 @@ class NoteCardWidget(QFrame):
         
         if self.is_trash:
             # Restore button
-            self.restore_btn = QPushButton("🔄", self)
+            self.restore_btn = QPushButton(self)
+            from utils.icon_manager import get_icon
+            self.restore_btn.setIcon(get_icon("refresh", "#8AB4F8", 14))
             self.restore_btn.setFixedSize(26, 26)
             self.restore_btn.setCursor(Qt.PointingHandCursor)
             self.restore_btn.setToolTip(t("menu_restore"))
@@ -95,8 +97,6 @@ class NoteCardWidget(QFrame):
                     background-color: rgba(45, 47, 49, 0.7);
                     border: 1px solid rgba(68, 71, 70, 0.7);
                     border-radius: 13px;
-                    color: #E3E3E3;
-                    font-size: 11px;
                     padding: 0px;
                 }
                 QPushButton:hover {
@@ -110,7 +110,8 @@ class NoteCardWidget(QFrame):
             top_overlay_layout.addStretch()
             
             # Permanently delete button
-            self.perm_delete_btn = QPushButton("❌", self)
+            self.perm_delete_btn = QPushButton(self)
+            self.perm_delete_btn.setIcon(get_icon("trash", "#F28B82", 14))
             self.perm_delete_btn.setFixedSize(26, 26)
             self.perm_delete_btn.setCursor(Qt.PointingHandCursor)
             self.perm_delete_btn.setToolTip(t("menu_delete_forever"))
@@ -119,8 +120,6 @@ class NoteCardWidget(QFrame):
                     background-color: rgba(45, 47, 49, 0.7);
                     border: 1px solid rgba(68, 71, 70, 0.7);
                     border-radius: 13px;
-                    color: #F28B82;
-                    font-size: 11px;
                     padding: 0px;
                 }
                 QPushButton:hover {
@@ -132,7 +131,7 @@ class NoteCardWidget(QFrame):
             top_overlay_layout.addWidget(self.perm_delete_btn)
         else:
             # Star button
-            self.fav_btn = QPushButton("☆", self)
+            self.fav_btn = QPushButton(self)
             self.fav_btn.setFixedSize(26, 26)
             self.fav_btn.setCursor(Qt.PointingHandCursor)
             self.fav_btn.clicked.connect(self.on_fav_clicked)
@@ -142,7 +141,9 @@ class NoteCardWidget(QFrame):
             top_overlay_layout.addStretch()
 
             # Copy button
-            self.copy_btn = QPushButton("📋", self)
+            self.copy_btn = QPushButton(self)
+            from utils.icon_manager import get_icon
+            self.copy_btn.setIcon(get_icon("notes", "#C4C7C5", 14))
             self.copy_btn.setFixedSize(26, 26)
             self.copy_btn.setCursor(Qt.PointingHandCursor)
             self.copy_btn.setToolTip(t("copy_text"))
@@ -151,8 +152,6 @@ class NoteCardWidget(QFrame):
                     background-color: rgba(45, 47, 49, 0.7);
                     border: 1px solid rgba(68, 71, 70, 0.7);
                     border-radius: 13px;
-                    color: #C4C7C5;
-                    font-size: 11px;
                     padding: 0px;
                 }
                 QPushButton:hover {
@@ -376,31 +375,26 @@ class NoteCardWidget(QFrame):
         self.image_label.setStyleSheet("color: #5F6368; font-size: 12px; background-color: #2D2F31; border-radius: 8px;")
 
     def update_fav_btn_style(self):
+        from utils.icon_manager import get_icon
         if self.is_fav:
-            text = "⭐"
             bg = "rgba(255, 215, 0, 0.25)"
             border = "rgba(255, 215, 0, 0.8)"
-            color = "#FFD700"
+            self.fav_btn.setIcon(get_icon("star", "#FFD700", 14))
         else:
-            text = "☆"
             bg = "rgba(255, 255, 255, 0.1)"
             border = "rgba(255, 255, 255, 0.25)"
-            color = "#888888"
-        self.fav_btn.setText(text)
+            self.fav_btn.setIcon(get_icon("star", "#888888", 14))
+        self.fav_btn.setText("")
         self.fav_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {bg};
                 border: 1px solid {border};
                 border-radius: 13px;
-                color: {color};
-                font-size: 12px;
-                font-weight: bold;
                 padding: 0px;
             }}
             QPushButton:hover {{
                 background-color: rgba(255, 215, 0, 0.4);
                 border-color: #FFD700;
-                color: #FFD700;
             }}
         """)
 
@@ -408,7 +402,7 @@ class NoteCardWidget(QFrame):
         metrics = QFontMetrics(self.font())
         title_text = self.note_data.get('title', '')
         if self.note_data.get('is_hidden', 0) == 1:
-            title_text = "🔒 " + title_text
+            title_text = f"[{t('menu_hide')}] " + title_text
         elided_title = metrics.elidedText(title_text, Qt.ElideRight, 210)
         self.title_label.setText(elided_title)
 

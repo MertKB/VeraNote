@@ -395,6 +395,9 @@ class MainWindow(QMainWindow):
             child.style().unpolish(child)
             child.style().polish(child)
             child.update()
+        if hasattr(self, 'sidebar') and self.sidebar:
+            from ui.styles import get_palette
+            self.sidebar.apply_theme(get_palette(theme_name, custom_colors))
         if hasattr(self, 'agenda_view') and self.agenda_view:
             cal_theme = get_calendar_theme_config(theme_name, custom_colors)
             self.agenda_view.set_calendar_theme(cal_theme)

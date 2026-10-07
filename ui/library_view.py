@@ -160,7 +160,9 @@ class ModelCardWidget(QFrame):
         self.update_selection_style()
 
         # Quick Copy Triggers Button Overlay on bottom-right of image
-        self.copy_triggers_btn = QPushButton("📋", self.image_label)
+        self.copy_triggers_btn = QPushButton(self.image_label)
+        from utils.icon_manager import get_icon
+        self.copy_triggers_btn.setIcon(get_icon("notes", "#C2E7FF", 12))
         self.copy_triggers_btn.setObjectName("CardCopyTriggersBtn")
         self.copy_triggers_btn.setFixedSize(26, 26)
         self.copy_triggers_btn.setGeometry(166, 142, 26, 26)
@@ -268,7 +270,7 @@ class ModelCardWidget(QFrame):
         # Elide name (Max 178px width)
         name = self.model_data.get('name', '')
         if self.model_data.get('is_hidden', 0) == 1:
-            name = "🔒 " + name
+            name = f"[{t('menu_hide')}] " + name
         elided_title = metrics.elidedText(name, Qt.ElideRight, 178)
         self.title_label.setText(elided_title)
         self.title_label.setToolTip(name)
@@ -289,7 +291,7 @@ class ModelCardWidget(QFrame):
                 from utils.png_parser import detect_base_architecture
                 arch = detect_base_architecture([self.model_data.get('name', ''), self.model_data.get('file_path', '')])
             if arch:
-                self.arch_badge.setText(f"⚡ {arch}")
+                self.arch_badge.setText(arch)
                 self.arch_badge.adjustSize()
                 self.arch_badge.move(8, 148)
                 self.arch_badge.setVisible(True)
@@ -307,11 +309,13 @@ class ModelCardWidget(QFrame):
         clipboard.setText(clip_text)
         
         self.copy_triggers_btn.setText("✓")
+        self.copy_triggers_btn.setIcon(QIcon())
         self.copy_triggers_btn.setEnabled(False)
         win = self.window()
         if win and hasattr(win, 'show_toast'):
             win.show_toast(t("toast_copied_triggers"), "success")
-        QTimer.singleShot(1500, lambda: [self.copy_triggers_btn.setText("📋"), self.copy_triggers_btn.setEnabled(True)] if hasattr(self, 'copy_triggers_btn') and self.copy_triggers_btn else None)
+        from utils.icon_manager import get_icon
+        QTimer.singleShot(1500, lambda: [self.copy_triggers_btn.setText(""), self.copy_triggers_btn.setIcon(get_icon("notes", "#C2E7FF", 12)), self.copy_triggers_btn.setEnabled(True)] if hasattr(self, 'copy_triggers_btn') and self.copy_triggers_btn else None)
 
     def contextMenuEvent(self, event):
         from PySide6.QtWidgets import QMenu
@@ -1007,7 +1011,7 @@ class LibraryView(QWidget):
         else:
             self.tag_combo.setVisible(True)
             for tag in sorted(all_tags, key=lambda s: s.lower()):
-                self.tag_combo.addItem(f"🏷️ {tag}", userData=tag)
+                self.tag_combo.addItem(tag, userData=tag)
 
             # Restore previous selection if it still exists
             if prev_tag:

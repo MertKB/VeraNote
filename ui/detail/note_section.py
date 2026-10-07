@@ -247,7 +247,7 @@ class NoteSection(QWidget):
         if not hasattr(self, 'note_timestamps_label'):
             return
         if not self.note_data or not self.note_data.get('id'):
-            self.note_timestamps_label.setText(f"📅 {t('note_not_saved_yet')}")
+            self.note_timestamps_label.setText(t('note_not_saved_yet'))
             return
             
         c_at = created_at or self.note_data.get('created_at')

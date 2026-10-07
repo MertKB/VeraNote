@@ -62,7 +62,9 @@ class TaskCardWidget(QFrame):
         layout.addWidget(self.priority_pill)
 
         # Delete Button
-        self.delete_btn = QPushButton("🗑️")
+        self.delete_btn = QPushButton()
+        from utils.icon_manager import get_icon
+        self.delete_btn.setIcon(get_icon("trash", "#C02E26", 14))
         self.delete_btn.setObjectName("TaskDeleteBtn")
         self.delete_btn.setToolTip(t("agenda_delete_task_tooltip"))
         self.delete_btn.setFixedSize(26, 26)
@@ -274,10 +276,10 @@ class TasksPanel(QFrame):
 
     def _populate_priority_combo(self):
         self.priority_combo.clear()
-        self.priority_combo.addItem(f"🟢 {t('agenda_priority_normal')}", 1)
-        self.priority_combo.addItem(f"🔵 {t('agenda_priority_low')}", 0)
-        self.priority_combo.addItem(f"🟠 {t('agenda_priority_high')}", 2)
-        self.priority_combo.addItem(f"🔴 {t('agenda_priority_urgent')}", 3)
+        self.priority_combo.addItem(t('agenda_priority_normal'), 1)
+        self.priority_combo.addItem(t('agenda_priority_low'), 0)
+        self.priority_combo.addItem(t('agenda_priority_high'), 2)
+        self.priority_combo.addItem(t('agenda_priority_urgent'), 3)
         self.priority_combo.setCurrentIndex(0)
 
     def _on_add_clicked(self):

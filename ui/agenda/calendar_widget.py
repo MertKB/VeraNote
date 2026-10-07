@@ -226,7 +226,7 @@ class MonthlySummaryPanel(QFrame):
         tasks_layout.setContentsMargins(6, 6, 6, 6)
         tasks_layout.setSpacing(2)
 
-        self.lbl_tasks_title = QLabel(f"🎯 {t('agenda_metric_tasks')}")
+        self.lbl_tasks_title = QLabel(t('agenda_metric_tasks'))
         self.lbl_tasks_title.setObjectName("AgendaMetricTitle")
         self.lbl_tasks_val = QLabel("0/0 - %0")
         self.lbl_tasks_val.setObjectName("AgendaMetricValue")
@@ -250,7 +250,7 @@ class MonthlySummaryPanel(QFrame):
         notes_layout.setContentsMargins(6, 6, 6, 6)
         notes_layout.setSpacing(2)
 
-        self.lbl_notes_title = QLabel(f"📝 {t('agenda_metric_notes')}")
+        self.lbl_notes_title = QLabel(t('agenda_metric_notes'))
         self.lbl_notes_title.setObjectName("AgendaMetricTitle")
         self.lbl_notes_val = QLabel(f"0/30 {t('agenda_days_unit')}")
         self.lbl_notes_val.setObjectName("AgendaMetricValue")
@@ -269,7 +269,7 @@ class MonthlySummaryPanel(QFrame):
         streak_layout.setContentsMargins(6, 6, 6, 6)
         streak_layout.setSpacing(2)
 
-        self.lbl_streak_title = QLabel(f"🔥 {t('agenda_metric_streak')}")
+        self.lbl_streak_title = QLabel(t('agenda_metric_streak'))
         self.lbl_streak_title.setObjectName("AgendaMetricTitle")
         self.lbl_streak_val = QLabel(f"0 {t('agenda_streak_unit')}")
         self.lbl_streak_val.setObjectName("AgendaMetricValue")
@@ -288,7 +288,7 @@ class MonthlySummaryPanel(QFrame):
         prod_layout.setContentsMargins(6, 6, 6, 6)
         prod_layout.setSpacing(2)
 
-        self.lbl_prod_title = QLabel(f"⚡ {t('agenda_metric_productivity')}")
+        self.lbl_prod_title = QLabel(t('agenda_metric_productivity'))
         self.lbl_prod_title.setObjectName("AgendaMetricTitle")
         self.lbl_prod_val = QLabel("%0")
         self.lbl_prod_val.setObjectName("AgendaMetricValue")
@@ -327,7 +327,7 @@ class MonthlySummaryPanel(QFrame):
         # 3. Streak
         self.lbl_streak_val.setText(f"{streak} {t('agenda_streak_unit')}")
         if streak >= 7:
-            self.lbl_streak_sub.setText("Harika Gidiyorsun! 🔥")
+            self.lbl_streak_sub.setText("Harika Gidiyorsun!")
         elif streak > 0:
             self.lbl_streak_sub.setText("Aktif Seri Devam")
         else:
@@ -336,11 +336,11 @@ class MonthlySummaryPanel(QFrame):
         # 4. Productivity
         self.lbl_prod_val.setText(f"%{score}")
         if score >= 80:
-            self.lbl_prod_sub.setText("Yüksek Başarı 🏆")
+            self.lbl_prod_sub.setText("Yüksek Başarı")
         elif score >= 50:
-            self.lbl_prod_sub.setText("İyi İlerleme ✨")
+            self.lbl_prod_sub.setText("İyi İlerleme")
         else:
-            self.lbl_prod_sub.setText("Geliştirilebilir 📈")
+            self.lbl_prod_sub.setText("Geliştirilebilir")
 
     def update_monthly_stats(self, year: int, month: int, stats: dict = None):
         """Slot / helper called when month changes or when stats are updated."""
@@ -352,10 +352,10 @@ class MonthlySummaryPanel(QFrame):
     def retranslate_ui(self):
         """Retranslate static texts upon language change."""
         self.header_label.setText(t("agenda_monthly_summary_title"))
-        self.lbl_tasks_title.setText(f"🎯 {t('agenda_metric_tasks')}")
-        self.lbl_notes_title.setText(f"📝 {t('agenda_metric_notes')}")
-        self.lbl_streak_title.setText(f"🔥 {t('agenda_metric_streak')}")
-        self.lbl_prod_title.setText(f"⚡ {t('agenda_metric_productivity')}")
+        self.lbl_tasks_title.setText(t('agenda_metric_tasks'))
+        self.lbl_notes_title.setText(t('agenda_metric_notes'))
+        self.lbl_streak_title.setText(t('agenda_metric_streak'))
+        self.lbl_prod_title.setText(t('agenda_metric_productivity'))
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ class UpcomingTasksPanel(QFrame):
         header_layout = QHBoxLayout()
         header_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.title_label = QLabel(f"⏳ {t('agenda_upcoming_title')}")
+        self.title_label = QLabel(t('agenda_upcoming_title'))
         self.title_label.setStyleSheet("color: #9AA0A6; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;")
 
         self.badge_label = QLabel(t('agenda_upcoming_subtitle'))
@@ -404,7 +404,7 @@ class UpcomingTasksPanel(QFrame):
         layout.addWidget(self.items_widget)
 
         # Empty Label
-        self.empty_label = QLabel(f"☕ {t('agenda_upcoming_empty')}")
+        self.empty_label = QLabel(t('agenda_upcoming_empty'))
         self.empty_label.setObjectName("UpcomingEmptyLabel")
         self.empty_label.setWordWrap(True)
         self.empty_label.setAlignment(Qt.AlignCenter)
@@ -491,8 +491,8 @@ class UpcomingTasksPanel(QFrame):
             self.items_layout.addWidget(card)
 
     def retranslate_ui(self):
-        self.title_label.setText(f"⏳ {t('agenda_upcoming_title')}")
-        self.empty_label.setText(f"☕ {t('agenda_upcoming_empty')}")
+        self.title_label.setText(t('agenda_upcoming_title'))
+        self.empty_label.setText(t('agenda_upcoming_empty'))
         if not self.upcoming_tasks:
             self.badge_label.setText(t('agenda_upcoming_subtitle'))
         else:
@@ -508,7 +508,7 @@ class CalendarPanel(QFrame):
     - Top Section: CustomCalendarWidget, Today button, Legend.
     - Bottom Section (in QScrollArea): MonthlySummaryPanel & UpcomingTasksPanel.
     - Connected by an interactive vertical QSplitter so the user can easily
-      expand or shrink the calendar vs. summary/upcoming areas vertically!
+    expand or shrink the calendar vs. summary/upcoming areas vertically!
     """
     date_selected = Signal(str)                  # ISO date 'YYYY-MM-DD'
     month_changed = Signal(int, int)             # year, month
@@ -555,7 +555,7 @@ class CalendarPanel(QFrame):
         action_layout.setContentsMargins(2, 0, 2, 0)
         action_layout.setSpacing(8)
 
-        self.today_btn = QPushButton(f"🎯  {t('agenda_today_btn')}")
+        self.today_btn = QPushButton(t('agenda_today_btn'))
         self.today_btn.setObjectName("NewLibBtn")
         self.today_btn.setFixedHeight(32)
         self.today_btn.setCursor(Qt.PointingHandCursor)
@@ -713,7 +713,7 @@ class CalendarPanel(QFrame):
 
     def retranslate_ui(self):
         self.title_label.setText(t("agenda_calendar_title"))
-        self.today_btn.setText(f"🎯  {t('agenda_today_btn')}")
+        self.today_btn.setText(t('agenda_today_btn'))
         self.summary_panel.retranslate_ui()
         self.upcoming_panel.retranslate_ui()
 

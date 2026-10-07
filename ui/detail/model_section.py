@@ -197,7 +197,9 @@ class ModelSection(QWidget):
         self.sample_pos_lbl.setStyleSheet("color: #8AB4F8; font-size: 11px; font-weight: bold;")
         pos_hdr.addWidget(self.sample_pos_lbl)
         pos_hdr.addStretch()
-        self.copy_sample_pos_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_sample_pos_btn = QPushButton(t("workflow_copy_prompt"))
+        from utils.icon_manager import get_icon
+        self.copy_sample_pos_btn.setIcon(get_icon("notes", "#8AB4F8", 12))
         self.copy_sample_pos_btn.setStyleSheet("""
             QPushButton { background-color: #2D2F31; color: #8AB4F8; border: 1px solid #444746; border-radius: 12px; padding: 2px 8px; font-size: 11px; }
             QPushButton:hover { background-color: #3C4043; border-color: #8AB4F8; }
@@ -223,7 +225,8 @@ class ModelSection(QWidget):
         self.sample_neg_lbl.setStyleSheet("color: #F28B82; font-size: 11px; font-weight: bold;")
         neg_hdr.addWidget(self.sample_neg_lbl)
         neg_hdr.addStretch()
-        self.copy_sample_neg_btn = QPushButton("📋 " + t("workflow_copy_prompt"))
+        self.copy_sample_neg_btn = QPushButton(t("workflow_copy_prompt"))
+        self.copy_sample_neg_btn.setIcon(get_icon("notes", "#F28B82", 12))
         self.copy_sample_neg_btn.setStyleSheet("""
             QPushButton { background-color: #2D2F31; color: #F28B82; border: 1px solid #444746; border-radius: 12px; padding: 2px 8px; font-size: 11px; }
             QPushButton:hover { background-color: #3C4043; border-color: #F28B82; }
@@ -424,23 +427,23 @@ class ModelSection(QWidget):
         text = self.sample_pos_edit.toPlainText().strip()
         if text:
             QGuiApplication.clipboard().setText(text)
-            self.copy_sample_pos_btn.setText("✓ " + t("workflow_copy_prompt"))
+            self.copy_sample_pos_btn.setText(t("msg_copied_title"))
             self.copy_sample_pos_btn.setEnabled(False)
             win = self.window()
             if win and hasattr(win, 'show_toast'):
                 win.show_toast(t("toast_copied_pos_prompt"), "success")
-            QTimer.singleShot(1500, lambda: [self.copy_sample_pos_btn.setText("📋 " + t("workflow_copy_prompt")), self.copy_sample_pos_btn.setEnabled(True)] if hasattr(self, 'copy_sample_pos_btn') and self.copy_sample_pos_btn else None)
+            QTimer.singleShot(1500, lambda: [self.copy_sample_pos_btn.setText(t("workflow_copy_prompt")), self.copy_sample_pos_btn.setEnabled(True)] if hasattr(self, 'copy_sample_pos_btn') and self.copy_sample_pos_btn else None)
 
     def copy_sample_neg(self):
         text = self.sample_neg_edit.toPlainText().strip()
         if text:
             QGuiApplication.clipboard().setText(text)
-            self.copy_sample_neg_btn.setText("✓ " + t("workflow_copy_prompt"))
+            self.copy_sample_neg_btn.setText(t("msg_copied_title"))
             self.copy_sample_neg_btn.setEnabled(False)
             win = self.window()
             if win and hasattr(win, 'show_toast'):
                 win.show_toast(t("toast_copied_neg_prompt"), "success")
-            QTimer.singleShot(1500, lambda: [self.copy_sample_neg_btn.setText("📋 " + t("workflow_copy_prompt")), self.copy_sample_neg_btn.setEnabled(True)] if hasattr(self, 'copy_sample_neg_btn') and self.copy_sample_neg_btn else None)
+            QTimer.singleShot(1500, lambda: [self.copy_sample_neg_btn.setText(t("workflow_copy_prompt")), self.copy_sample_neg_btn.setEnabled(True)] if hasattr(self, 'copy_sample_neg_btn') and self.copy_sample_neg_btn else None)
 
     def update_sample_generation_info(self):
         from utils.png_parser import extract_comfyui_metadata_from_png
@@ -506,8 +509,8 @@ class ModelSection(QWidget):
             self.sample_title.setText(t("detail_sample_prompt_title"))
             self.sample_pos_lbl.setText(t("detail_sample_prompt_pos"))
             self.sample_neg_lbl.setText(t("detail_sample_prompt_neg"))
-            self.copy_sample_pos_btn.setText("📋 " + t("workflow_copy_prompt"))
-            self.copy_sample_neg_btn.setText("📋 " + t("workflow_copy_prompt"))
+            self.copy_sample_pos_btn.setText(t("workflow_copy_prompt"))
+            self.copy_sample_neg_btn.setText(t("workflow_copy_prompt"))
         if self.model_data:
             self.path_label.setText(f"{t('detail_card_path')} {self.model_data.get('file_path', '')}")
             self.reload_tags()

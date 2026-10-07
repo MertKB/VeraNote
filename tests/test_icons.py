@@ -72,5 +72,22 @@ class TestIconManager(unittest.TestCase):
         self.assertFalse(wv.add_btn.icon().isNull())
         self.assertFalse(wv.delete_lib_btn.icon().isNull())
 
+    def test_theme_aware_active_colors(self):
+        from ui.sidebar import Sidebar
+        from ui.styles import get_palette
+        sidebar = Sidebar()
+        purple_pal = get_palette("Derin Mor")
+        sidebar.apply_theme(purple_pal)
+        self.assertEqual(sidebar.get_active_color(), "#D7AEF5")
+        self.assertFalse(sidebar.brand_logo.pixmap().isNull())
+
+    def test_i18n_no_emojis(self):
+        import re
+        from utils.i18n import TRANSLATIONS
+        emoji_pattern = re.compile(r'[\U00010000-\U0010ffff]|[\u2600-\u27bf]|[\u2300-\u23ff]|[\u2b50-\u2b55]')
+        for lang in ['tr', 'en']:
+            for k, v in TRANSLATIONS[lang].items():
+                self.assertIsNone(emoji_pattern.search(v), f"Found emoji in {lang}.{k}: {v}")
+
 if __name__ == "__main__":
     unittest.main()

@@ -32,8 +32,37 @@ class Sidebar(QWidget):
         self.setFixedWidth(260) # Fixed static width
         self.incognito_active_state = False
         self.comfyui_visible = True
+        self.current_palette = {}
+        self.init_palette()
         
         self.init_ui()
+
+    def init_palette(self):
+        try:
+            import database
+            from ui.styles import get_palette
+            theme_name = database.get_setting("theme", "Koyu Gece")
+            custom_colors = database.get_setting("custom_colors", None)
+            self.current_palette = get_palette(theme_name, custom_colors)
+        except Exception:
+            self.current_palette = {}
+
+    def get_active_color(self):
+        if not hasattr(self, 'current_palette') or not self.current_palette:
+            self.init_palette()
+        return self.current_palette.get('border_focus', '#8AB4F8')
+
+    def get_inactive_color(self):
+        if not hasattr(self, 'current_palette') or not self.current_palette:
+            self.init_palette()
+        return self.current_palette.get('text_muted', '#9AA0A6')
+
+    def apply_theme(self, palette: dict):
+        self.current_palette = palette or {}
+        if hasattr(self, 'active_item_type'):
+            self.set_active_item(self.active_item_type)
+        else:
+            self.set_active_item('home')
 
     def init_ui(self):
         # Outer layout for Sidebar widget
@@ -71,15 +100,12 @@ class Sidebar(QWidget):
         header_layout.setContentsMargins(6, 4, 6, 4)
         header_layout.setSpacing(10)
 
-        # Brand application logo
+        # Brand application vector logo matching theme and line design
         self.brand_logo = QLabel()
         self.brand_logo.setObjectName("SidebarBrandLogo")
         self.brand_logo.setFixedSize(26, 26)
         self.brand_logo.setScaledContents(True)
-        from utils.icon_manager import get_icons_dir
-        app_icon_path = os.path.join(os.path.dirname(get_icons_dir()), "app_icon.png")
-        if os.path.exists(app_icon_path):
-            self.brand_logo.setPixmap(QPixmap(app_icon_path).scaled(26, 26, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.brand_logo.setPixmap(get_pixmap("brand", self.get_active_color(), 26))
 
         self.brand_label = QLabel("Vera Note")
         self.brand_label.setObjectName("SidebarTitle")
@@ -328,9 +354,10 @@ class Sidebar(QWidget):
             btn.style().polish(btn)
             btn.update()
 
-        # Update dynamic icon colors for active vs inactive state
-        active_color = "#8AB4F8"
+        # Update dynamic icon colors for active vs inactive state based on theme
+        active_color = self.get_active_color()
         inactive_color = "#E3E3E3"
+        self.brand_logo.setPixmap(get_pixmap("brand", active_color, 26))
         self.home_icon.setPixmap(get_pixmap("home", active_color if item_type == 'home' else inactive_color, 20))
         self.agenda_icon.setPixmap(get_pixmap("calendar", active_color if item_type == 'agenda' else inactive_color, 20))
         self.all_notes_icon.setPixmap(get_pixmap("notes", active_color if item_type == 'all_notes' else inactive_color, 20))
@@ -474,7 +501,7 @@ class Sidebar(QWidget):
                     border-radius: 8px;
                 }
             """)
-            self.brand_label.setText("Vera Note 🕶️")
+            self.brand_label.setText("Vera Note (Incognito)")
             self.brand_label.setStyleSheet("color: #D7AEF5; font-size: 20px; font-weight: 800; padding: 8px 4px;")
         else:
             self.header_widget.setStyleSheet("""
