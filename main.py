@@ -870,8 +870,26 @@ class AppController:
             new_theme = settings['theme']
             new_lang = settings['lang']
             new_custom_colors = settings.get('custom_theme_colors', {})
-
             new_custom_colors_str = json.dumps(new_custom_colors)
+
+            # Check for actual modifications
+            comfyui_changed = (int(new_comfyui) != comfyui_enabled)
+            lora_changed = (new_lora != lora_path)
+            ckpt_changed = (new_ckpt != ckpt_path)
+            ase_changed = (int(new_ase) != int(auto_save_enabled))
+            asi_changed = (abs(float(new_asi) - float(auto_save_interval)) > 0.01)
+            theme_changed = (new_theme != theme)
+            colors_changed = (new_custom_colors_str != custom_colors)
+            lang_changed = (new_lang != lang)
+
+            any_changed = any([
+                comfyui_changed, lora_changed, ckpt_changed,
+                ase_changed, asi_changed, theme_changed,
+                colors_changed, lang_changed
+            ])
+
+            if not any_changed:
+                return
 
             database.set_setting("comfyui_enabled", str(new_comfyui))
             database.set_setting("lora_path", new_lora)
@@ -882,28 +900,31 @@ class AppController:
             database.set_setting("lang", new_lang)
             database.set_setting("custom_theme_colors", new_custom_colors_str)
 
-            self.comfyui_enabled = bool(new_comfyui)
-            self.win.set_comfyui_enabled(self.comfyui_enabled)
-            
-            # Sync settings with DetailPanel so that it updates instantly!
-            self.win.detail_panel.sync_auto_save_settings(new_ase, new_asi)
+            if comfyui_changed:
+                self.comfyui_enabled = bool(new_comfyui)
+                self.win.set_comfyui_enabled(self.comfyui_enabled)
+                if self.comfyui_enabled:
+                    self.refresh_libraries()
 
-            # Apply new language and theme
-            i18n.set_lang(new_lang)
-            self.win.change_theme(new_theme, new_custom_colors_str)
-            self.win.retranslate_ui()
-            
-            # Refresh sidebar counts, names, and notes translation
-            if self.comfyui_enabled:
-                self.refresh_libraries()
-            self.refresh_notes()
-            
+            if ase_changed or asi_changed:
+                self.win.detail_panel.sync_auto_save_settings(new_ase, new_asi)
+
+            if lang_changed:
+                i18n.set_lang(new_lang)
+                self.win.retranslate_ui()
+                if self.comfyui_enabled:
+                    self.refresh_libraries()
+                self.refresh_notes()
+
+            if theme_changed or colors_changed:
+                self.win.change_theme(new_theme, new_custom_colors_str)
+
             self.win.statusBar().showMessage(i18n.t("status_saved"), 3000)
-            
+
             if self.comfyui_enabled:
-                if new_lora and os.path.exists(new_lora):
+                if lora_changed and new_lora and os.path.exists(new_lora):
                     self.run_silent_scan(new_lora, "Lora Modelleri")
-                if new_ckpt and os.path.exists(new_ckpt):
+                if ckpt_changed and new_ckpt and os.path.exists(new_ckpt):
                     self.run_silent_scan(new_ckpt, "Checkpoint Modelleri")
 
     def run_silent_scan(self, path, library_name):

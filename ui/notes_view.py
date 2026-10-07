@@ -88,7 +88,7 @@ class NoteCardWidget(QFrame):
             # Restore button
             self.restore_btn = QPushButton(self)
             from utils.icon_manager import get_icon
-            self.restore_btn.setIcon(get_icon("refresh", "#8AB4F8", 14))
+            self.restore_btn.setIcon(get_icon("refresh", "#E3E3E3", 14))
             self.restore_btn.setFixedSize(26, 26)
             self.restore_btn.setCursor(Qt.PointingHandCursor)
             self.restore_btn.setToolTip(t("menu_restore"))
@@ -590,7 +590,7 @@ class NotesView(QWidget):
 
         # Favorites Filter Toggle
         self.fav_toggle_btn = QPushButton(f"  {t('view_favorites')}")
-        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIcon(get_icon("star", "#E3E3E3", 16))
         self.fav_toggle_btn.setIconSize(QSize(16, 16))
         self.fav_toggle_btn.setCheckable(True)
         self.fav_toggle_btn.setObjectName("FavToggleBtn")
@@ -731,6 +731,7 @@ class NotesView(QWidget):
         # Reset local filters silently
         self.fav_toggle_btn.blockSignals(True)
         self.fav_toggle_btn.setChecked(False)
+        self.fav_toggle_btn.setIcon(get_icon("star", "#E3E3E3", 16))
         self.fav_toggle_btn.blockSignals(False)
         
         self.search_edit.blockSignals(True)
@@ -979,6 +980,8 @@ class NotesView(QWidget):
         self.scroll_check_timer.start(20)
 
     def on_filter_changed(self):
+        is_fav = self.fav_toggle_btn.isChecked()
+        self.fav_toggle_btn.setIcon(get_icon("star", "#FFD700" if is_fav else "#E3E3E3", 16))
         self.apply_filters_and_sorting()
 
     def on_sort_changed(self, text):
@@ -1050,8 +1053,9 @@ class NotesView(QWidget):
     def retranslate_ui(self):
         self.title_label.setText(t("trash") if self.is_trash else t("notes"))
         self.search_edit.setPlaceholderText(t("view_search_notes_placeholder"))
+        is_fav = self.fav_toggle_btn.isChecked() if hasattr(self, 'fav_toggle_btn') else False
         self.fav_toggle_btn.setText(f"  {t('view_favorites')}")
-        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIcon(get_icon("star", "#FFD700" if is_fav else "#E3E3E3", 16))
         self.empty_trash_btn.setText(f"  {t('trash_empty_title')}")
         self.empty_trash_btn.setIcon(get_icon("trash", "#FFFFFF", 16))
         self.new_note_btn.setText(f"  {t('new_note')}")

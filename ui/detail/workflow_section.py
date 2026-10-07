@@ -182,16 +182,7 @@ class WorkflowSection(QWidget):
         params_hdr.addWidget(self.params_title)
 
         self.arch_badge = QLabel()
-        self.arch_badge.setStyleSheet("""
-            QLabel {
-                background-color: #1A73E8;
-                color: #FFFFFF;
-                border-radius: 10px;
-                padding: 2px 8px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-        """)
+        self.arch_badge.setObjectName("WorkflowArchBadge")
         self.arch_badge.setVisible(False)
         params_hdr.addWidget(self.arch_badge)
 

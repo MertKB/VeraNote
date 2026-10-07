@@ -578,6 +578,25 @@ QListWidget::item:selected {{
     border-radius: 4px;
 }}
 
+#CardArchBadge {{
+    background-color: rgba(20, 21, 24, 0.85);
+    border: 1px solid {p['accent_color']};
+    border-radius: 4px;
+    color: {p['text_light']};
+    font-size: 10px;
+    font-weight: bold;
+    padding: 1px 5px;
+}}
+
+#WorkflowArchBadge {{
+    background-color: {p['accent_color']};
+    color: #FFFFFF;
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: bold;
+}}
+
 QPushButton#CardFavBtn {{
     background-color: transparent;
     border: none;
@@ -692,13 +711,15 @@ QDialog {{
     color: {p['text_main']};
 }}
 #FavToggleBtn:checked {{
-    background-color: {p['accent_light']};
-    border-color: {p['accent_light']};
-    color: {p['text_light']};
+    background-color: rgba(255, 215, 0, 0.16);
+    border: 1px solid #FFD700;
+    color: #FFD700;
+    font-weight: bold;
 }}
 #FavToggleBtn:checked:hover {{
-    background-color: {p['accent_hover']};
-    color: white;
+    background-color: rgba(255, 215, 0, 0.26);
+    border-color: #FFE082;
+    color: #FFF9C4;
 }}
 
 /* Notes View Widget */

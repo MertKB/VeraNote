@@ -189,17 +189,6 @@ class ModelCardWidget(QFrame):
         self.arch_badge = QLabel(self.image_label)
         self.arch_badge.setObjectName("CardArchBadge")
         self.arch_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.arch_badge.setStyleSheet("""
-            QLabel#CardArchBadge {
-                background-color: rgba(20, 21, 24, 0.85);
-                border: 1px solid rgba(138, 180, 248, 0.5);
-                border-radius: 4px;
-                color: #8AB4F8;
-                font-size: 10px;
-                font-weight: bold;
-                padding: 1px 5px;
-            }
-        """)
         self.arch_badge.setVisible(False)
 
         # Bottom Info Panel - Dedicated container for title & filename
@@ -580,7 +569,7 @@ class LibraryView(QWidget):
 
         # Favoriler Toggle Button with vector star icon
         self.fav_toggle_btn = QPushButton(f"  {t('view_favorites')}")
-        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIcon(get_icon("star", "#E3E3E3", 16))
         self.fav_toggle_btn.setIconSize(QSize(16, 16))
         self.fav_toggle_btn.setCheckable(True)
         self.fav_toggle_btn.setObjectName("FavToggleBtn")
@@ -590,7 +579,7 @@ class LibraryView(QWidget):
         # Tag Filter ComboBox
         self.tag_combo = QComboBox()
         self.tag_combo.setObjectName("TagFilterCombo")
-        self.tag_combo.addItem(get_icon("tag", "#8AB4F8", 14), t("lib_tag_all"), userData=None)
+        self.tag_combo.addItem(get_icon("tag", "#E3E3E3", 14), t("lib_tag_all"), userData=None)
         self.tag_combo.setStyleSheet("""
             QComboBox {
                 background-color: #2D2F31;
@@ -612,7 +601,7 @@ class LibraryView(QWidget):
         # Architecture Filter ComboBox with vector lightning icon
         self.arch_combo = QComboBox()
         self.arch_combo.setObjectName("ArchFilterCombo")
-        self.arch_combo.addItem(get_icon("lightning", "#8AB4F8", 14), t("lib_arch_all"), userData=None)
+        self.arch_combo.addItem(get_icon("lightning", "#E3E3E3", 14), t("lib_arch_all"), userData=None)
         for arch in ["Flux", "SDXL", "SD 1.5", "Pony", "SD3", "Illustrious", "SD 2.1"]:
             self.arch_combo.addItem(get_icon("lightning", "#E3E3E3", 14), arch, userData=arch)
         self.arch_combo.setStyleSheet("""
@@ -634,10 +623,10 @@ class LibraryView(QWidget):
 
         # Sorting ComboBox with clock icon for newest
         self.sort_combo = QComboBox()
-        self.sort_combo.addItem(get_icon("clock", "#8AB4F8", 14), t("lib_sort_newest"))
+        self.sort_combo.addItem(get_icon("clock", "#E3E3E3", 14), t("lib_sort_newest"))
         self.sort_combo.addItem(t("lib_sort_az"))
         self.sort_combo.addItem(t("lib_sort_za"))
-        self.sort_combo.addItem(get_icon("star", "#8AB4F8", 14), t("lib_sort_fav_first"))
+        self.sort_combo.addItem(get_icon("star", "#E3E3E3", 14), t("lib_sort_fav_first"))
         self.sort_combo.setStyleSheet("""
             QComboBox {
                 background-color: #2D2F31;
@@ -768,7 +757,7 @@ class LibraryView(QWidget):
         bulk_layout.addWidget(self.bulk_clear_btn)
 
         self.bulk_fav_btn = QPushButton(f"  {t('bulk_set_fav')}")
-        self.bulk_fav_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.bulk_fav_btn.setIcon(get_icon("star", "#E3E3E3", 16))
         self.bulk_fav_btn.setIconSize(QSize(16, 16))
         self.bulk_fav_btn.setProperty("class", "bulk_btn")
         self.bulk_fav_btn.setCursor(Qt.PointingHandCursor)
@@ -844,6 +833,7 @@ class LibraryView(QWidget):
         # Reset filters with blocked signals to avoid duplicate rendering
         self.fav_toggle_btn.blockSignals(True)
         self.fav_toggle_btn.setChecked(False)
+        self.fav_toggle_btn.setIcon(get_icon("star", "#E3E3E3", 16))
         self.fav_toggle_btn.blockSignals(False)
 
         self.local_search.blockSignals(True)
@@ -1094,6 +1084,8 @@ class LibraryView(QWidget):
         self.search_debounce_timer.start(150)
 
     def on_fav_toggle_clicked(self):
+        is_fav = self.fav_toggle_btn.isChecked()
+        self.fav_toggle_btn.setIcon(get_icon("star", "#FFD700" if is_fav else "#E3E3E3", 16))
         self.apply_filters()
 
     def update_card_image(self, model_id, image_path):
@@ -1334,13 +1326,14 @@ class LibraryView(QWidget):
 
         self.scan_btn.setText(f"  {t('view_scan_library')}")
         self.scan_btn.setIcon(get_icon("refresh", "#FFFFFF", 16))
+        is_fav = self.fav_toggle_btn.isChecked() if hasattr(self, 'fav_toggle_btn') else False
         self.fav_toggle_btn.setText(f"  {t('view_favorites')}")
-        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIcon(get_icon("star", "#FFD700" if is_fav else "#E3E3E3", 16))
         self.bulk_select_all_btn.setText(t("bulk_select_all"))
         self.bulk_select_missing_btn.setText(t("bulk_select_missing"))
         self.bulk_clear_btn.setText(t("bulk_clear_selection"))
         self.bulk_fav_btn.setText(f"  {t('bulk_set_fav')}")
-        self.bulk_fav_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.bulk_fav_btn.setIcon(get_icon("star", "#E3E3E3", 16))
         self.bulk_add_tag_btn.setText(f"  {t('bulk_add_tag')}")
         self.bulk_add_tag_btn.setIcon(get_icon("tag", "#FFFFFF", 16))
         self.bulk_remove_tag_btn.setText(f"  {t('bulk_remove_tag')}")

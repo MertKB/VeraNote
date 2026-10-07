@@ -42,7 +42,7 @@ class Sidebar(QWidget):
             import database
             from ui.styles import get_palette
             theme_name = database.get_setting("theme", "Koyu Gece")
-            custom_colors = database.get_setting("custom_colors", None)
+            custom_colors = database.get_setting("custom_theme_colors", "{}")
             self.current_palette = get_palette(theme_name, custom_colors)
         except Exception:
             self.current_palette = {}
@@ -103,9 +103,9 @@ class Sidebar(QWidget):
         # Brand application vector logo matching theme and line design
         self.brand_logo = QLabel()
         self.brand_logo.setObjectName("SidebarBrandLogo")
-        self.brand_logo.setFixedSize(26, 26)
+        self.brand_logo.setFixedSize(34, 34)
         self.brand_logo.setScaledContents(True)
-        self.brand_logo.setPixmap(get_pixmap("brand", self.get_active_color(), 26))
+        self.brand_logo.setPixmap(get_pixmap("brand", self.get_active_color(), 34))
 
         self.brand_label = QLabel("Vera Note")
         self.brand_label.setObjectName("SidebarTitle")
@@ -137,7 +137,7 @@ class Sidebar(QWidget):
         self.home_icon.setFixedSize(20, 20)
         self.home_icon.setScaledContents(True)
         self.home_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.home_icon.setPixmap(get_pixmap("home", "#8AB4F8", 20))
+        self.home_icon.setPixmap(get_pixmap("home", self.get_active_color(), 20))
         
         self.home_label = QLabel(t("home"))
         self.home_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -357,7 +357,7 @@ class Sidebar(QWidget):
         # Update dynamic icon colors for active vs inactive state based on theme
         active_color = self.get_active_color()
         inactive_color = "#E3E3E3"
-        self.brand_logo.setPixmap(get_pixmap("brand", active_color, 26))
+        self.brand_logo.setPixmap(get_pixmap("brand", active_color, 34))
         self.home_icon.setPixmap(get_pixmap("home", active_color if item_type == 'home' else inactive_color, 20))
         self.agenda_icon.setPixmap(get_pixmap("calendar", active_color if item_type == 'agenda' else inactive_color, 20))
         self.all_notes_icon.setPixmap(get_pixmap("notes", active_color if item_type == 'all_notes' else inactive_color, 20))

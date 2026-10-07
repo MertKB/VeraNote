@@ -80,6 +80,18 @@ class TestIconManager(unittest.TestCase):
         sidebar.apply_theme(purple_pal)
         self.assertEqual(sidebar.get_active_color(), "#D7AEF5")
         self.assertFalse(sidebar.brand_logo.pixmap().isNull())
+        self.assertEqual(sidebar.brand_logo.width(), 34)
+        self.assertEqual(sidebar.brand_logo.height(), 34)
+
+    def test_fav_toggle_button_states(self):
+        from ui.library_view import LibraryView
+        lv = LibraryView()
+        self.assertFalse(lv.fav_toggle_btn.isChecked())
+        # Simulate toggle
+        lv.fav_toggle_btn.setChecked(True)
+        lv.on_fav_toggle_clicked()
+        self.assertTrue(lv.fav_toggle_btn.isChecked())
+        self.assertFalse(lv.fav_toggle_btn.icon().isNull())
 
     def test_i18n_no_emojis(self):
         import re

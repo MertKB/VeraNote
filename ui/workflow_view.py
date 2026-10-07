@@ -163,17 +163,6 @@ class WorkflowCardWidget(QFrame):
         self.arch_badge = QLabel(self.image_label)
         self.arch_badge.setObjectName("CardArchBadge")
         self.arch_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.arch_badge.setStyleSheet("""
-            QLabel#CardArchBadge {
-                background-color: rgba(20, 21, 24, 0.85);
-                border: 1px solid rgba(138, 180, 248, 0.5);
-                border-radius: 4px;
-                color: #8AB4F8;
-                font-size: 10px;
-                font-weight: bold;
-                padding: 1px 5px;
-            }
-        """)
         self.arch_badge.setVisible(False)
 
         # Bottom Info Panel
@@ -481,7 +470,7 @@ class WorkflowView(QWidget):
 
         # Favorites Filter Toggle
         self.fav_toggle_btn = QPushButton(f"  {t('view_favorites')}")
-        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIcon(get_icon("star", "#E3E3E3", 16))
         self.fav_toggle_btn.setIconSize(QSize(16, 16))
         self.fav_toggle_btn.setCheckable(True)
         self.fav_toggle_btn.setObjectName("FavToggleBtn")
@@ -598,6 +587,7 @@ class WorkflowView(QWidget):
         
         self.fav_toggle_btn.blockSignals(True)
         self.fav_toggle_btn.setChecked(False)
+        self.fav_toggle_btn.setIcon(get_icon("star", "#E3E3E3", 16))
         self.fav_toggle_btn.blockSignals(False)
         
         self.retranslate_ui()
@@ -611,6 +601,8 @@ class WorkflowView(QWidget):
         return card
 
     def on_filter_changed(self, text=None):
+        is_fav = self.fav_toggle_btn.isChecked()
+        self.fav_toggle_btn.setIcon(get_icon("star", "#FFD700" if is_fav else "#E3E3E3", 16))
         self.populate_grid()
 
     def on_sort_changed(self, text):
@@ -896,8 +888,9 @@ class WorkflowView(QWidget):
             self.delete_lib_btn.setText(f"  {t('workflow_delete_library')}")
             self.delete_lib_btn.setIcon(get_icon("trash", "#F87171", 16))
         self.search_edit.setPlaceholderText(t("view_search_workflows_placeholder"))
+        is_fav = self.fav_toggle_btn.isChecked() if hasattr(self, 'fav_toggle_btn') else False
         self.fav_toggle_btn.setText(f"  {t('view_favorites')}")
-        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIcon(get_icon("star", "#FFD700" if is_fav else "#E3E3E3", 16))
         self.drop_label.setText(t("workflow_drop_zone_hint"))
         
         # update sorting combo items in current language without triggering sorting

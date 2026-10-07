@@ -107,7 +107,7 @@ class AutoSaveOnOutsideClickFilter(QObject):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress:
-            if getattr(self.dialog, '_child_dialog_open', False):
+            if getattr(self.dialog, '_is_closing', False) or getattr(self.dialog, '_child_dialog_open', False):
                 return False
             active_modal = QApplication.activeModalWidget()
             if active_modal and active_modal != self.dialog:
@@ -129,6 +129,7 @@ class SettingsDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._is_closing = False
         self._child_dialog_open = False
         self._outside_filter = AutoSaveOnOutsideClickFilter(self)
         self.custom_colors = dict(DEFAULT_CUSTOM_COLORS)
@@ -148,6 +149,14 @@ class SettingsDialog(QDialog):
             
         self.init_ui()
 
+    def accept(self):
+        self._is_closing = True
+        super().accept()
+
+    def reject(self):
+        self._is_closing = True
+        super().reject()
+
     def showEvent(self, event):
         super().showEvent(event)
         self.setWindowModality(Qt.NonModal)
@@ -164,6 +173,8 @@ class SettingsDialog(QDialog):
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() == QEvent.ActivationChange:
+            if getattr(self, '_is_closing', False):
+                return
             if not self.isActiveWindow():
                 if not getattr(self, '_child_dialog_open', False):
                     active_modal = QApplication.activeModalWidget()
