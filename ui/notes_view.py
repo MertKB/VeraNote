@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Signal, Qt, QSize, QTimer, QThreadPool, Slot, QPoint, QRect
 from PySide6.QtGui import QPixmap, QFontMetrics, QGuiApplication, QImage, QKeyEvent, QCursor
 from utils.i18n import t
+from utils.icon_manager import get_icon
 from ui.library_view import get_rounded_pixmap, THUMBNAIL_CACHE, cache_thumbnail, ImageLoadWorker
 from database import resolve_image_path
 
@@ -622,16 +623,20 @@ class NotesView(QWidget):
 
         header_layout.addStretch()
 
-        self.empty_trash_btn = QPushButton("🗑️ " + t("trash_empty_title"))
+        self.empty_trash_btn = QPushButton(f"  {t('trash_empty_title')}")
         self.empty_trash_btn.setObjectName("EmptyTrashBtn")
+        self.empty_trash_btn.setIcon(get_icon("trash", "#FFFFFF", 16))
+        self.empty_trash_btn.setIconSize(QSize(16, 16))
         self.empty_trash_btn.setFixedHeight(36)
         self.empty_trash_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 14px !important; font-weight: bold !important; }")
         self.empty_trash_btn.clicked.connect(self.on_empty_trash_clicked)
         self.empty_trash_btn.setVisible(False)
         header_layout.addWidget(self.empty_trash_btn)
 
-        self.new_note_btn = QPushButton(t("new_note"))
+        self.new_note_btn = QPushButton(f"  {t('new_note')}")
         self.new_note_btn.setObjectName("HeaderAddBtn")
+        self.new_note_btn.setIcon(get_icon("add", "#FFFFFF", 16))
+        self.new_note_btn.setIconSize(QSize(16, 16))
         self.new_note_btn.setFixedHeight(36)
         self.new_note_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 14px !important; font-weight: bold !important; }")
         self.new_note_btn.clicked.connect(self.new_note_requested.emit)
@@ -1050,8 +1055,10 @@ class NotesView(QWidget):
         self.title_label.setText(t("view_recycle_bin") if self.is_trash else t("view_all_notes"))
         self.search_edit.setPlaceholderText(t("view_search_notes_placeholder"))
         self.fav_toggle_btn.setText(t("view_favorites"))
-        self.empty_trash_btn.setText("🗑️ " + t("trash_empty_title"))
-        self.new_note_btn.setText(t("new_note"))
+        self.empty_trash_btn.setText(f"  {t('trash_empty_title')}")
+        self.empty_trash_btn.setIcon(get_icon("trash", "#FFFFFF", 16))
+        self.new_note_btn.setText(f"  {t('new_note')}")
+        self.new_note_btn.setIcon(get_icon("add", "#FFFFFF", 16))
         
         self.select_all_btn.setText(t("bulk_select_all"))
         self.clear_select_btn.setText(t("bulk_clear_selection"))
