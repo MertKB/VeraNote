@@ -595,7 +595,9 @@ class NotesView(QWidget):
         header_layout.addWidget(self.search_edit)
 
         # Favorites Filter Toggle
-        self.fav_toggle_btn = QPushButton(t("view_favorites"))
+        self.fav_toggle_btn = QPushButton(f"  {t('view_favorites')}")
+        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIconSize(QSize(16, 16))
         self.fav_toggle_btn.setCheckable(True)
         self.fav_toggle_btn.setObjectName("FavToggleBtn")
         self.fav_toggle_btn.clicked.connect(self.on_filter_changed)
@@ -1054,7 +1056,8 @@ class NotesView(QWidget):
     def retranslate_ui(self):
         self.title_label.setText(t("trash") if self.is_trash else t("notes"))
         self.search_edit.setPlaceholderText(t("view_search_notes_placeholder"))
-        self.fav_toggle_btn.setText(t("view_favorites"))
+        self.fav_toggle_btn.setText(f"  {t('view_favorites')}")
+        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
         self.empty_trash_btn.setText(f"  {t('trash_empty_title')}")
         self.empty_trash_btn.setIcon(get_icon("trash", "#FFFFFF", 16))
         self.new_note_btn.setText(f"  {t('new_note')}")

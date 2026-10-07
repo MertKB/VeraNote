@@ -69,9 +69,22 @@ class Sidebar(QWidget):
         
         header_layout = QHBoxLayout(self.header_widget)
         header_layout.setContentsMargins(6, 4, 6, 4)
+        header_layout.setSpacing(10)
+
+        # Brand application logo
+        self.brand_logo = QLabel()
+        self.brand_logo.setObjectName("SidebarBrandLogo")
+        self.brand_logo.setFixedSize(26, 26)
+        self.brand_logo.setScaledContents(True)
+        from utils.icon_manager import get_icons_dir
+        app_icon_path = os.path.join(os.path.dirname(get_icons_dir()), "app_icon.png")
+        if os.path.exists(app_icon_path):
+            self.brand_logo.setPixmap(QPixmap(app_icon_path).scaled(26, 26, Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
         self.brand_label = QLabel("Vera Note")
         self.brand_label.setObjectName("SidebarTitle")
+        
+        header_layout.addWidget(self.brand_logo)
         header_layout.addWidget(self.brand_label)
         header_layout.addStretch()
         

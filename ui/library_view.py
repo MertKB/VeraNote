@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Signal, Qt, QSize, QTimer, QRunnable, QThreadPool, QObject, Slot, QPoint, QRect, QMimeData, QUrl
 from PySide6.QtGui import QPixmap, QFontMetrics, QPainter, QPainterPath, QImage, QDrag, QGuiApplication
 from utils.i18n import t, get_lang
+from utils.icon_manager import get_icon, get_pixmap
 
 from utils.cache import THUMBNAIL_CACHE
 
@@ -573,17 +574,19 @@ class LibraryView(QWidget):
         self.local_search.textChanged.connect(self.on_local_search_changed)
         header_layout.addWidget(self.local_search)
 
-        # ⭐ Favoriler Toggle Button
-        self.fav_toggle_btn = QPushButton(t("view_favorites"))
+        # Favoriler Toggle Button with vector star icon
+        self.fav_toggle_btn = QPushButton(f"  {t('view_favorites')}")
+        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIconSize(QSize(16, 16))
         self.fav_toggle_btn.setCheckable(True)
         self.fav_toggle_btn.setObjectName("FavToggleBtn")
         self.fav_toggle_btn.clicked.connect(self.on_fav_toggle_clicked)
         header_layout.addWidget(self.fav_toggle_btn)
 
-        # 🏷️ Tag Filter ComboBox (next to Favorites & Sorting)
+        # Tag Filter ComboBox
         self.tag_combo = QComboBox()
         self.tag_combo.setObjectName("TagFilterCombo")
-        self.tag_combo.addItem(t("lib_tag_all"), userData=None)
+        self.tag_combo.addItem(get_icon("tag", "#8AB4F8", 14), t("lib_tag_all"), userData=None)
         self.tag_combo.setStyleSheet("""
             QComboBox {
                 background-color: #2D2F31;
@@ -602,12 +605,12 @@ class LibraryView(QWidget):
         header_layout.addWidget(self.tag_combo)
         self.tag_combo.setVisible(False)
 
-        # ⚡ Architecture Filter ComboBox
+        # Architecture Filter ComboBox with vector lightning icon
         self.arch_combo = QComboBox()
         self.arch_combo.setObjectName("ArchFilterCombo")
-        self.arch_combo.addItem(t("lib_arch_all"), userData=None)
+        self.arch_combo.addItem(get_icon("lightning", "#8AB4F8", 14), t("lib_arch_all"), userData=None)
         for arch in ["Flux", "SDXL", "SD 1.5", "Pony", "SD3", "Illustrious", "SD 2.1"]:
-            self.arch_combo.addItem(f"⚡ {arch}", userData=arch)
+            self.arch_combo.addItem(get_icon("lightning", "#E3E3E3", 14), arch, userData=arch)
         self.arch_combo.setStyleSheet("""
             QComboBox {
                 background-color: #2D2F31;
@@ -625,14 +628,12 @@ class LibraryView(QWidget):
         self.arch_combo.currentIndexChanged.connect(self.on_arch_combo_changed)
         header_layout.addWidget(self.arch_combo)
 
-        # 🔀 Sorting ComboBox
+        # Sorting ComboBox with clock icon for newest
         self.sort_combo = QComboBox()
-        self.sort_combo.addItems([
-            t("lib_sort_newest"),
-            t("lib_sort_az"),
-            t("lib_sort_za"),
-            t("lib_sort_fav_first")
-        ])
+        self.sort_combo.addItem(get_icon("clock", "#8AB4F8", 14), t("lib_sort_newest"))
+        self.sort_combo.addItem(t("lib_sort_az"))
+        self.sort_combo.addItem(t("lib_sort_za"))
+        self.sort_combo.addItem(get_icon("star", "#8AB4F8", 14), t("lib_sort_fav_first"))
         self.sort_combo.setStyleSheet("""
             QComboBox {
                 background-color: #2D2F31;
@@ -652,7 +653,9 @@ class LibraryView(QWidget):
 
         header_layout.addStretch()
 
-        self.scan_btn = QPushButton(t("view_scan_library"))
+        self.scan_btn = QPushButton(f"  {t('view_scan_library')}")
+        self.scan_btn.setIcon(get_icon("refresh", "#FFFFFF", 16))
+        self.scan_btn.setIconSize(QSize(16, 16))
         self.scan_btn.setObjectName("HeaderAddBtn")
         self.scan_btn.setFixedHeight(36)
         self.scan_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 14px !important; font-weight: bold !important; }")
@@ -760,25 +763,33 @@ class LibraryView(QWidget):
         self.bulk_clear_btn.clicked.connect(self.clear_selection)
         bulk_layout.addWidget(self.bulk_clear_btn)
 
-        self.bulk_fav_btn = QPushButton("⭐ " + t("bulk_set_fav"))
+        self.bulk_fav_btn = QPushButton(f"  {t('bulk_set_fav')}")
+        self.bulk_fav_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.bulk_fav_btn.setIconSize(QSize(16, 16))
         self.bulk_fav_btn.setProperty("class", "bulk_btn")
         self.bulk_fav_btn.setCursor(Qt.PointingHandCursor)
         self.bulk_fav_btn.clicked.connect(lambda: self.on_bulk_fav_clicked(True))
         bulk_layout.addWidget(self.bulk_fav_btn)
 
-        self.bulk_add_tag_btn = QPushButton("🏷️ " + t("bulk_add_tag"))
+        self.bulk_add_tag_btn = QPushButton(f"  {t('bulk_add_tag')}")
+        self.bulk_add_tag_btn.setIcon(get_icon("tag", "#FFFFFF", 16))
+        self.bulk_add_tag_btn.setIconSize(QSize(16, 16))
         self.bulk_add_tag_btn.setProperty("class", "bulk_primary_btn")
         self.bulk_add_tag_btn.setCursor(Qt.PointingHandCursor)
         self.bulk_add_tag_btn.clicked.connect(self.on_bulk_add_tag_clicked)
         bulk_layout.addWidget(self.bulk_add_tag_btn)
 
-        self.bulk_remove_tag_btn = QPushButton("✕ " + t("bulk_remove_tag"))
+        self.bulk_remove_tag_btn = QPushButton(f"  {t('bulk_remove_tag')}")
+        self.bulk_remove_tag_btn.setIcon(get_icon("tag", "#9AA0A6", 16))
+        self.bulk_remove_tag_btn.setIconSize(QSize(16, 16))
         self.bulk_remove_tag_btn.setProperty("class", "bulk_btn")
         self.bulk_remove_tag_btn.setCursor(Qt.PointingHandCursor)
         self.bulk_remove_tag_btn.clicked.connect(self.on_bulk_remove_tag_clicked)
         bulk_layout.addWidget(self.bulk_remove_tag_btn)
 
-        self.bulk_delete_btn = QPushButton(t("bulk_delete_models"))
+        self.bulk_delete_btn = QPushButton(f"  {t('bulk_delete_models')}")
+        self.bulk_delete_btn.setIcon(get_icon("trash", "#FFFFFF", 16))
+        self.bulk_delete_btn.setIconSize(QSize(16, 16))
         self.bulk_delete_btn.setProperty("class", "bulk_danger_btn")
         self.bulk_delete_btn.setCursor(Qt.PointingHandCursor)
         self.bulk_delete_btn.clicked.connect(self.on_bulk_delete_clicked)
@@ -1317,14 +1328,21 @@ class LibraryView(QWidget):
             self.arch_combo.setItemText(0, t("lib_arch_all"))
             self.arch_combo.blockSignals(False)
 
-        self.scan_btn.setText(t("view_scan_library"))
+        self.scan_btn.setText(f"  {t('view_scan_library')}")
+        self.scan_btn.setIcon(get_icon("refresh", "#FFFFFF", 16))
+        self.fav_toggle_btn.setText(f"  {t('view_favorites')}")
+        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
         self.bulk_select_all_btn.setText(t("bulk_select_all"))
         self.bulk_select_missing_btn.setText(t("bulk_select_missing"))
         self.bulk_clear_btn.setText(t("bulk_clear_selection"))
-        self.bulk_fav_btn.setText("⭐ " + t("bulk_set_fav"))
-        self.bulk_add_tag_btn.setText("🏷️ " + t("bulk_add_tag"))
-        self.bulk_remove_tag_btn.setText("✕ " + t("bulk_remove_tag"))
-        self.bulk_delete_btn.setText(t("bulk_delete_models"))
+        self.bulk_fav_btn.setText(f"  {t('bulk_set_fav')}")
+        self.bulk_fav_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.bulk_add_tag_btn.setText(f"  {t('bulk_add_tag')}")
+        self.bulk_add_tag_btn.setIcon(get_icon("tag", "#FFFFFF", 16))
+        self.bulk_remove_tag_btn.setText(f"  {t('bulk_remove_tag')}")
+        self.bulk_remove_tag_btn.setIcon(get_icon("tag", "#9AA0A6", 16))
+        self.bulk_delete_btn.setText(f"  {t('bulk_delete_models')}")
+        self.bulk_delete_btn.setIcon(get_icon("trash", "#FFFFFF", 16))
         if len(self.selected_model_ids) > 0:
             self.bulk_count_label.setText(t("bulk_models_selected_count").format(count=len(self.selected_model_ids)))
         self.populate_grid(use_filtered=True)

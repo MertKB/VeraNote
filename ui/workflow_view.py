@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Signal, Qt, QSize, QTimer, QUrl, QMimeData, QThreadPool, Slot, QPoint, QRect
 from PySide6.QtGui import QPixmap, QFontMetrics, QPainter, QPainterPath, QDrag, QGuiApplication, QImage
 from utils.i18n import t, get_lang
+from utils.icon_manager import get_icon
 from ui.library_view import THUMBNAIL_CACHE, ImageLoadWorker
 
 def get_rounded_pixmap(pixmap, radius=13):
@@ -476,7 +477,9 @@ class WorkflowView(QWidget):
         header_layout.addWidget(self.search_edit)
 
         # Favorites Filter Toggle
-        self.fav_toggle_btn = QPushButton()
+        self.fav_toggle_btn = QPushButton(f"  {t('view_favorites')}")
+        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
+        self.fav_toggle_btn.setIconSize(QSize(16, 16))
         self.fav_toggle_btn.setCheckable(True)
         self.fav_toggle_btn.setObjectName("FavToggleBtn")
         self.fav_toggle_btn.clicked.connect(self.on_filter_changed)
@@ -504,7 +507,9 @@ class WorkflowView(QWidget):
 
         header_layout.addStretch()
 
-        self.delete_lib_btn = QPushButton(t("workflow_delete_library"))
+        self.delete_lib_btn = QPushButton(f"  {t('workflow_delete_library')}")
+        self.delete_lib_btn.setIcon(get_icon("trash", "#F87171", 16))
+        self.delete_lib_btn.setIconSize(QSize(16, 16))
         self.delete_lib_btn.setObjectName("DeleteLibHeaderBtn")
         self.delete_lib_btn.setFixedHeight(36)
         self.delete_lib_btn.setStyleSheet("""
@@ -525,7 +530,9 @@ class WorkflowView(QWidget):
         self.delete_lib_btn.clicked.connect(self.on_delete_library_clicked)
         header_layout.addWidget(self.delete_lib_btn)
 
-        self.add_btn = QPushButton(t("view_add_workflow"))
+        self.add_btn = QPushButton(f"  {t('view_add_workflow')}")
+        self.add_btn.setIcon(get_icon("add", "#FFFFFF", 16))
+        self.add_btn.setIconSize(QSize(16, 16))
         self.add_btn.setObjectName("HeaderAddBtn") # Oval style
         self.add_btn.setFixedHeight(36)
         self.add_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 14px !important; font-weight: bold !important; }")
@@ -880,11 +887,14 @@ class WorkflowView(QWidget):
 
     def retranslate_ui(self):
         self.title_label.setText(self.tr_lib_name(self.library_name) if self.library_name else t("workflows_title"))
-        self.add_btn.setText(t("view_add_workflow"))
+        self.add_btn.setText(f"  {t('view_add_workflow')}")
+        self.add_btn.setIcon(get_icon("add", "#FFFFFF", 16))
         if hasattr(self, 'delete_lib_btn'):
-            self.delete_lib_btn.setText(t("workflow_delete_library"))
+            self.delete_lib_btn.setText(f"  {t('workflow_delete_library')}")
+            self.delete_lib_btn.setIcon(get_icon("trash", "#F87171", 16))
         self.search_edit.setPlaceholderText(t("view_search_workflows_placeholder"))
-        self.fav_toggle_btn.setText(t("view_favorites"))
+        self.fav_toggle_btn.setText(f"  {t('view_favorites')}")
+        self.fav_toggle_btn.setIcon(get_icon("star", "#8AB4F8", 16))
         self.drop_label.setText(t("workflow_drop_zone_hint"))
         
         # update sorting combo items in current language without triggering sorting

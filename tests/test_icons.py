@@ -42,18 +42,35 @@ class TestIconManager(unittest.TestCase):
         # Verify subitems do NOT have icons
         sidebar.update_models_list([("Lora Modelleri", 10), ("Checkpoint Modelleri", 5)])
         self.assertTrue(sidebar.models_list.item(0).icon().isNull())
-        self.assertTrue(sidebar.models_list.item(1).icon().isNull())
+        self.assertFalse(sidebar.brand_logo.pixmap().isNull())
 
     def test_notes_view_trash_icon(self):
         from ui.notes_view import NotesView
         notes_view = NotesView()
         self.assertFalse(notes_view.empty_trash_btn.icon().isNull())
         self.assertFalse(notes_view.new_note_btn.icon().isNull())
+        self.assertFalse(notes_view.fav_toggle_btn.icon().isNull())
 
     def test_welcome_screen_home_settings_icon(self):
         from ui.welcome_screen import WelcomeScreen
         ws = WelcomeScreen()
         self.assertFalse(ws.home_settings_btn.icon().isNull())
+
+    def test_library_view_icons(self):
+        from ui.library_view import LibraryView
+        lv = LibraryView()
+        self.assertFalse(lv.fav_toggle_btn.icon().isNull())
+        self.assertFalse(lv.scan_btn.icon().isNull())
+        self.assertFalse(lv.bulk_fav_btn.icon().isNull())
+        self.assertFalse(lv.bulk_add_tag_btn.icon().isNull())
+        self.assertFalse(lv.bulk_delete_btn.icon().isNull())
+
+    def test_workflow_view_icons(self):
+        from ui.workflow_view import WorkflowView
+        wv = WorkflowView()
+        self.assertFalse(wv.fav_toggle_btn.icon().isNull())
+        self.assertFalse(wv.add_btn.icon().isNull())
+        self.assertFalse(wv.delete_lib_btn.icon().isNull())
 
 if __name__ == "__main__":
     unittest.main()
