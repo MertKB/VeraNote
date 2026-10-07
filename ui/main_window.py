@@ -232,6 +232,10 @@ class MainWindow(QMainWindow):
         self.splitter.setCollapsible(1, False)
 
         self.setCentralWidget(self.splitter)
+        if self.sidebar.is_collapsed:
+            self.splitter.setSizes([64, 1136])
+        else:
+            self.splitter.setSizes([260, 940])
 
         # Detail Panel wrapped inside native QDockWidget (Floatable / Detachable / Closable)
         self.detail_panel = DetailPanel()
@@ -287,6 +291,15 @@ class MainWindow(QMainWindow):
         self.sidebar.settings_requested.connect(self.settings_requested_signal.emit)
         self.sidebar.home_requested.connect(self.show_welcome)
         self.sidebar.agenda_requested.connect(self.show_agenda)
+        self.sidebar.collapsed_toggled.connect(self._on_sidebar_collapsed_toggled)
+
+    def _on_sidebar_collapsed_toggled(self, collapsed: bool):
+        target_w = 64 if collapsed else 260
+        self.sidebar.setFixedWidth(target_w)
+        sizes = self.splitter.sizes()
+        if sizes and len(sizes) >= 2:
+            total_w = sum(sizes)
+            self.splitter.setSizes([target_w, max(100, total_w - target_w)])
 
     def set_comfyui_enabled(self, enabled: bool):
         self.sidebar.set_comfyui_visible(enabled)

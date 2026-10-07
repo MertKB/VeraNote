@@ -241,9 +241,10 @@ TRANSLATIONS = {
         # Status Messages
         "status_welcome": "Hoş geldiniz!",
         "status_saved": "Değişiklikler kaydedildi.",
-        "status_deleted": "Öge silindi.",
-        "status_incognito_on": "Gizli Mod Aktif ️",
+        "status_incognito_on": "Gizli Mod Aktif",
         "status_incognito_off": "Gizli Mod Kapatıldı",
+        "sidebar_collapse": "Kenar Çubuğunu Daralt",
+        "sidebar_expand": "Kenar Çubuğunu Genişlet",
 
         # Dialog messages
         "msg_folder_error_title": "Klasör Hatası",
@@ -711,9 +712,10 @@ TRANSLATIONS = {
         # Status Messages
         "status_welcome": "Welcome!",
         "status_saved": "Changes saved.",
-        "status_deleted": "Item deleted.",
-        "status_incognito_on": "Incognito Mode Active ️",
+        "status_incognito_on": "Incognito Mode Active",
         "status_incognito_off": "Incognito Mode Deactivated",
+        "sidebar_collapse": "Collapse Sidebar",
+        "sidebar_expand": "Expand Sidebar",
 
         # Dialog messages
         "msg_folder_error_title": "Folder Error",

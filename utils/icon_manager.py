@@ -74,6 +74,14 @@ ICON_MAP = {
     'scan': 'btn_refresh.png',
     'sync': 'btn_refresh.png',
     'btn_refresh': 'btn_refresh.png',
+    'lock': 'btn_lock.png',
+    'kilit': 'btn_lock.png',
+    'privacy': 'btn_lock.png',
+    'incognito': 'btn_lock.png',
+    'sidebar': 'btn_sidebar.png',
+    'panel': 'btn_sidebar.png',
+    'sidebar_toggle': 'btn_sidebar.png',
+    'collapse': 'btn_sidebar.png',
 }
 
 def get_pixmap(name: str, color_hex: str = "#E3E3E3", size: int = 18) -> QPixmap:

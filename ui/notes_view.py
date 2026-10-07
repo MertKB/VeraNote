@@ -707,14 +707,9 @@ class NotesView(QWidget):
         self.main_layout.addWidget(self.scroll_area)
 
     def set_notes(self, notes, is_trash=False):
-        existing_card_ids = [c.note_data['id'] for c in self.cards if isinstance(c, NoteCardWidget)]
-        new_note_ids = [n['id'] for n in notes] if notes else []
         same_trash = (self.is_trash == is_trash)
-        same_notes = (existing_card_ids == new_note_ids and len(new_note_ids) > 0)
-
         self.is_trash = is_trash
         self.notes_data = notes or []
-        self.filtered_notes_data = self.notes_data
         self.clear_selection()
         
         self.empty_trash_btn.setVisible(is_trash)
@@ -723,22 +718,28 @@ class NotesView(QWidget):
         self.bulk_pin_btn.setVisible(not is_trash)
         self.bulk_restore_btn.setVisible(is_trash)
 
-        if same_trash and same_notes:
-            self.title_label.setText(t("trash_title") if self.is_trash else t("view_all_notes"))
-            self.update_grid_layout()
-            return
+        if not same_trash:
+            # Only reset local filters when switching view modes (e.g. into/out of Trash)
+            self.fav_toggle_btn.blockSignals(True)
+            self.fav_toggle_btn.setChecked(False)
+            self.fav_toggle_btn.setIcon(get_icon("star", "#E3E3E3", 16))
+            self.fav_toggle_btn.blockSignals(False)
+            
+            self.search_edit.blockSignals(True)
+            self.search_edit.clear()
+            self.search_edit.blockSignals(False)
+        
+        self.title_label.setText(t("trash_title") if self.is_trash else t("view_all_notes"))
+        self.apply_filters_and_sorting()
 
-        # Reset local filters silently
-        self.fav_toggle_btn.blockSignals(True)
-        self.fav_toggle_btn.setChecked(False)
-        self.fav_toggle_btn.setIcon(get_icon("star", "#E3E3E3", 16))
-        self.fav_toggle_btn.blockSignals(False)
-        
-        self.search_edit.blockSignals(True)
-        self.search_edit.clear()
-        self.search_edit.blockSignals(False)
-        
-        self.retranslate_ui()
+    def on_card_favorite_toggled(self, note_id, is_fav):
+        for n in self.notes_data:
+            if n.get('id') == note_id:
+                n['is_favorite'] = 1 if is_fav else 0
+                break
+        self.note_favorite_toggled.emit(note_id, is_fav)
+        if self.fav_toggle_btn.isChecked():
+            self.apply_filters_and_sorting()
 
     def _create_card(self, note):
         card = NoteCardWidget(note, is_trash=self.is_trash, parent=self.grid_container)
@@ -754,7 +755,7 @@ class NotesView(QWidget):
             card.perm_delete_requested.connect(self.note_perm_delete_requested.emit)
         else:
             card.clicked.connect(self.note_clicked.emit)
-            card.favorite_toggled.connect(self.note_favorite_toggled.emit)
+            card.favorite_toggled.connect(self.on_card_favorite_toggled)
             card.hide_requested.connect(self.note_hide_requested.emit)
             card.unhide_requested.connect(self.note_unhide_requested.emit)
         return card

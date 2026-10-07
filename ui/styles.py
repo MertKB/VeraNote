@@ -410,6 +410,45 @@ QPushButton#EmptyTrashBtn:hover {{
     font-weight: bold;
 }}
 
+/* Sidebar Collapse Toggle Button */
+#SidebarCollapseBtn {{
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 4px;
+}}
+#SidebarCollapseBtn:hover {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+}}
+#SidebarCollapseBtn:pressed {{
+    background-color: {p['border_color']};
+}}
+
+#ModelsHeaderBtn, #LibHeaderBtn {{
+    background-color: transparent;
+    border: none;
+    color: #B5A9BC;
+    text-align: left;
+    border-radius: 8px;
+}}
+#ModelsHeaderBtn:hover, #LibHeaderBtn:hover {{
+    background-color: {p['bg_input']};
+    color: white;
+}}
+#ModelsHeaderBtn:hover QLabel, #LibHeaderBtn:hover QLabel {{
+    color: white;
+}}
+#ModelsHeaderBtn[active="true"], #LibHeaderBtn[active="true"] {{
+    background-color: {p['accent_light']};
+    border-left: 4px solid {p['border_focus']};
+    border-radius: 8px;
+}}
+#ModelsHeaderBtn[active="true"] QLabel, #LibHeaderBtn[active="true"] QLabel {{
+    color: {p['text_light']};
+    font-weight: bold;
+}}
+
 /* Close button in Detail Panel */
 #CloseBtn {{
     background-color: transparent;

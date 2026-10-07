@@ -80,8 +80,72 @@ class TestIconManager(unittest.TestCase):
         sidebar.apply_theme(purple_pal)
         self.assertEqual(sidebar.get_active_color(), "#D7AEF5")
         self.assertFalse(sidebar.brand_logo.pixmap().isNull())
-        self.assertEqual(sidebar.brand_logo.width(), 34)
-        self.assertEqual(sidebar.brand_logo.height(), 34)
+        self.assertEqual(sidebar.brand_logo.width(), 32)
+        self.assertEqual(sidebar.brand_logo.height(), 32)
+
+    def test_sidebar_collapsible_rail_mode(self):
+        from ui.sidebar import Sidebar
+        sidebar = Sidebar()
+        self.assertFalse(sidebar.collapse_btn.icon().isNull())
+        self.assertFalse(sidebar.lock_badge.pixmap().isNull())
+        
+        # Test collapse
+        sidebar.set_collapsed(True)
+        self.assertTrue(sidebar.is_collapsed)
+        self.assertEqual(sidebar.width(), 64)
+        self.assertTrue(sidebar.brand_label.isHidden())
+        self.assertTrue(sidebar.home_label.isHidden())
+        self.assertTrue(sidebar.all_notes_label.isHidden())
+        self.assertTrue(sidebar.models_list.isHidden())
+        self.assertEqual(sidebar.home_btn.width(), 44)
+
+        # Test expand
+        sidebar.set_collapsed(False)
+        self.assertFalse(sidebar.is_collapsed)
+        self.assertEqual(sidebar.width(), 260)
+        self.assertFalse(sidebar.brand_label.isHidden())
+        self.assertFalse(sidebar.home_label.isHidden())
+        self.assertFalse(sidebar.all_notes_label.isHidden())
+        self.assertEqual(sidebar.home_btn.width(), 236)
+
+    def test_incognito_mode_no_layout_shift(self):
+        from ui.sidebar import Sidebar
+        sidebar = Sidebar()
+        sidebar.set_collapsed(False)
+        initial_label_text = sidebar.brand_label.text()
+        initial_width = sidebar.width()
+
+        # Enter incognito
+        sidebar.set_incognito_active(True)
+        self.assertEqual(sidebar.brand_label.text(), initial_label_text) # Must stay "Vera Note"
+        self.assertEqual(sidebar.width(), initial_width) # Width must NOT expand
+        self.assertFalse(sidebar.lock_badge.isHidden())
+
+        # Exit incognito
+        sidebar.set_incognito_active(False)
+        self.assertEqual(sidebar.brand_label.text(), initial_label_text)
+        self.assertTrue(sidebar.lock_badge.isHidden())
+
+    def test_notes_view_favorite_filter_preserved_on_unfavorite(self):
+        from ui.notes_view import NotesView
+        nv = NotesView()
+        test_notes = [
+            {"id": 1, "title": "Note 1", "content": "Text 1", "is_favorite": 1, "created_at": "2026-10-01", "updated_at": "2026-10-01"},
+            {"id": 2, "title": "Note 2", "content": "Text 2", "is_favorite": 1, "created_at": "2026-10-01", "updated_at": "2026-10-01"},
+        ]
+        nv.set_notes(test_notes)
+        nv.fav_toggle_btn.setChecked(True)
+        nv.on_filter_changed()
+        self.assertTrue(nv.fav_toggle_btn.isChecked())
+
+        # Un-favorite card 1
+        nv.on_card_favorite_toggled(1, False)
+        # Verify favorite filter remains active!
+        self.assertTrue(nv.fav_toggle_btn.isChecked())
+        # Only Note 2 should remain visible in cards
+        visible_cards = [c for c in nv.cards if not c.isHidden()]
+        self.assertEqual(len(visible_cards), 1)
+        self.assertEqual(visible_cards[0].note_data["id"], 2)
 
     def test_fav_toggle_button_states(self):
         from ui.library_view import LibraryView

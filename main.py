@@ -463,9 +463,17 @@ class AppController:
     @Slot(int, bool)
     def on_note_favorite_toggled(self, note_id, is_favorite):
         database.toggle_note_favorite(note_id, is_favorite)
-        self.refresh_notes()
+        total_count = database.get_note_count(show_hidden=self.incognito_active)
+        self.win.sidebar.update_notes_count(total_count)
+        trash_count = database.get_deleted_note_count(show_hidden=self.incognito_active)
+        self.win.sidebar.update_trash_count(trash_count)
+        cork_notes = database.get_corkboard_notes(show_hidden=self.incognito_active)
+        self.win.welcome_screen.set_corkboard_notes(cork_notes)
+
         if self.win.detail_panel.isVisible() and self.win.detail_panel.note_data and self.win.detail_panel.note_data['id'] == note_id:
             self.win.detail_panel.note_data['is_favorite'] = 1 if is_favorite else 0
+            if hasattr(self.win.detail_panel, 'note_section'):
+                self.win.detail_panel.note_section.update_fav_btn_style()
 
     @Slot(int, bool)
     def on_workflow_favorite_toggled(self, workflow_id, is_favorite):
