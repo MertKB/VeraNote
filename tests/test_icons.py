@@ -207,5 +207,63 @@ class TestIconManager(unittest.TestCase):
         sidebar.on_lib_header_clicked()
         self.assertEqual(selected_workflows[-1], "Genel")
 
+    def test_incognito_spy_icon_and_hidden_badges(self):
+        from ui.sidebar import Sidebar
+        from ui.library_view import ModelCardWidget
+        from ui.workflow_view import WorkflowCardWidget
+        from ui.notes_view import NoteCardWidget
+
+        # 1. Sidebar uses incognito spy icon
+        sidebar = Sidebar()
+        sidebar.set_incognito_active(True)
+        self.assertFalse(sidebar.lock_badge.pixmap().isNull())
+        self.assertEqual(sidebar.lock_badge.width(), 22)
+        self.assertFalse(sidebar.lock_badge.isHidden())
+
+        # 2. ModelCardWidget has hidden_badge and NO "[Gizle]" prefix
+        model_data = {
+            'id': 101,
+            'name': 'SDXL Turbo Model',
+            'file_path': 'C:/model.safetensors',
+            'is_favorite': 0,
+            'is_hidden': 1
+        }
+        model_card = ModelCardWidget(model_data)
+        self.assertTrue(hasattr(model_card, 'hidden_badge'))
+        self.assertFalse(model_card.hidden_badge.isHidden())
+        self.assertFalse(model_card.hidden_badge.pixmap().isNull())
+        self.assertNotIn("[Gizle]", model_card.title_label.text())
+        self.assertNotIn("[ Gizle]", model_card.title_label.text())
+
+        # 3. WorkflowCardWidget has hidden_badge and NO "[Gizle]" prefix
+        wf_data = {
+            'id': 202,
+            'name': 'Flux Upscaler Workflow',
+            'file_path': 'C:/wf.json',
+            'is_favorite': 1,
+            'is_hidden': 1
+        }
+        wf_card = WorkflowCardWidget(wf_data)
+        self.assertTrue(hasattr(wf_card, 'hidden_badge'))
+        self.assertFalse(wf_card.hidden_badge.isHidden())
+        self.assertFalse(wf_card.hidden_badge.pixmap().isNull())
+        self.assertNotIn("[Gizle]", wf_card.title_label.text())
+        self.assertNotIn("[ Gizle]", wf_card.title_label.text())
+
+        # 4. NoteCardWidget has hidden_badge and NO "[Gizle]" prefix
+        note_data = {
+            'id': 303,
+            'title': 'Secret Project Notes',
+            'content': 'Confidential',
+            'is_favorite': 1,
+            'is_hidden': 1
+        }
+        note_card = NoteCardWidget(note_data)
+        self.assertTrue(hasattr(note_card, 'hidden_badge'))
+        self.assertFalse(note_card.hidden_badge.isHidden())
+        self.assertFalse(note_card.hidden_badge.pixmap().isNull())
+        self.assertNotIn("[Gizle]", note_card.title_label.text())
+        self.assertNotIn("[ Gizle]", note_card.title_label.text())
+
 if __name__ == "__main__":
     unittest.main()

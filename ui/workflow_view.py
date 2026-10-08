@@ -133,6 +133,24 @@ class WorkflowCardWidget(QFrame):
         self.fav_btn.setCursor(Qt.PointingHandCursor)
         self.fav_btn.clicked.connect(self.on_fav_clicked)
 
+        # Hidden Lock Badge Overlay below favorite button (when is_hidden == 1)
+        self.hidden_badge = QLabel(self.image_label)
+        self.hidden_badge.setObjectName("CardHiddenBadge")
+        self.hidden_badge.setFixedSize(28, 28)
+        self.hidden_badge.setGeometry(8, 40, 28, 28)
+        self.hidden_badge.setAlignment(Qt.AlignCenter)
+        self.hidden_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        from utils.icon_manager import get_pixmap
+        self.hidden_badge.setPixmap(get_pixmap("lock", "#D7AEF5", 16))
+        self.hidden_badge.setStyleSheet("""
+            QLabel#CardHiddenBadge {
+                background-color: rgba(30, 31, 34, 0.75);
+                border: 1px solid rgba(215, 174, 245, 0.5);
+                border-radius: 14px;
+            }
+        """)
+        self.hidden_badge.setVisible(self.workflow_data.get('is_hidden', 0) == 1)
+
         # Quick Copy Prompt Button Overlay on bottom-right of image
         self.copy_prompt_btn = QPushButton(self.image_label)
         from utils.icon_manager import get_icon
@@ -249,12 +267,13 @@ class WorkflowCardWidget(QFrame):
     def update_content(self):
         metrics = QFontMetrics(self.font())
         name = self.workflow_data.get('name', t("unknown_workflow"))
-        if self.workflow_data.get('is_hidden', 0) == 1:
-            name = f"[{t('menu_hide')}] " + name
         file_path = self.workflow_data.get('file_path', '')
         filename = os.path.basename(file_path) if file_path else 'workflow.json'
         description = self.workflow_data.get('description', '') or t("no_description")
         image_path = self.workflow_data.get('image_path', '')
+
+        if hasattr(self, 'hidden_badge'):
+            self.hidden_badge.setVisible(self.workflow_data.get('is_hidden', 0) == 1)
 
         # Set texts elided
         self.title_label.setText(metrics.elidedText(name, Qt.ElideRight, 180))

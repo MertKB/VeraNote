@@ -163,6 +163,24 @@ class NoteCardWidget(QFrame):
             self.copy_btn.clicked.connect(self.on_copy_clicked)
             top_overlay_layout.addWidget(self.copy_btn)
 
+        # Hidden Lock Badge Overlay below star button (when is_hidden == 1)
+        self.hidden_badge = QLabel(self)
+        self.hidden_badge.setObjectName("NoteHiddenBadge")
+        self.hidden_badge.setFixedSize(26, 26)
+        self.hidden_badge.setGeometry(12, 44, 26, 26)
+        self.hidden_badge.setAlignment(Qt.AlignCenter)
+        self.hidden_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        from utils.icon_manager import get_pixmap
+        self.hidden_badge.setPixmap(get_pixmap("lock", "#D7AEF5", 14))
+        self.hidden_badge.setStyleSheet("""
+            QLabel#NoteHiddenBadge {
+                background-color: rgba(30, 31, 34, 0.75);
+                border: 1px solid rgba(215, 174, 245, 0.5);
+                border-radius: 13px;
+            }
+        """)
+        self.hidden_badge.setVisible(self.note_data.get('is_hidden', 0) == 1)
+
         # Add image, title and content labels to layout
         layout.addWidget(self.image_label)
         
@@ -191,6 +209,8 @@ class NoteCardWidget(QFrame):
 
         # Crucial Z-order fix: Raise the overlay container so it is clickable
         self.top_overlay_container.raise_()
+        if hasattr(self, 'hidden_badge'):
+            self.hidden_badge.raise_()
 
     def set_selected(self, selected):
         self.is_selected = selected
@@ -401,10 +421,11 @@ class NoteCardWidget(QFrame):
     def update_texts(self):
         metrics = QFontMetrics(self.font())
         title_text = self.note_data.get('title', '')
-        if self.note_data.get('is_hidden', 0) == 1:
-            title_text = f"[{t('menu_hide')}] " + title_text
         elided_title = metrics.elidedText(title_text, Qt.ElideRight, 210)
         self.title_label.setText(elided_title)
+
+        if hasattr(self, 'hidden_badge'):
+            self.hidden_badge.setVisible(self.note_data.get('is_hidden', 0) == 1)
 
         html_content = self.note_data.get('content', '')
         plain_text = html_to_plain(html_content)

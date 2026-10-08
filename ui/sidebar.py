@@ -122,12 +122,12 @@ class Sidebar(QWidget):
         self.brand_label = QLabel("Vera Note")
         self.brand_label.setObjectName("SidebarTitle")
         
-        # Lock badge (shown only when Incognito mode is active)
+        # Incognito detective badge (shown only when Incognito mode is active)
         self.lock_badge = QLabel()
         self.lock_badge.setObjectName("SidebarLockBadge")
-        self.lock_badge.setFixedSize(18, 18)
+        self.lock_badge.setFixedSize(22, 22)
         self.lock_badge.setScaledContents(True)
-        self.lock_badge.setPixmap(get_pixmap("lock", "#D7AEF5", 18))
+        self.lock_badge.setPixmap(get_pixmap("incognito", "#D7AEF5", 22))
         self.lock_badge.setToolTip(t("status_incognito_on"))
         self.lock_badge.setVisible(False)
 

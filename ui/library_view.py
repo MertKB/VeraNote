@@ -149,6 +149,24 @@ class ModelCardWidget(QFrame):
         self.fav_btn.clicked.connect(self.on_fav_clicked)
         self.update_fav_btn_style()
 
+        # Hidden Lock Badge Overlay below favorite button (when is_hidden == 1)
+        self.hidden_badge = QLabel(self.image_label)
+        self.hidden_badge.setObjectName("CardHiddenBadge")
+        self.hidden_badge.setFixedSize(28, 28)
+        self.hidden_badge.setGeometry(8, 40, 28, 28)
+        self.hidden_badge.setAlignment(Qt.AlignCenter)
+        self.hidden_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        from utils.icon_manager import get_pixmap
+        self.hidden_badge.setPixmap(get_pixmap("lock", "#D7AEF5", 16))
+        self.hidden_badge.setStyleSheet("""
+            QLabel#CardHiddenBadge {
+                background-color: rgba(30, 31, 34, 0.75);
+                border: 1px solid rgba(215, 174, 245, 0.5);
+                border-radius: 14px;
+            }
+        """)
+        self.hidden_badge.setVisible(self.model_data.get('is_hidden', 0) == 1)
+
         # Multi-select Checkbox Button Overlay on top-right of image (hidden by default)
         self.select_btn = QPushButton(self.image_label)
         self.select_btn.setObjectName("CardSelectBtn")
@@ -258,11 +276,12 @@ class ModelCardWidget(QFrame):
         
         # Elide name (Max 178px width)
         name = self.model_data.get('name', '')
-        if self.model_data.get('is_hidden', 0) == 1:
-            name = f"[{t('menu_hide')}] " + name
         elided_title = metrics.elidedText(name, Qt.ElideRight, 178)
         self.title_label.setText(elided_title)
         self.title_label.setToolTip(name)
+
+        if hasattr(self, 'hidden_badge'):
+            self.hidden_badge.setVisible(self.model_data.get('is_hidden', 0) == 1)
 
         # Elide filename (Max 178px width)
         elided_filename = metrics.elidedText(self.original_filename, Qt.ElideRight, 178)
