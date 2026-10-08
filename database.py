@@ -159,6 +159,7 @@ def initialize_db():
                 corkboard_y INTEGER DEFAULT 0,
                 corkboard_w INTEGER DEFAULT 200,
                 corkboard_h INTEGER DEFAULT 180,
+                embedding BLOB,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -204,6 +205,7 @@ def initialize_db():
                 is_favorite INTEGER DEFAULT 0,
                 is_hidden INTEGER DEFAULT 0,
                 base_architecture TEXT,
+                embedding BLOB,
                 FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
             );
         """)
@@ -331,6 +333,8 @@ def initialize_db():
                 cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_w INTEGER DEFAULT 200;")
             if 'corkboard_h' not in columns:
                 cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_h INTEGER DEFAULT 180;")
+            if 'embedding' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN embedding BLOB;")
                 
             conn.commit()
         except sqlite3.Error as e:
@@ -378,6 +382,8 @@ def initialize_db():
                 cursor.execute("ALTER TABLE models ADD COLUMN is_hidden INTEGER DEFAULT 0;")
             if 'base_architecture' not in columns:
                 cursor.execute("ALTER TABLE models ADD COLUMN base_architecture TEXT;")
+            if 'embedding' not in columns:
+                cursor.execute("ALTER TABLE models ADD COLUMN embedding BLOB;")
             conn.commit()
 
             # Auto backfill base_architecture for existing models if empty
@@ -628,7 +634,7 @@ def get_models_in_library(library_name, show_hidden=False, limit=None, offset=No
     with get_connection() as conn:
         cursor = conn.cursor()
         query = """
-            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.is_hidden, m.base_architecture,
+            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.is_hidden, m.base_architecture, m.embedding,
                    (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list,
                    (SELECT GROUP_CONCAT(tw.word, ', ') FROM trigger_words tw WHERE tw.model_id = m.id) as triggers_list
             FROM models m
@@ -664,7 +670,7 @@ def get_model_by_id(model_id):
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.base_architecture,
+            SELECT m.id, m.library_id, m.name, m.file_path, m.file_hash, m.image_path, m.notes, m.description, m.is_favorite, m.base_architecture, m.embedding,
                    (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list,
                    (SELECT GROUP_CONCAT(tw.word, ', ') FROM trigger_words tw WHERE tw.model_id = m.id) as triggers_list
             FROM models m
@@ -1933,6 +1939,88 @@ add_routine = AgendaRepository.add_routine
 delete_routine = AgendaRepository.delete_routine
 toggle_routine = AgendaRepository.toggle_routine
 seed_daily_tasks_from_routines = AgendaRepository.seed_daily_tasks_from_routines
+
+# --- SEMANTIC SEARCH & VECTOR EMBEDDING HELPERS ---
+def update_model_embedding(model_id: int, embedding_bytes: bytes):
+    """Save raw embedding float32 bytes for a model."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE models SET embedding = ? WHERE id = ?;", (embedding_bytes, model_id))
+        conn.commit()
+
+def update_note_embedding(note_id: int, embedding_bytes: bytes):
+    """Save raw embedding float32 bytes for a note."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notes SET embedding = ? WHERE id = ?;", (embedding_bytes, note_id))
+        conn.commit()
+
+def get_unembedded_models(limit=None):
+    """Fetch models where embedding IS NULL along with tags and trigger words."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = """
+            SELECT m.id, m.name, m.base_architecture, m.notes, m.description,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list,
+                   (SELECT GROUP_CONCAT(tw.word, ', ') FROM trigger_words tw WHERE tw.model_id = m.id) as triggers_list
+            FROM models m
+            WHERE m.embedding IS NULL
+            ORDER BY m.id ASC
+        """
+        if limit:
+            query += f" LIMIT {int(limit)}"
+        query += ";"
+        cursor.execute(query)
+        results = []
+        for row in cursor.fetchall():
+            row_dict = dict(row)
+            tags_str = row_dict.get('tags_list')
+            row_dict['tags'] = tags_str.split(',') if tags_str else []
+            trig_str = row_dict.get('triggers_list')
+            row_dict['trigger_words'] = [w.strip() for w in trig_str.split(', ')] if trig_str else []
+            results.append(row_dict)
+        return results
+
+def get_unembedded_notes(limit=None):
+    """Fetch non-deleted notes where embedding IS NULL."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = "SELECT id, title, content FROM notes WHERE embedding IS NULL AND is_deleted = 0 ORDER BY id ASC"
+        if limit:
+            query += f" LIMIT {int(limit)}"
+        query += ";"
+        cursor.execute(query)
+        return [dict(r) for r in cursor.fetchall()]
+
+def get_model_embedding_data(model_id: int):
+    """Fetch metadata for a single model needed to compute its embedding."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT m.id, m.name, m.base_architecture, m.notes, m.description,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM model_tags mt JOIN tags t ON mt.tag_id = t.id WHERE mt.model_id = m.id) as tags_list,
+                   (SELECT GROUP_CONCAT(tw.word, ', ') FROM trigger_words tw WHERE tw.model_id = m.id) as triggers_list
+            FROM models m
+            WHERE m.id = ?;
+        """, (model_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        row_dict = dict(row)
+        tags_str = row_dict.get('tags_list')
+        row_dict['tags'] = tags_str.split(',') if tags_str else []
+        trig_str = row_dict.get('triggers_list')
+        row_dict['trigger_words'] = [w.strip() for w in trig_str.split(', ')] if trig_str else []
+        return row_dict
+
+def get_note_embedding_data(note_id: int):
+    """Fetch title and content for a single note."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, title, content FROM notes WHERE id = ?;", (note_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
 
 
 

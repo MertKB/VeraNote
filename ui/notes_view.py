@@ -11,6 +11,7 @@ from utils.i18n import t
 from utils.icon_manager import get_icon
 from ui.library_view import get_rounded_pixmap, THUMBNAIL_CACHE, cache_thumbnail, ImageLoadWorker
 from database import resolve_image_path
+from utils.semantic_search import AsyncSemanticSearchWorker
 
 _STYLE_RE = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL | re.IGNORECASE)
 _HEAD_RE = re.compile(r'<head[^>]*>.*?</head>', re.DOTALL | re.IGNORECASE)
@@ -586,6 +587,11 @@ class NotesView(QWidget):
         self.scroll_check_timer.setSingleShot(True)
         self.scroll_check_timer.timeout.connect(self.check_visible_cards)
 
+        self.search_debounce_timer = QTimer(self)
+        self.search_debounce_timer.setSingleShot(True)
+        self.search_debounce_timer.timeout.connect(self.apply_filters_and_sorting)
+        self.search_worker = None
+
         self.init_ui()
 
     def minimumSizeHint(self):
@@ -606,7 +612,7 @@ class NotesView(QWidget):
         self.search_edit.setPlaceholderText(t("view_search_notes_placeholder"))
         self.search_edit.setMinimumWidth(120)
         self.search_edit.setMaximumWidth(300)
-        self.search_edit.textChanged.connect(self.on_filter_changed)
+        self.search_edit.textChanged.connect(lambda: self.search_debounce_timer.start(150))
         header_layout.addWidget(self.search_edit)
 
         # Favorites Filter Toggle
@@ -856,30 +862,87 @@ class NotesView(QWidget):
         show_only_favs = self.fav_toggle_btn.isChecked()
         sort_idx = self.sort_combo.currentIndex()
 
-        filtered = []
+        candidates = []
         for n in self.notes_data:
             if show_only_favs and not n.get('is_favorite', 0):
                 continue
-            if query:
-                title_match = query in n.get('title', '').lower()
-                plain_content = html_to_plain(n.get('content', '')).lower()
-                content_match = query in plain_content
-                if not (title_match or content_match):
-                    continue
-            filtered.append(n)
+            candidates.append(n)
 
-        if sort_idx == 1: # Son Düzenlenen / Last Edited
-            filtered.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
-        elif sort_idx == 3: # A-Z
-            filtered.sort(key=lambda x: x.get('title', '').lower())
-        elif sort_idx == 4: # Z-A
-            filtered.sort(key=lambda x: x.get('title', '').lower(), reverse=True)
-        elif sort_idx == 2: # En Eski / Oldest
-            filtered.sort(key=lambda x: x.get('created_at', ''))
-        else: # En Yeni / Newest
-            filtered.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        if not query:
+            # Cancel any running search worker
+            if self.search_worker and self.search_worker.isRunning():
+                self.search_worker.requestInterruption()
+                self.search_worker = None
 
-        self.filtered_notes_data = filtered
+            # Standard Sorting when search is empty
+            if sort_idx == 1: # Son Düzenlenen / Last Edited
+                candidates.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+            elif sort_idx == 3: # A-Z
+                candidates.sort(key=lambda x: x.get('title', '').lower())
+            elif sort_idx == 4: # Z-A
+                candidates.sort(key=lambda x: x.get('title', '').lower(), reverse=True)
+            elif sort_idx == 2: # En Eski / Oldest
+                candidates.sort(key=lambda x: x.get('created_at', ''))
+            else: # En Yeni / Newest
+                candidates.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+
+            self.filtered_notes_data = candidates
+            self.populate_grid()
+            return
+
+        # Query is present:
+        # 1. Immediate keyword matching
+        instant_keyword_matches = []
+        for n in candidates:
+            title_match = query in n.get('title', '').lower()
+            plain_content = html_to_plain(n.get('content', '')).lower()
+            content_match = query in plain_content
+            if title_match or content_match:
+                instant_keyword_matches.append(n)
+
+        self.filtered_notes_data = instant_keyword_matches
+        self.populate_grid()
+
+        # 2. Launch background semantic search worker
+        if self.search_worker and self.search_worker.isRunning():
+            self.search_worker.requestInterruption()
+            self.search_worker = None
+
+        self.search_worker = AsyncSemanticSearchWorker(query, candidates, threshold=0.25, parent=self)
+        self.search_worker.results_ready_signal.connect(self._on_notes_semantic_results)
+        self.search_worker.start()
+
+    def _on_notes_semantic_results(self, res_query: str, scored_results: list):
+        current_query = self.search_edit.text().strip().lower()
+        if current_query != res_query.lower():
+            return # Stale result, ignore
+
+        show_only_favs = self.fav_toggle_btn.isChecked()
+        scores_map = {item_id: score for item_id, score in scored_results}
+
+        combined = []
+        for n in self.notes_data:
+            if show_only_favs and not n.get('is_favorite', 0):
+                continue
+
+            n_id = n.get('id')
+            sem_score = scores_map.get(n_id, 0.0)
+            title_match = current_query in n.get('title', '').lower()
+            plain_content = html_to_plain(n.get('content', '')).lower()
+            content_match = current_query in plain_content
+            is_keyword = title_match or content_match
+
+            if n_id in scores_map or is_keyword:
+                relevance = sem_score
+                if title_match:
+                    relevance += 1.0 # Exact title match boosted
+                elif is_keyword:
+                    relevance += 0.5
+                combined.append((n, relevance))
+
+        # Sort descending by relevance score
+        combined.sort(key=lambda x: x[1], reverse=True)
+        self.filtered_notes_data = [item[0] for item in combined]
         self.populate_grid()
 
     def populate_grid(self):

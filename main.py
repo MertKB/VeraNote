@@ -22,6 +22,11 @@ from ui.main_window import MainWindow
 from ui.settings_dialog import SettingsDialog
 from scanner import ModelScanner
 from utils import i18n
+from utils.semantic_search import (
+    ModelWarmupWorker,
+    EmbeddingBackfillWorker,
+    enqueue_single_embedding_update
+)
 
 class AppController:
     def __init__(self, main_window):
@@ -33,6 +38,11 @@ class AppController:
         self.running_scanners = []
         self.showing_trash = False
         self.incognito_active = False
+
+        # Semantic Search background workers
+        self.model_warmup_worker = None
+        self.backfill_worker = None
+        self.init_semantic_search()
 
         # Setup Incognito Shortcut
         from PySide6.QtGui import QKeySequence, QShortcut
@@ -216,9 +226,30 @@ class AppController:
             wf_with_counts.append((lib['name'], count))
         self.win.sidebar.update_workflow_libraries_list(wf_with_counts, self.active_workflow_library)
 
+    def init_semantic_search(self):
+        """Warm up embedding model in background worker thread and start backfill."""
+        self.model_warmup_worker = ModelWarmupWorker(self.win)
+        self.model_warmup_worker.loaded_signal.connect(self.on_model_warmup_finished)
+        self.model_warmup_worker.start()
+
+    def on_model_warmup_finished(self, success: bool):
+        if success:
+            self.backfill_worker = EmbeddingBackfillWorker(self.win)
+            self.backfill_worker.finished_signal.connect(self.on_backfill_finished)
+            self.backfill_worker.start()
+
+    def on_backfill_finished(self, count: int):
+        if count > 0:
+            # Silently refresh current view data to include newly generated embeddings
+            if self.active_library:
+                self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)
+            elif not self.showing_trash and self.win.notes_view.isVisible():
+                self.refresh_notes()
+
     @Slot(object, str, str)
     def on_save_note(self, note_id, title, content):
         saved_id = database.save_note(note_id, title, content)
+        enqueue_single_embedding_update('note', saved_id)
         self.refresh_notes()
         self.open_note_in_drawer(saved_id)
         self.win.statusBar().showMessage(i18n.t("note_saved"), 2000)
@@ -238,6 +269,7 @@ class AppController:
     @Slot()
     def on_create_new_note(self):
         new_id = database.save_note(None, i18n.t("notes_new_title"), "<p></p>", None, "WITH_IMAGE", 0)
+        enqueue_single_embedding_update('note', new_id)
         self.refresh_notes()
         self.open_note_in_drawer(new_id)
         self.win.statusBar().showMessage(i18n.t("status_new_note"), 2000)
@@ -529,6 +561,7 @@ class AppController:
             dest_path = ""
 
         database.save_note(note_id, title, content, dest_path, display_mode, is_fav)
+        enqueue_single_embedding_update('note', note_id)
         
         # If it is auto-save, update the GUI elements in-place silently.
         # No full list redraws, no QTimer card recreations, no flashes!
@@ -961,6 +994,7 @@ class AppController:
     @Slot(int, str, str, str)
     def on_save_model_data(self, model_id, name, notes, base_architecture=""):
         database.update_model_data(model_id, name, notes, base_architecture)
+        enqueue_single_embedding_update('model', model_id)
         self.win.statusBar().showMessage(i18n.t("status_model_saved"), 3000)
         self.win.show_toast(i18n.t("toast_saved"), "success")
         
@@ -974,6 +1008,7 @@ class AppController:
     @Slot(int, str)
     def on_add_trigger(self, model_id, word):
         if database.add_trigger_word(model_id, word):
+            enqueue_single_embedding_update('model', model_id)
             self.win.statusBar().showMessage(i18n.t("status_trigger_added").format(word=word), 2000)
             model_data = database.get_model_by_id(model_id)
             trigger_words = database.get_trigger_words(model_id)
@@ -983,6 +1018,7 @@ class AppController:
     @Slot(int, str)
     def on_delete_trigger(self, model_id, word):
         database.delete_trigger_word(model_id, word)
+        enqueue_single_embedding_update('model', model_id)
         self.win.statusBar().showMessage(i18n.t("status_trigger_deleted").format(word=word), 2000)
         model_data = database.get_model_by_id(model_id)
         trigger_words = database.get_trigger_words(model_id)
@@ -992,6 +1028,7 @@ class AppController:
     @Slot(int, list)
     def on_set_triggers(self, model_id, triggers):
         if database.set_trigger_words(model_id, triggers):
+            enqueue_single_embedding_update('model', model_id)
             model_data = database.get_model_by_id(model_id)
             trigger_words = database.get_trigger_words(model_id)
             if model_data:
@@ -1090,6 +1127,11 @@ class AppController:
         if self.active_library:
             self.on_library_selected(self.active_library)
 
+        if count > 0:
+            self.backfill_worker = EmbeddingBackfillWorker(self.win)
+            self.backfill_worker.finished_signal.connect(self.on_backfill_finished)
+            self.backfill_worker.start()
+
         self.scan_thread = None
 
     def cancel_scan(self):
@@ -1110,6 +1152,7 @@ class AppController:
     @Slot(int, str)
     def on_add_tag(self, model_id, tag_name):
         if database.add_model_tag(model_id, tag_name):
+            enqueue_single_embedding_update('model', model_id)
             self.win.statusBar().showMessage(i18n.t("status_tag_added").format(tag_name=tag_name), 2000)
             self.win.show_toast(i18n.t("status_tag_added").format(tag_name=tag_name), "success")
             self.refresh_active_model_details(model_id)
@@ -1117,6 +1160,7 @@ class AppController:
     @Slot(int, str)
     def on_delete_tag(self, model_id, tag_name):
         if database.delete_model_tag(model_id, tag_name):
+            enqueue_single_embedding_update('model', model_id)
             self.win.statusBar().showMessage(i18n.t("status_tag_removed").format(tag_name=tag_name), 2000)
             self.win.show_toast(i18n.t("status_tag_removed").format(tag_name=tag_name), "info")
             self.refresh_active_model_details(model_id)
@@ -1124,6 +1168,7 @@ class AppController:
     @Slot(int, list)
     def on_set_tags(self, model_id, tags):
         if database.set_model_tags(model_id, tags):
+            enqueue_single_embedding_update('model', model_id)
             self.refresh_active_model_details(model_id)
 
     @Slot(list)
@@ -1137,6 +1182,7 @@ class AppController:
             tag = tag_name.strip()
             for m_id in model_ids:
                 database.add_model_tag(m_id, tag)
+                enqueue_single_embedding_update('model', m_id)
             self.win.show_toast(i18n.t("bulk_tag_done").format(count=len(model_ids), tag=tag), "success")
             if self.active_library:
                 self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)
@@ -1155,6 +1201,7 @@ class AppController:
             tag = tag_name.strip()
             for m_id in model_ids:
                 database.delete_model_tag(m_id, tag)
+                enqueue_single_embedding_update('model', m_id)
             self.win.show_toast(i18n.t("bulk_tag_removed").format(count=len(model_ids), tag=tag), "info")
             if self.active_library:
                 self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)

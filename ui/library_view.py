@@ -9,6 +9,7 @@ from utils.i18n import t, get_lang
 from utils.icon_manager import get_icon, get_pixmap
 
 from utils.cache import THUMBNAIL_CACHE
+from utils.semantic_search import AsyncSemanticSearchWorker
 
 def cache_thumbnail(path, pixmap, max_size=150):
     if not path or not pixmap or pixmap.isNull():
@@ -551,6 +552,7 @@ class LibraryView(QWidget):
         self.search_debounce_timer = QTimer(self)
         self.search_debounce_timer.setSingleShot(True)
         self.search_debounce_timer.timeout.connect(self.apply_filters)
+        self.search_worker = None
 
         self.resize_debounce_timer = QTimer(self)
         self.resize_debounce_timer.setSingleShot(True)
@@ -1058,16 +1060,14 @@ class LibraryView(QWidget):
         show_only_favs = self.fav_toggle_btn.isChecked()
         selected_tag = getattr(self, 'selected_tag', None)
         selected_arch = self.arch_combo.itemData(self.arch_combo.currentIndex()) if hasattr(self, 'arch_combo') else None
-        
-        filtered = []
+
+        # Base candidate pool passing non-search filters (favorites, tag, arch)
+        candidates = []
         for m in self.models_data:
-            # 1. Favorite condition
             if show_only_favs and not m.get('is_favorite', 0):
                 continue
-            # 2. Tag filter condition
             if selected_tag and selected_tag not in m.get('tags', []):
                 continue
-            # 3. Architecture filter condition
             if selected_arch:
                 m_arch = m.get('base_architecture') or ""
                 if not m_arch:
@@ -1075,28 +1075,97 @@ class LibraryView(QWidget):
                     m_arch = detect_base_architecture([m.get('name', ''), m.get('file_path', '')])
                 if m_arch != selected_arch:
                     continue
-            # 4. Search query condition
-            if query:
-                name_match = query in m.get('name', '').lower()
-                file_match = query in os.path.basename(m.get('file_path', '')).lower()
-                tag_match = any(query in tag.lower() for tag in m.get('tags', []))
-                arch_match = query in (m.get('base_architecture', '') or '').lower()
-                if not (name_match or file_match or tag_match or arch_match):
-                    continue
-            filtered.append(m)
+            candidates.append(m)
 
-        # 4. Sorting
-        sort_mode = self.sort_combo.currentText() if hasattr(self, 'sort_combo') else ""
-        if sort_mode == t("lib_sort_az"):
-            filtered.sort(key=lambda x: x.get('name', '').lower())
-        elif sort_mode == t("lib_sort_za"):
-            filtered.sort(key=lambda x: x.get('name', '').lower(), reverse=True)
-        elif sort_mode == t("lib_sort_fav_first"):
-            filtered.sort(key=lambda x: (not bool(x.get('is_favorite', 0)), x.get('name', '').lower()))
-        elif sort_mode == t("lib_sort_newest"):
-            filtered.sort(key=lambda x: x.get('id', 0), reverse=True)
-            
-        self.filtered_models_data = filtered
+        if not query:
+            # Cancel any running semantic search worker
+            if self.search_worker and self.search_worker.isRunning():
+                self.search_worker.requestInterruption()
+                self.search_worker = None
+
+            # Standard Sorting when search is empty
+            sort_mode = self.sort_combo.currentText() if hasattr(self, 'sort_combo') else ""
+            if sort_mode == t("lib_sort_az"):
+                candidates.sort(key=lambda x: x.get('name', '').lower())
+            elif sort_mode == t("lib_sort_za"):
+                candidates.sort(key=lambda x: x.get('name', '').lower(), reverse=True)
+            elif sort_mode == t("lib_sort_fav_first"):
+                candidates.sort(key=lambda x: (not bool(x.get('is_favorite', 0)), x.get('name', '').lower()))
+            elif sort_mode == t("lib_sort_newest"):
+                candidates.sort(key=lambda x: x.get('id', 0), reverse=True)
+
+            self.filtered_models_data = candidates
+            self.populate_grid(use_filtered=True)
+            return
+
+        # Query is present:
+        # 1. Immediately display fast keyword matches so UI is instantly responsive
+        instant_keyword_matches = []
+        for m in candidates:
+            name_match = query in m.get('name', '').lower()
+            file_match = query in os.path.basename(m.get('file_path', '')).lower()
+            tag_match = any(query in tag.lower() for tag in m.get('tags', []))
+            arch_match = query in (m.get('base_architecture', '') or '').lower()
+            trigger_match = any(query in tw.lower() for tw in m.get('trigger_words', []))
+            if name_match or file_match or tag_match or arch_match or trigger_match:
+                instant_keyword_matches.append(m)
+
+        self.filtered_models_data = instant_keyword_matches
+        self.populate_grid(use_filtered=True)
+
+        # 2. Launch background semantic search worker for conceptual matching
+        if self.search_worker and self.search_worker.isRunning():
+            self.search_worker.requestInterruption()
+            self.search_worker = None
+
+        self.search_worker = AsyncSemanticSearchWorker(query, candidates, threshold=0.25, parent=self)
+        self.search_worker.results_ready_signal.connect(self._on_semantic_results)
+        self.search_worker.start()
+
+    def _on_semantic_results(self, res_query: str, scored_results: list):
+        current_query = self.local_search.text().strip().lower()
+        if current_query != res_query.lower():
+            return # Stale result, ignore
+
+        show_only_favs = self.fav_toggle_btn.isChecked()
+        selected_tag = getattr(self, 'selected_tag', None)
+        selected_arch = self.arch_combo.itemData(self.arch_combo.currentIndex()) if hasattr(self, 'arch_combo') else None
+
+        scores_map = {item_id: score for item_id, score in scored_results}
+        combined = []
+        for m in self.models_data:
+            if show_only_favs and not m.get('is_favorite', 0):
+                continue
+            if selected_tag and selected_tag not in m.get('tags', []):
+                continue
+            if selected_arch:
+                m_arch = m.get('base_architecture') or ""
+                if not m_arch:
+                    from utils.png_parser import detect_base_architecture
+                    m_arch = detect_base_architecture([m.get('name', ''), m.get('file_path', '')])
+                if m_arch != selected_arch:
+                    continue
+
+            m_id = m.get('id')
+            sem_score = scores_map.get(m_id, 0.0)
+            name_match = current_query in m.get('name', '').lower()
+            tag_match = any(current_query in tag.lower() for tag in m.get('tags', []))
+            file_match = current_query in os.path.basename(m.get('file_path', '')).lower()
+            trigger_match = any(current_query in tw.lower() for tw in m.get('trigger_words', []))
+            arch_match = current_query in (m.get('base_architecture', '') or '').lower()
+            is_keyword = name_match or tag_match or file_match or trigger_match or arch_match
+
+            if m_id in scores_map or is_keyword:
+                relevance = sem_score
+                if name_match:
+                    relevance += 1.0 # Exact name match prioritized
+                elif is_keyword:
+                    relevance += 0.5
+                combined.append((m, relevance))
+
+        # Sort descending by relevance score
+        combined.sort(key=lambda x: x[1], reverse=True)
+        self.filtered_models_data = [item[0] for item in combined]
         self.populate_grid(use_filtered=True)
 
     def on_local_search_changed(self, text):
