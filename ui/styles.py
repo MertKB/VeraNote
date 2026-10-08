@@ -334,14 +334,16 @@ QPushButton:pressed {{
     background-color: {p['accent_color']};
     color: white;
     border: none;
-    border-radius: 20px;
+    border-radius: 10px;
     font-weight: bold;
     font-size: 14px;
-    text-align: left;
-    padding-left: 20px;
+    padding: 0px;
+    margin: 0px;
 }}
 #NewNoteBtn:hover, #NewLibBtn:hover {{
     background-color: {p['accent_hover']};
+    border: none;
+    border-radius: 10px;
 }}
 
 QPushButton#HeaderAddBtn, QPushButton#EmptyTrashBtn {{
@@ -363,49 +365,58 @@ QPushButton#EmptyTrashBtn:hover {{
     border-color: #C02E26;
 }}
 
-/* Home, Notes & Settings Buttons in Sidebar */
-#HomeBtn, #AgendaBtn, #AllNotesBtn, #TrashBtn, #SettingsBtn {{
+/* Sidebar Buttons: Home, Agenda, All Notes, Trash, Settings, Models, Workflows */
+#HomeBtn, #AgendaBtn, #AllNotesBtn, #TrashBtn, #SettingsBtn, #ModelsHeaderBtn, #LibHeaderBtn {{
     background-color: transparent;
-    border: none;
+    border: 1px solid transparent;
     color: {p['text_main']};
     text-align: left;
     border-radius: 10px;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    padding: 0px;
+    margin: 0px;
 }}
 
-#HomeBtn QLabel, #AgendaBtn QLabel, #AllNotesBtn QLabel, #TrashBtn QLabel, #SettingsBtn QLabel {{
+#HomeBtn QLabel, #AgendaBtn QLabel, #AllNotesBtn QLabel, #TrashBtn QLabel, #SettingsBtn QLabel, #ModelsHeaderBtn QLabel, #LibHeaderBtn QLabel {{
     color: {p['text_main']};
     font-size: 13px;
     font-weight: bold;
     background: transparent;
-    transition: color 0.2s ease;
 }}
 
-#HomeBtn:hover, #AgendaBtn:hover, #AllNotesBtn:hover, #TrashBtn:hover, #SettingsBtn:hover {{
+#HomeBtn:hover, #AgendaBtn:hover, #AllNotesBtn:hover, #TrashBtn:hover, #SettingsBtn:hover, #ModelsHeaderBtn:hover, #LibHeaderBtn:hover {{
     background-color: {p['bg_input']};
+    border: 1px solid transparent;
+    border-radius: 10px;
     color: white;
 }}
 
-#HomeBtn:hover QLabel, #AgendaBtn:hover QLabel, #AllNotesBtn:hover QLabel, #TrashBtn:hover QLabel, #SettingsBtn:hover QLabel {{
+#HomeBtn:hover QLabel, #AgendaBtn:hover QLabel, #AllNotesBtn:hover QLabel, #TrashBtn:hover QLabel, #SettingsBtn:hover QLabel, #ModelsHeaderBtn:hover QLabel, #LibHeaderBtn:hover QLabel {{
     color: white;
 }}
 
-#HomeBtn:pressed, #AgendaBtn:pressed, #AllNotesBtn:pressed, #TrashBtn:pressed, #SettingsBtn:pressed {{
+#HomeBtn:pressed, #AgendaBtn:pressed, #AllNotesBtn:pressed, #TrashBtn:pressed, #SettingsBtn:pressed, #ModelsHeaderBtn:pressed, #LibHeaderBtn:pressed {{
     background-color: {p['border_color']};
+    border: 1px solid transparent;
+    border-radius: 10px;
     color: white;
 }}
 
-#HomeBtn:pressed QLabel, #AgendaBtn:pressed QLabel, #AllNotesBtn:pressed QLabel, #TrashBtn:pressed QLabel, #SettingsBtn:pressed QLabel {{
+#HomeBtn:pressed QLabel, #AgendaBtn:pressed QLabel, #AllNotesBtn:pressed QLabel, #TrashBtn:pressed QLabel, #SettingsBtn:pressed QLabel, #ModelsHeaderBtn:pressed QLabel, #LibHeaderBtn:pressed QLabel {{
     color: white;
 }}
 
-#HomeBtn[active="true"], #AgendaBtn[active="true"], #AllNotesBtn[active="true"], #TrashBtn[active="true"], #SettingsBtn[active="true"] {{
+/* Clean, balanced symmetrical active section indicator without overlapping borders */
+#HomeBtn[active="true"], #AgendaBtn[active="true"], #AllNotesBtn[active="true"], 
+#TrashBtn[active="true"], #SettingsBtn[active="true"],
+#ModelsHeaderBtn[active="true"], #LibHeaderBtn[active="true"] {{
     background-color: {p['accent_light']};
-    border-left: 4px solid {p['border_focus']};
-    border-radius: 8px;
+    border: 1px solid {p['border_focus']};
+    border-radius: 10px;
 }}
 
-#HomeBtn[active="true"] QLabel, #AgendaBtn[active="true"] QLabel, #AllNotesBtn[active="true"] QLabel, #TrashBtn[active="true"] QLabel, #SettingsBtn[active="true"] QLabel {{
+#HomeBtn[active="true"] QLabel, #AgendaBtn[active="true"] QLabel, #AllNotesBtn[active="true"] QLabel, 
+#TrashBtn[active="true"] QLabel, #SettingsBtn[active="true"] QLabel,
+#ModelsHeaderBtn[active="true"] QLabel, #LibHeaderBtn[active="true"] QLabel {{
     color: {p['text_light']};
     font-weight: bold;
 }}
@@ -413,61 +424,19 @@ QPushButton#EmptyTrashBtn:hover {{
 /* Sidebar Collapse Toggle Button */
 #SidebarCollapseBtn {{
     background-color: transparent;
-    border: none;
-    border-radius: 6px;
-    padding: 4px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 0px;
+    margin: 0px;
 }}
 #SidebarCollapseBtn:hover {{
     background-color: {p['bg_input']};
-    border: 1px solid {p['border_color']};
+    border: 1px solid transparent;
+    border-radius: 10px;
 }}
 #SidebarCollapseBtn:pressed {{
     background-color: {p['border_color']};
-}}
-
-#ModelsHeaderBtn, #LibHeaderBtn {{
-    background-color: transparent;
-    border: none;
-    color: #B5A9BC;
-    text-align: left;
-    border-radius: 8px;
-}}
-#ModelsHeaderBtn:hover, #LibHeaderBtn:hover {{
-    background-color: {p['bg_input']};
-    color: white;
-}}
-#ModelsHeaderBtn:hover QLabel, #LibHeaderBtn:hover QLabel {{
-    color: white;
-}}
-#ModelsHeaderBtn[active="true"], #LibHeaderBtn[active="true"] {{
-    background-color: {p['accent_light']};
-    border-left: 4px solid {p['border_focus']};
-    border-radius: 8px;
-}}
-#ModelsHeaderBtn[active="true"] QLabel, #LibHeaderBtn[active="true"] QLabel {{
-    color: {p['text_light']};
-    font-weight: bold;
-}}
-
-/* Navigation Rail (Collapsed Sidebar) Responsive Symmetrical Styling */
-QPushButton[rail_mode="true"] {{
-    padding: 0px !important;
-    text-align: center !important;
-    border-radius: 10px !important;
-    margin: 0px !important;
-}}
-
-QPushButton#NewNoteBtn[rail_mode="true"], QPushButton#NewLibBtn[rail_mode="true"] {{
-    padding-left: 0px !important;
-    text-align: center !important;
-    border-radius: 10px !important;
-}}
-
-QPushButton[rail_mode="true"][active="true"] {{
-    background-color: {p['accent_light']} !important;
-    border: 1px solid {p['border_focus']} !important;
-    border-left: 1px solid {p['border_focus']} !important;
-    border-radius: 10px !important;
+    border-radius: 10px;
 }}
 
 /* Close button in Detail Panel */

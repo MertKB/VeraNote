@@ -1,7 +1,7 @@
 # ui/sidebar.py
 import os
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QListWidget, QListWidgetItem, QLabel, QFrame, QScrollArea)
+                             QListWidget, QListWidgetItem, QLabel, QFrame, QScrollArea, QSizePolicy)
 from PySide6.QtCore import Signal, QSize, Qt
 from PySide6.QtGui import QPixmap, QIcon
 from utils.i18n import t, get_lang
@@ -99,8 +99,8 @@ class Sidebar(QWidget):
         self.container = QWidget()
         self.container.setObjectName("SidebarContainer")
         self.main_layout = QVBoxLayout(self.container)
-        self.main_layout.setContentsMargins(12, 16, 12, 16)
-        self.main_layout.setSpacing(12)
+        self.main_layout.setContentsMargins(10, 12, 10, 12)
+        self.main_layout.setSpacing(8)
 
         # --- HEADER (Brand + Lock + Collapse Button) ---
         self.header_widget = QFrame()
@@ -118,7 +118,7 @@ class Sidebar(QWidget):
         self.brand_logo.setScaledContents(True)
         self.brand_logo.setPixmap(get_pixmap("brand", self.get_active_color(), 32))
 
-        # Brand label (stays fixed text "Vera Note" to prevent layout shift)
+        # Brand label
         self.brand_label = QLabel("Vera Note")
         self.brand_label.setObjectName("SidebarTitle")
         
@@ -131,20 +131,23 @@ class Sidebar(QWidget):
         self.lock_badge.setToolTip(t("status_incognito_on"))
         self.lock_badge.setVisible(False)
 
+        self.header_stretch = QWidget()
+        self.header_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
         # Collapse / Expand Rail Toggle Button (uses btn_sidebar.png)
         self.collapse_btn = QPushButton()
         self.collapse_btn.setObjectName("SidebarCollapseBtn")
         self.collapse_btn.setFixedSize(32, 32)
         self.collapse_btn.setCursor(Qt.PointingHandCursor)
-        self.collapse_btn.setIcon(get_icon("sidebar", self.get_inactive_color(), 18))
-        self.collapse_btn.setIconSize(QSize(18, 18))
+        self.collapse_btn.setIcon(get_icon("sidebar", self.get_inactive_color(), 20))
+        self.collapse_btn.setIconSize(QSize(20, 20))
         self.collapse_btn.setToolTip(t("sidebar_collapse"))
         self.collapse_btn.clicked.connect(self.toggle_collapsed)
 
         self.header_layout.addWidget(self.brand_logo)
         self.header_layout.addWidget(self.brand_label)
         self.header_layout.addWidget(self.lock_badge)
-        self.header_stretch = self.header_layout.addStretch()
+        self.header_layout.addWidget(self.header_stretch)
         self.header_layout.addWidget(self.collapse_btn)
         
         self.main_layout.addWidget(self.header_widget, 0, Qt.AlignCenter)
@@ -175,9 +178,12 @@ class Sidebar(QWidget):
         self.home_label = QLabel(t("home"))
         self.home_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
+        self.home_stretch = QWidget()
+        self.home_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
         self.home_layout.addWidget(self.home_icon, 0, Qt.AlignCenter)
         self.home_layout.addWidget(self.home_label)
-        self.home_layout.addStretch()
+        self.home_layout.addWidget(self.home_stretch)
         self.main_layout.addWidget(self.home_btn, 0, Qt.AlignCenter)
 
         # --- AGENDA BUTTON ---
@@ -199,18 +205,40 @@ class Sidebar(QWidget):
         self.agenda_label = QLabel(t("nav_agenda"))
         self.agenda_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
+        self.agenda_stretch = QWidget()
+        self.agenda_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
         self.agenda_layout.addWidget(self.agenda_icon, 0, Qt.AlignCenter)
         self.agenda_layout.addWidget(self.agenda_label)
-        self.agenda_layout.addStretch()
+        self.agenda_layout.addWidget(self.agenda_stretch)
         self.main_layout.addWidget(self.agenda_btn, 0, Qt.AlignCenter)
 
-        # --- SECTION: NOTES ---
-        self.new_note_btn = QPushButton(f"  {t('new_note')}")
+        # --- SECTION: NEW NOTE BUTTON ---
+        self.new_note_btn = QPushButton()
         self.new_note_btn.setObjectName("NewNoteBtn")
-        self.new_note_btn.setIcon(get_icon("add", "#FFFFFF", 18))
-        self.new_note_btn.setIconSize(QSize(18, 18))
         self.new_note_btn.setFixedSize(236, 40)
         self.new_note_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_note_requested.emit()))
+        
+        self.new_note_layout = QHBoxLayout(self.new_note_btn)
+        self.new_note_layout.setContentsMargins(16, 0, 16, 0)
+        self.new_note_layout.setSpacing(12)
+        
+        self.new_note_icon = QLabel()
+        self.new_note_icon.setFixedSize(20, 20)
+        self.new_note_icon.setScaledContents(True)
+        self.new_note_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.new_note_icon.setPixmap(get_pixmap("add", "#FFFFFF", 20))
+        
+        self.new_note_label = QLabel(t("new_note"))
+        self.new_note_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.new_note_label.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
+        
+        self.new_note_stretch = QWidget()
+        self.new_note_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
+        self.new_note_layout.addWidget(self.new_note_icon, 0, Qt.AlignCenter)
+        self.new_note_layout.addWidget(self.new_note_label)
+        self.new_note_layout.addWidget(self.new_note_stretch)
         self.main_layout.addWidget(self.new_note_btn, 0, Qt.AlignCenter)
 
         # --- ALL NOTES BUTTON ---
@@ -238,9 +266,12 @@ class Sidebar(QWidget):
         self.all_notes_badge.setFixedSize(24, 20)
         self.all_notes_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
         
+        self.all_notes_stretch = QWidget()
+        self.all_notes_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
         self.all_notes_layout.addWidget(self.all_notes_icon, 0, Qt.AlignCenter)
         self.all_notes_layout.addWidget(self.all_notes_label)
-        self.all_notes_layout.addStretch()
+        self.all_notes_layout.addWidget(self.all_notes_stretch)
         self.all_notes_layout.addWidget(self.all_notes_badge)
         self.main_layout.addWidget(self.all_notes_btn, 0, Qt.AlignCenter)
 
@@ -269,9 +300,12 @@ class Sidebar(QWidget):
         self.trash_badge.setFixedSize(24, 20)
         self.trash_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
         
+        self.trash_stretch = QWidget()
+        self.trash_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
         self.trash_layout.addWidget(self.trash_icon, 0, Qt.AlignCenter)
         self.trash_layout.addWidget(self.trash_label)
-        self.trash_layout.addStretch()
+        self.trash_layout.addWidget(self.trash_stretch)
         self.trash_layout.addWidget(self.trash_badge)
         self.main_layout.addWidget(self.trash_btn, 0, Qt.AlignCenter)
 
@@ -282,22 +316,25 @@ class Sidebar(QWidget):
         self.models_header.clicked.connect(self.on_models_header_clicked)
         
         self.models_h_layout = QHBoxLayout(self.models_header)
-        self.models_h_layout.setContentsMargins(8, 0, 8, 0)
-        self.models_h_layout.setSpacing(8)
+        self.models_h_layout.setContentsMargins(16, 0, 16, 0)
+        self.models_h_layout.setSpacing(12)
         
         self.models_icon = QLabel()
-        self.models_icon.setFixedSize(16, 16)
+        self.models_icon.setFixedSize(20, 20)
         self.models_icon.setScaledContents(True)
         self.models_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.models_icon.setPixmap(get_pixmap("models", "#B5A9BC", 16))
+        self.models_icon.setPixmap(get_pixmap("models", "#B5A9BC", 20))
         
         self.models_label = QLabel(t("models_title"))
         self.models_label.setStyleSheet("color: #B5A9BC; font-size: 11px; font-weight: bold;")
         self.models_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
+        self.models_stretch = QWidget()
+        self.models_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
         self.models_h_layout.addWidget(self.models_icon, 0, Qt.AlignCenter)
         self.models_h_layout.addWidget(self.models_label)
-        self.models_h_layout.addStretch()
+        self.models_h_layout.addWidget(self.models_stretch)
         self.main_layout.addWidget(self.models_header, 0, Qt.AlignCenter)
 
         self.models_list = StaticListWidget()
@@ -322,22 +359,25 @@ class Sidebar(QWidget):
         self.lib_header.clicked.connect(self.on_lib_header_clicked)
         
         self.lib_h_layout = QHBoxLayout(self.lib_header)
-        self.lib_h_layout.setContentsMargins(8, 0, 8, 0)
-        self.lib_h_layout.setSpacing(8)
+        self.lib_h_layout.setContentsMargins(16, 0, 16, 0)
+        self.lib_h_layout.setSpacing(12)
         
         self.lib_icon = QLabel()
-        self.lib_icon.setFixedSize(16, 16)
+        self.lib_icon.setFixedSize(20, 20)
         self.lib_icon.setScaledContents(True)
         self.lib_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.lib_icon.setPixmap(get_pixmap("workflows", "#B5A9BC", 16))
+        self.lib_icon.setPixmap(get_pixmap("workflows", "#B5A9BC", 20))
 
         self.lib_label = QLabel(t("workflows_title"))
         self.lib_label.setStyleSheet("color: #B5A9BC; font-size: 11px; font-weight: bold;")
         self.lib_label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
+        self.lib_stretch = QWidget()
+        self.lib_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
         self.lib_h_layout.addWidget(self.lib_icon, 0, Qt.AlignCenter)
         self.lib_h_layout.addWidget(self.lib_label)
-        self.lib_h_layout.addStretch()
+        self.lib_h_layout.addWidget(self.lib_stretch)
         self.main_layout.addWidget(self.lib_header, 0, Qt.AlignCenter)
 
         self.libraries_list = StaticListWidget()
@@ -370,9 +410,12 @@ class Sidebar(QWidget):
         self.settings_label = QLabel(t("settings"))
         self.settings_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
+        self.settings_stretch = QWidget()
+        self.settings_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
         self.settings_layout.addWidget(self.settings_icon, 0, Qt.AlignCenter)
         self.settings_layout.addWidget(self.settings_label)
-        self.settings_layout.addStretch()
+        self.settings_layout.addWidget(self.settings_stretch)
         self.main_layout.addWidget(self.settings_btn, 0, Qt.AlignCenter)
 
         self.scroll_area.setWidget(self.container)
@@ -399,14 +442,11 @@ class Sidebar(QWidget):
         target_w = 64 if collapsed else 260
         self.setFixedWidth(target_w)
 
-        # Update dynamic rail_mode property on buttons for symmetrical QSS rendering
-        rail_val = "true" if collapsed else "false"
-        for btn in [self.collapse_btn, self.home_btn, self.agenda_btn, self.new_note_btn,
-                    self.all_notes_btn, self.trash_btn, self.models_header, self.lib_header,
-                    self.settings_btn]:
-            btn.setProperty("rail_mode", rail_val)
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
+        # Toggle inner stretch widgets (when hidden in collapsed mode, icons are 100% dead-centered)
+        for st in [self.header_stretch, self.home_stretch, self.agenda_stretch,
+                   self.new_note_stretch, self.all_notes_stretch, self.trash_stretch,
+                   self.models_stretch, self.lib_stretch, self.settings_stretch]:
+            st.setVisible(not collapsed)
 
         if collapsed:
             # Compact Navigation Rail margins
@@ -443,9 +483,11 @@ class Sidebar(QWidget):
             self.agenda_layout.setSpacing(0)
             self.agenda_btn.setToolTip(t("nav_agenda"))
             
-            # New note
+            # New note (dead-centered, same 44x40 size and 10px radius as all other buttons)
             self.new_note_btn.setFixedSize(btn_w, btn_h)
-            self.new_note_btn.setText("")
+            self.new_note_label.setVisible(False)
+            self.new_note_layout.setContentsMargins(0, 0, 0, 0)
+            self.new_note_layout.setSpacing(0)
             self.new_note_btn.setToolTip(t("new_note"))
             
             # All notes
@@ -469,7 +511,6 @@ class Sidebar(QWidget):
             self.models_label.setVisible(False)
             self.models_h_layout.setContentsMargins(0, 0, 0, 0)
             self.models_h_layout.setSpacing(0)
-            self.models_icon.setFixedSize(20, 20)
             curr_model = getattr(self, 'last_selected_model_lib', None) or (self.model_lib_names[0] if getattr(self, 'model_lib_names', None) else "")
             self.models_header.setToolTip(f"{t('models_title')}: {self.tr_lib_name(curr_model)}" if curr_model else t("models_title"))
             self.models_list.setVisible(False)
@@ -482,7 +523,6 @@ class Sidebar(QWidget):
             self.lib_label.setVisible(False)
             self.lib_h_layout.setContentsMargins(0, 0, 0, 0)
             self.lib_h_layout.setSpacing(0)
-            self.lib_icon.setFixedSize(20, 20)
             curr_wf = getattr(self, 'last_selected_workflow_lib', None) or (self.workflow_lib_names[0] if getattr(self, 'workflow_lib_names', None) else "")
             self.lib_header.setToolTip(f"{t('workflows_title')}: {self.tr_lib_name(curr_wf)}" if curr_wf else t("workflows_title"))
             self.libraries_list.setVisible(False)
@@ -530,7 +570,9 @@ class Sidebar(QWidget):
             
             # New note
             self.new_note_btn.setFixedSize(btn_w, btn_h)
-            self.new_note_btn.setText(f"  {t('new_note')}")
+            self.new_note_label.setVisible(True)
+            self.new_note_layout.setContentsMargins(16, 0, 16, 0)
+            self.new_note_layout.setSpacing(12)
             self.new_note_btn.setToolTip("")
             
             # All notes
@@ -552,9 +594,8 @@ class Sidebar(QWidget):
             # Models
             self.models_header.setFixedSize(btn_w, 32)
             self.models_label.setVisible(True)
-            self.models_h_layout.setContentsMargins(8, 0, 8, 0)
-            self.models_h_layout.setSpacing(8)
-            self.models_icon.setFixedSize(16, 16)
+            self.models_h_layout.setContentsMargins(16, 0, 16, 0)
+            self.models_h_layout.setSpacing(12)
             self.models_header.setToolTip("")
             if hasattr(self, 'comfyui_visible'):
                 self.models_list.setVisible(self.comfyui_visible)
@@ -573,9 +614,8 @@ class Sidebar(QWidget):
             # Workflows
             self.lib_header.setFixedSize(btn_w, 32)
             self.lib_label.setVisible(True)
-            self.lib_h_layout.setContentsMargins(8, 0, 8, 0)
-            self.lib_h_layout.setSpacing(8)
-            self.lib_icon.setFixedSize(16, 16)
+            self.lib_h_layout.setContentsMargins(16, 0, 16, 0)
+            self.lib_h_layout.setSpacing(12)
             self.lib_header.setToolTip("")
             if hasattr(self, 'comfyui_visible'):
                 self.libraries_list.setVisible(self.comfyui_visible)
@@ -657,14 +697,15 @@ class Sidebar(QWidget):
         active_color = self.get_active_color()
         inactive_color = "#E3E3E3"
         self.brand_logo.setPixmap(get_pixmap("brand", active_color, 32))
-        self.collapse_btn.setIcon(get_icon("sidebar", active_color if self.is_collapsed else self.get_inactive_color(), 18))
+        self.collapse_btn.setIcon(get_icon("sidebar", active_color if self.is_collapsed else self.get_inactive_color(), 20))
         self.home_icon.setPixmap(get_pixmap("home", active_color if item_type == 'home' else inactive_color, 20))
         self.agenda_icon.setPixmap(get_pixmap("calendar", active_color if item_type == 'agenda' else inactive_color, 20))
+        self.new_note_icon.setPixmap(get_pixmap("add", "#FFFFFF", 20))
         self.all_notes_icon.setPixmap(get_pixmap("notes", active_color if item_type == 'all_notes' else inactive_color, 20))
         self.trash_icon.setPixmap(get_pixmap("trash", active_color if item_type == 'trash' else inactive_color, 20))
         self.settings_icon.setPixmap(get_pixmap("settings", active_color if item_type == 'settings' else inactive_color, 20))
-        self.models_icon.setPixmap(get_pixmap("models", active_color if item_type == 'model' else "#B5A9BC", 20 if self.is_collapsed else 16))
-        self.lib_icon.setPixmap(get_pixmap("workflows", active_color if item_type == 'workflow' else "#B5A9BC", 20 if self.is_collapsed else 16))
+        self.models_icon.setPixmap(get_pixmap("models", active_color if item_type == 'model' else "#B5A9BC", 20))
+        self.lib_icon.setPixmap(get_pixmap("workflows", active_color if item_type == 'workflow' else "#B5A9BC", 20))
 
         if item_type == 'model':
             if name:
@@ -691,9 +732,8 @@ class Sidebar(QWidget):
     def retranslate_ui(self):
         self.home_label.setText(t("home"))
         self.agenda_label.setText(t("nav_agenda"))
-        if not self.is_collapsed:
-            self.new_note_btn.setText(f"  {t('new_note')}")
-            self.new_lib_btn.setText(f"  {t('new_lib')}")
+        self.new_note_label.setText(t("new_note"))
+        self.new_lib_btn.setText(f"  {t('new_lib')}")
         self.all_notes_label.setText(t("notes"))
         self.trash_label.setText(t("trash"))
         self.models_label.setText(t("models_title"))

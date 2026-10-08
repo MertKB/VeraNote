@@ -34,7 +34,7 @@ class TestIconManager(unittest.TestCase):
         self.assertFalse(sidebar.all_notes_icon.pixmap().isNull())
         self.assertFalse(sidebar.trash_icon.pixmap().isNull())
         self.assertFalse(sidebar.settings_icon.pixmap().isNull())
-        self.assertFalse(sidebar.new_note_btn.icon().isNull())
+        self.assertFalse(sidebar.new_note_icon.pixmap().isNull())
         self.assertFalse(sidebar.new_lib_btn.icon().isNull())
         # Verify section headers have vector icons
         self.assertFalse(sidebar.models_icon.pixmap().isNull())
