@@ -33,6 +33,10 @@ class Sidebar(QWidget):
         self.incognito_active_state = False
         self.comfyui_visible = True
         self.current_palette = {}
+        self.model_lib_names = []
+        self.last_selected_model_lib = None
+        self.workflow_lib_names = []
+        self.last_selected_workflow_lib = None
         self.init_palette()
 
         self.is_collapsed = False
@@ -118,7 +122,7 @@ class Sidebar(QWidget):
         self.brand_label = QLabel("Vera Note")
         self.brand_label.setObjectName("SidebarTitle")
         
-        # Lock badge (shown only when Incognito mode is active, prevents expanding brand text)
+        # Lock badge (shown only when Incognito mode is active)
         self.lock_badge = QLabel()
         self.lock_badge.setObjectName("SidebarLockBadge")
         self.lock_badge.setFixedSize(18, 18)
@@ -140,17 +144,17 @@ class Sidebar(QWidget):
         self.header_layout.addWidget(self.brand_logo)
         self.header_layout.addWidget(self.brand_label)
         self.header_layout.addWidget(self.lock_badge)
-        self.header_layout.addStretch()
+        self.header_stretch = self.header_layout.addStretch()
         self.header_layout.addWidget(self.collapse_btn)
         
-        self.main_layout.addWidget(self.header_widget)
+        self.main_layout.addWidget(self.header_widget, 0, Qt.AlignCenter)
 
-        # Separator
+        # Separator Line (centered divider)
         self.sep_line = QFrame()
         self.sep_line.setFrameShape(QFrame.HLine)
         self.sep_line.setFrameShadow(QFrame.Sunken)
         self.sep_line.setStyleSheet("background-color: #2F2F2F; margin: 4px 0px;")
-        self.main_layout.addWidget(self.sep_line)
+        self.main_layout.addWidget(self.sep_line, 0, Qt.AlignCenter)
 
         # --- HOME BUTTON ---
         self.home_btn = QPushButton()
@@ -395,19 +399,34 @@ class Sidebar(QWidget):
         target_w = 64 if collapsed else 260
         self.setFixedWidth(target_w)
 
+        # Update dynamic rail_mode property on buttons for symmetrical QSS rendering
+        rail_val = "true" if collapsed else "false"
+        for btn in [self.collapse_btn, self.home_btn, self.agenda_btn, self.new_note_btn,
+                    self.all_notes_btn, self.trash_btn, self.models_header, self.lib_header,
+                    self.settings_btn]:
+            btn.setProperty("rail_mode", rail_val)
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
+
         if collapsed:
             # Compact Navigation Rail margins
             self.main_layout.setContentsMargins(10, 12, 10, 12)
             self.main_layout.setSpacing(8)
             
-            # Header
+            # Header - Center collapse button perfectly in 44x40 footprint
+            self.header_widget.setFixedSize(44, 40)
+            self.header_layout.setContentsMargins(0, 0, 0, 0)
+            self.header_layout.setSpacing(0)
             self.brand_logo.setVisible(False)
             self.brand_label.setVisible(False)
             self.lock_badge.setVisible(False)
-            self.collapse_btn.setFixedSize(44, 36)
+            self.collapse_btn.setFixedSize(44, 40)
             self.collapse_btn.setToolTip(f"{t('sidebar_expand')} • {t('status_incognito_on')}" if self.incognito_active_state else t("sidebar_expand"))
             
-            # Buttons (44x40 square-ish centered rail buttons)
+            # Centered 36px separator divider
+            self.sep_line.setFixedWidth(36)
+
+            # Uniform 44x40 centered square-ish rail buttons
             btn_w, btn_h = 44, 40
             
             # Home
@@ -451,13 +470,12 @@ class Sidebar(QWidget):
             self.models_h_layout.setContentsMargins(0, 0, 0, 0)
             self.models_h_layout.setSpacing(0)
             self.models_icon.setFixedSize(20, 20)
-            self.models_header.setToolTip(t("models_title"))
+            curr_model = getattr(self, 'last_selected_model_lib', None) or (self.model_lib_names[0] if getattr(self, 'model_lib_names', None) else "")
+            self.models_header.setToolTip(f"{t('models_title')}: {self.tr_lib_name(curr_model)}" if curr_model else t("models_title"))
             self.models_list.setVisible(False)
             
-            # New lib
-            self.new_lib_btn.setFixedSize(btn_w, btn_h)
-            self.new_lib_btn.setText("")
-            self.new_lib_btn.setToolTip(t("new_lib"))
+            # Hide redundant '+' button in rail mode for pristine uncluttered layout
+            self.new_lib_btn.setVisible(False)
             
             # Workflows
             self.lib_header.setFixedSize(btn_w, btn_h)
@@ -465,7 +483,8 @@ class Sidebar(QWidget):
             self.lib_h_layout.setContentsMargins(0, 0, 0, 0)
             self.lib_h_layout.setSpacing(0)
             self.lib_icon.setFixedSize(20, 20)
-            self.lib_header.setToolTip(t("workflows_title"))
+            curr_wf = getattr(self, 'last_selected_workflow_lib', None) or (self.workflow_lib_names[0] if getattr(self, 'workflow_lib_names', None) else "")
+            self.lib_header.setToolTip(f"{t('workflows_title')}: {self.tr_lib_name(curr_wf)}" if curr_wf else t("workflows_title"))
             self.libraries_list.setVisible(False)
             
             # Settings
@@ -480,11 +499,17 @@ class Sidebar(QWidget):
             self.main_layout.setSpacing(12)
             
             # Header
+            self.header_widget.setFixedSize(236, 40)
+            self.header_layout.setContentsMargins(4, 4, 4, 4)
+            self.header_layout.setSpacing(6)
             self.brand_logo.setVisible(True)
             self.brand_label.setVisible(True)
             self.lock_badge.setVisible(self.incognito_active_state)
             self.collapse_btn.setFixedSize(32, 32)
             self.collapse_btn.setToolTip(t("sidebar_collapse"))
+            
+            # Separator line
+            self.sep_line.setFixedWidth(236)
             
             # Buttons
             btn_w, btn_h = 236, 40
@@ -540,6 +565,10 @@ class Sidebar(QWidget):
             self.new_lib_btn.setFixedSize(btn_w, btn_h)
             self.new_lib_btn.setText(f"  {t('new_lib')}")
             self.new_lib_btn.setToolTip("")
+            if hasattr(self, 'comfyui_visible'):
+                self.new_lib_btn.setVisible(self.comfyui_visible)
+            else:
+                self.new_lib_btn.setVisible(True)
             
             # Workflows
             self.lib_header.setFixedSize(btn_w, 32)
@@ -563,14 +592,46 @@ class Sidebar(QWidget):
         self.collapsed_toggled.emit(collapsed)
 
     def on_models_header_clicked(self):
+        if not hasattr(self, 'model_lib_names') or not self.model_lib_names:
+            return
+
         if self.is_collapsed:
-            target = self.model_lib_names[0] if hasattr(self, 'model_lib_names') and self.model_lib_names else "Checkpoint Modelleri"
+            # Cycle through model libraries when rail mode is active
+            if self.active_item_type == 'model' and getattr(self, 'last_selected_model_lib', None) in self.model_lib_names:
+                current_idx = self.model_lib_names.index(self.last_selected_model_lib)
+                next_idx = (current_idx + 1) % len(self.model_lib_names)
+            else:
+                next_idx = 0
+            
+            target = self.model_lib_names[next_idx]
+            self.last_selected_model_lib = target
+            self.set_active_item('model', target)
+            self.models_header.setToolTip(f"{t('models_title')}: {self.tr_lib_name(target)}")
+            self.library_selected.emit(target)
+        else:
+            target = self.last_selected_model_lib if (getattr(self, 'last_selected_model_lib', None) in self.model_lib_names) else self.model_lib_names[0]
             self.set_active_item('model', target)
             self.library_selected.emit(target)
 
     def on_lib_header_clicked(self):
+        if not hasattr(self, 'workflow_lib_names') or not self.workflow_lib_names:
+            self.workflow_lib_names = ["Genel"]
+
         if self.is_collapsed:
-            target = self.workflow_lib_names[0] if hasattr(self, 'workflow_lib_names') and self.workflow_lib_names else "Genel"
+            # Cycle through workflow libraries when rail mode is active
+            if self.active_item_type == 'workflow' and getattr(self, 'last_selected_workflow_lib', None) in self.workflow_lib_names:
+                current_idx = self.workflow_lib_names.index(self.last_selected_workflow_lib)
+                next_idx = (current_idx + 1) % len(self.workflow_lib_names)
+            else:
+                next_idx = 0
+            
+            target = self.workflow_lib_names[next_idx]
+            self.last_selected_workflow_lib = target
+            self.set_active_item('workflow', target)
+            self.lib_header.setToolTip(f"{t('workflows_title')}: {self.tr_lib_name(target)}")
+            self.workflow_library_selected.emit(target)
+        else:
+            target = self.last_selected_workflow_lib if (getattr(self, 'last_selected_workflow_lib', None) in self.workflow_lib_names) else self.workflow_lib_names[0]
             self.set_active_item('workflow', target)
             self.workflow_library_selected.emit(target)
 
@@ -605,19 +666,27 @@ class Sidebar(QWidget):
         self.models_icon.setPixmap(get_pixmap("models", active_color if item_type == 'model' else "#B5A9BC", 20 if self.is_collapsed else 16))
         self.lib_icon.setPixmap(get_pixmap("workflows", active_color if item_type == 'workflow' else "#B5A9BC", 20 if self.is_collapsed else 16))
 
-        if item_type != 'model':
+        if item_type == 'model':
+            if name:
+                self.last_selected_model_lib = name
+                if hasattr(self, 'model_lib_names') and name in self.model_lib_names:
+                    idx = self.model_lib_names.index(name)
+                    self.models_list.setCurrentRow(idx)
+            if self.is_collapsed and getattr(self, 'last_selected_model_lib', None):
+                self.models_header.setToolTip(f"{t('models_title')}: {self.tr_lib_name(self.last_selected_model_lib)}")
+        else:
             self.models_list.clearSelection()
-        else:
-            if name and hasattr(self, 'model_lib_names') and name in self.model_lib_names:
-                idx = self.model_lib_names.index(name)
-                self.models_list.setCurrentRow(idx)
 
-        if item_type != 'workflow':
-            self.libraries_list.clearSelection()
+        if item_type == 'workflow':
+            if name:
+                self.last_selected_workflow_lib = name
+                if hasattr(self, 'workflow_lib_names') and name in self.workflow_lib_names:
+                    idx = self.workflow_lib_names.index(name)
+                    self.libraries_list.setCurrentRow(idx)
+            if self.is_collapsed and getattr(self, 'last_selected_workflow_lib', None):
+                self.lib_header.setToolTip(f"{t('workflows_title')}: {self.tr_lib_name(self.last_selected_workflow_lib)}")
         else:
-            if name and hasattr(self, 'workflow_lib_names') and name in self.workflow_lib_names:
-                idx = self.workflow_lib_names.index(name)
-                self.libraries_list.setCurrentRow(idx)
+            self.libraries_list.clearSelection()
 
     def retranslate_ui(self):
         self.home_label.setText(t("home"))
@@ -648,7 +717,7 @@ class Sidebar(QWidget):
         if hasattr(self, 'models_list'):
             self.models_list.setVisible(visible and not self.is_collapsed)
         if hasattr(self, 'new_lib_btn'):
-            self.new_lib_btn.setVisible(visible)
+            self.new_lib_btn.setVisible(visible and not self.is_collapsed)
         if hasattr(self, 'lib_header'):
             self.lib_header.setVisible(visible)
         if hasattr(self, 'libraries_list'):
@@ -675,14 +744,14 @@ class Sidebar(QWidget):
 
     def update_models_list(self, models_with_counts, selected_model_lib=None):
         self.last_models_data = models_with_counts
-        self.last_selected_model_lib = selected_model_lib
+        self.last_selected_model_lib = selected_model_lib or (models_with_counts[0][0] if models_with_counts else None)
         self.models_list.clear()
         self.model_lib_names = []
         for lib_name, count in models_with_counts:
             item = QListWidgetItem(f"   {self.tr_lib_name(lib_name)} ({count})")
             self.models_list.addItem(item)
             self.model_lib_names.append(lib_name)
-            if selected_model_lib and lib_name == selected_model_lib:
+            if self.last_selected_model_lib and lib_name == self.last_selected_model_lib:
                 self.models_list.setCurrentRow(self.models_list.count() - 1)
         
         count = max(1, len(models_with_counts))
@@ -694,14 +763,14 @@ class Sidebar(QWidget):
 
     def update_workflow_libraries_list(self, workflow_libs_with_counts, selected_workflow_lib=None):
         self.last_workflow_libs_data = workflow_libs_with_counts
-        self.last_selected_workflow_lib = selected_workflow_lib
+        self.last_selected_workflow_lib = selected_workflow_lib or (workflow_libs_with_counts[0][0] if workflow_libs_with_counts else None)
         self.libraries_list.clear()
         self.workflow_lib_names = []
         for lib_name, count in workflow_libs_with_counts:
             item = QListWidgetItem(f"   {self.tr_lib_name(lib_name)} ({count})")
             self.libraries_list.addItem(item)
             self.workflow_lib_names.append(lib_name)
-            if selected_workflow_lib and lib_name == selected_workflow_lib:
+            if self.last_selected_workflow_lib and lib_name == self.last_selected_workflow_lib:
                 self.libraries_list.setCurrentRow(self.libraries_list.count() - 1)
 
         count = max(1, len(workflow_libs_with_counts))

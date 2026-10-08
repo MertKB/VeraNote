@@ -449,6 +449,27 @@ QPushButton#EmptyTrashBtn:hover {{
     font-weight: bold;
 }}
 
+/* Navigation Rail (Collapsed Sidebar) Responsive Symmetrical Styling */
+QPushButton[rail_mode="true"] {{
+    padding: 0px !important;
+    text-align: center !important;
+    border-radius: 10px !important;
+    margin: 0px !important;
+}}
+
+QPushButton#NewNoteBtn[rail_mode="true"], QPushButton#NewLibBtn[rail_mode="true"] {{
+    padding-left: 0px !important;
+    text-align: center !important;
+    border-radius: 10px !important;
+}}
+
+QPushButton[rail_mode="true"][active="true"] {{
+    background-color: {p['accent_light']} !important;
+    border: 1px solid {p['border_focus']} !important;
+    border-left: 1px solid {p['border_focus']} !important;
+    border-radius: 10px !important;
+}}
+
 /* Close button in Detail Panel */
 #CloseBtn {{
     background-color: transparent;

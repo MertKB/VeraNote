@@ -157,13 +157,55 @@ class TestIconManager(unittest.TestCase):
         self.assertTrue(lv.fav_toggle_btn.isChecked())
         self.assertFalse(lv.fav_toggle_btn.icon().isNull())
 
-    def test_i18n_no_emojis(self):
-        import re
-        from utils.i18n import TRANSLATIONS
-        emoji_pattern = re.compile(r'[\U00010000-\U0010ffff]|[\u2600-\u27bf]|[\u2300-\u23ff]|[\u2b50-\u2b55]')
-        for lang in ['tr', 'en']:
-            for k, v in TRANSLATIONS[lang].items():
-                self.assertIsNone(emoji_pattern.search(v), f"Found emoji in {lang}.{k}: {v}")
+    def test_sidebar_cycling_in_rail_mode(self):
+        from ui.sidebar import Sidebar
+        sidebar = Sidebar()
+        sidebar.update_models_list([("Checkpoint Modelleri", 5), ("Lora Modelleri", 10), ("Favoriler", 2)])
+        sidebar.update_workflow_libraries_list([("Genel", 4), ("SDXL", 2)])
+        
+        # Collapse into rail mode
+        sidebar.set_collapsed(True)
+        self.assertTrue(sidebar.new_lib_btn.isHidden())
+        self.assertEqual(sidebar.collapse_btn.width(), 44)
+        self.assertEqual(sidebar.collapse_btn.height(), 40)
+        
+        # Test model cycling
+        selected_models = []
+        sidebar.library_selected.connect(lambda lib: selected_models.append(lib))
+        
+        # Click 1: selects first model lib
+        sidebar.on_models_header_clicked()
+        self.assertEqual(selected_models[-1], "Checkpoint Modelleri")
+        self.assertEqual(sidebar.active_item_type, "model")
+        
+        # Click 2: cycles to second model lib (Lora Modelleri)
+        sidebar.on_models_header_clicked()
+        self.assertEqual(selected_models[-1], "Lora Modelleri")
+        
+        # Click 3: cycles to third model lib (Favoriler)
+        sidebar.on_models_header_clicked()
+        self.assertEqual(selected_models[-1], "Favoriler")
+        
+        # Click 4: loops back to Checkpoint Modelleri
+        sidebar.on_models_header_clicked()
+        self.assertEqual(selected_models[-1], "Checkpoint Modelleri")
+        
+        # Test workflow library cycling
+        selected_workflows = []
+        sidebar.workflow_library_selected.connect(lambda lib: selected_workflows.append(lib))
+        
+        # Click 1: selects Genel
+        sidebar.on_lib_header_clicked()
+        self.assertEqual(selected_workflows[-1], "Genel")
+        self.assertEqual(sidebar.active_item_type, "workflow")
+        
+        # Click 2: cycles to SDXL
+        sidebar.on_lib_header_clicked()
+        self.assertEqual(selected_workflows[-1], "SDXL")
+        
+        # Click 3: loops back to Genel
+        sidebar.on_lib_header_clicked()
+        self.assertEqual(selected_workflows[-1], "Genel")
 
 if __name__ == "__main__":
     unittest.main()

@@ -634,6 +634,8 @@ class AppController:
         self.win.sidebar.libraries_list.clearSelection()
         models = database.get_models_in_library(library_name, show_hidden=self.incognito_active)
         self.win.show_library(library_name, models)
+        if hasattr(self.win, 'sidebar') and getattr(self.win.sidebar, 'is_collapsed', False):
+            self.win.statusBar().showMessage(f"{i18n.t('models_title')}: {self.win.sidebar.tr_lib_name(library_name)}", 1500)
 
     @Slot(str)
     def on_workflow_library_selected(self, library_name):
@@ -645,6 +647,8 @@ class AppController:
         lib_id = database.get_library_id(library_name)
         workflows = database.get_workflows_in_library(lib_id, show_hidden=self.incognito_active)
         self.win.show_workflow_library(lib_id, library_name, workflows)
+        if hasattr(self.win, 'sidebar') and getattr(self.win.sidebar, 'is_collapsed', False):
+            self.win.statusBar().showMessage(f"{i18n.t('workflows_title')}: {self.win.sidebar.tr_lib_name(library_name)}", 1500)
 
     @Slot()
     def on_new_library_requested(self):
