@@ -22,8 +22,10 @@ class DetailPanel(QWidget):
     image_changed = Signal(int, str) # model_id, new_image_path
     add_trigger_requested = Signal(int, str) # model_id, word
     delete_trigger_requested = Signal(int, str) # model_id, word
+    set_triggers_requested = Signal(int, list) # model_id, triggers_list
     add_tag_requested = Signal(int, str) # model_id, tag_name
     delete_tag_requested = Signal(int, str) # model_id, tag_name
+    set_tags_requested = Signal(int, list) # model_id, tags_list
     delete_model_requested = Signal(int) # model_id
     save_note_requested = Signal(int, str, str, str, str, int, bool) # id, title, content, image_path, display_mode, is_fav, is_auto_save
     delete_note_requested = Signal(int) # note_id
@@ -146,8 +148,10 @@ class DetailPanel(QWidget):
         self.model_section.save_model_data_requested.connect(self.save_model_data_requested.emit)
         self.model_section.add_trigger_requested.connect(self.add_trigger_requested.emit)
         self.model_section.delete_trigger_requested.connect(self.delete_trigger_requested.emit)
+        self.model_section.set_triggers_requested.connect(self.set_triggers_requested.emit)
         self.model_section.add_tag_requested.connect(self.add_tag_requested.emit)
         self.model_section.delete_tag_requested.connect(self.delete_tag_requested.emit)
+        self.model_section.set_tags_requested.connect(self.set_tags_requested.emit)
         self.model_section.image_changed.connect(self.image_changed.emit)
         self.model_section.delete_model_requested.connect(self.delete_model_requested.emit)
         self.stack.addWidget(self.model_section) # index 0

@@ -16,8 +16,10 @@ class ModelSection(QWidget):
     save_model_data_requested = Signal(int, str, str, str) # model_id, name, notes, base_architecture
     add_trigger_requested = Signal(int, str) # model_id, word
     delete_trigger_requested = Signal(int, str) # model_id, word
+    set_triggers_requested = Signal(int, list) # model_id, triggers_list
     add_tag_requested = Signal(int, str) # model_id, tag
     delete_tag_requested = Signal(int, str) # model_id, tag
+    set_tags_requested = Signal(int, list) # model_id, tags_list
     image_changed = Signal(int, str) # model_id, file_path
     delete_model_requested = Signal(int) # model_id
 
@@ -89,8 +91,32 @@ class ModelSection(QWidget):
                 font-size: 12px;
             }
         """)
-        self.arch_combo.currentIndexChanged.connect(self.check_changes)
+        self.arch_combo.currentIndexChanged.connect(self._on_arch_combo_changed)
         arch_row.addWidget(self.arch_combo)
+
+        from utils.icon_manager import get_icon
+        self.detect_arch_btn = QPushButton(t("detail_arch_detect_btn"))
+        self.detect_arch_btn.setIcon(get_icon("lightning", "#8AB4F8", 12))
+        self.detect_arch_btn.setToolTip(t("detail_arch_detect_tooltip"))
+        self.detect_arch_btn.setCursor(Qt.PointingHandCursor)
+        self.detect_arch_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #8AB4F8;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #8AB4F8;
+            }
+        """)
+        self.detect_arch_btn.clicked.connect(self.run_manual_arch_detect)
+        arch_row.addWidget(self.detect_arch_btn)
+
         arch_row.addStretch()
         layout.addLayout(arch_row)
 
@@ -134,9 +160,38 @@ class ModelSection(QWidget):
         layout.addWidget(buttons_container)
 
         # --- MODEL TAGS SECTION ---
+        tags_header_layout = QHBoxLayout()
         self.tags_title = QLabel(t("detail_tags_title"))
         self.tags_title.setObjectName("DetailWordLabel")
-        layout.addWidget(self.tags_title)
+        tags_header_layout.addWidget(self.tags_title)
+        tags_header_layout.addStretch()
+
+        from utils.icon_manager import get_icon
+
+        # Copy to prompt button
+        self.copy_tags_btn = QPushButton(t("detail_tags_copy_prompt_btn"))
+        self.copy_tags_btn.setIcon(get_icon("notes", "#81C995", 12))
+        self.copy_tags_btn.setToolTip(t("detail_tags_copy_prompt_tooltip"))
+        self.copy_tags_btn.setCursor(Qt.PointingHandCursor)
+        self.copy_tags_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #81C995;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                padding: 3px 8px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #81C995;
+            }
+        """)
+        self.copy_tags_btn.clicked.connect(self.copy_tags_to_prompt)
+        tags_header_layout.addWidget(self.copy_tags_btn)
+
+        layout.addLayout(tags_header_layout)
 
         self.tags_container = QWidget()
         self.tags_layout = FlowLayout(self.tags_container, spacing=6)
@@ -150,9 +205,59 @@ class ModelSection(QWidget):
         layout.addWidget(self.new_tag_edit)
 
         # --- TRIGGER WORDS SECTION ---
+        tw_header_layout = QHBoxLayout()
         self.tw_title = QLabel(t("detail_triggers_title"))
         self.tw_title.setObjectName("DetailWordLabel")
-        layout.addWidget(self.tw_title)
+        tw_header_layout.addWidget(self.tw_title)
+        tw_header_layout.addStretch()
+
+        # Extract / Fetch from file button for triggers
+        self.fetch_tw_btn = QPushButton(t("detail_tw_fetch_btn"))
+        self.fetch_tw_btn.setIcon(get_icon("lightning", "#8AB4F8", 12))
+        self.fetch_tw_btn.setToolTip(t("detail_tw_fetch_tooltip"))
+        self.fetch_tw_btn.setCursor(Qt.PointingHandCursor)
+        self.fetch_tw_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #8AB4F8;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                padding: 3px 8px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #8AB4F8;
+            }
+        """)
+        self.fetch_tw_btn.clicked.connect(self.run_fetch_triggers)
+        tw_header_layout.addWidget(self.fetch_tw_btn)
+
+        # Reset triggers button
+        self.reset_tw_btn = QPushButton(t("detail_tw_reset_btn"))
+        self.reset_tw_btn.setIcon(get_icon("refresh", "#F28B82", 12))
+        self.reset_tw_btn.setToolTip(t("detail_tw_reset_tooltip"))
+        self.reset_tw_btn.setCursor(Qt.PointingHandCursor)
+        self.reset_tw_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #F28B82;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                padding: 3px 8px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #F28B82;
+            }
+        """)
+        self.reset_tw_btn.clicked.connect(self.run_reset_triggers)
+        tw_header_layout.addWidget(self.reset_tw_btn)
+
+        layout.addLayout(tw_header_layout)
 
         add_tw_container = QWidget()
         add_tw_layout = QHBoxLayout(add_tw_container)
@@ -245,6 +350,11 @@ class ModelSection(QWidget):
         layout.addWidget(self.sample_info_container)
         self.sample_info_container.setVisible(False)
 
+    def _map_detected_arch_to_combo(self, detected_arch: str) -> str:
+        """Maps detected architecture string (e.g. Flux.1, SD 3 / 3.5, Pony, Illustrious) to combo box options."""
+        from utils.safetensors_parser import map_architecture_to_canonical
+        return map_architecture_to_canonical(detected_arch)
+
     def set_model(self, model_data, trigger_words):
         self.model_data = model_data
         self.trigger_words = trigger_words or []
@@ -252,10 +362,31 @@ class ModelSection(QWidget):
         self.initial_notes = model_data.get('notes', '')
         self.current_image_path = model_data.get('image_path') or ""
 
+        file_path = model_data.get('file_path', '')
         arch = model_data.get('base_architecture') or ""
+        
+        # If arch is empty in DB, perform auto-detection once and persist to SQLite
         if not arch:
-            from utils.png_parser import detect_base_architecture
-            arch = detect_base_architecture([model_data.get('name', ''), model_data.get('file_path', '')])
+            try:
+                from utils.safetensors_parser import detect_lora_architecture, map_architecture_to_canonical
+                tags = model_data.get('tags', [])
+                detected = detect_lora_architecture(file_path, tags=tags)
+                mapped = map_architecture_to_canonical(detected)
+                if not mapped:
+                    from utils.png_parser import detect_base_architecture
+                    fallback = detect_base_architecture([model_data.get('name', ''), file_path])
+                    mapped = map_architecture_to_canonical(fallback)
+                if mapped:
+                    arch = mapped
+                    model_id = model_data.get('id')
+                    if model_id:
+                        self.model_data['base_architecture'] = arch
+                        self.save_model_data_requested.emit(model_id, self.initial_name, self.initial_notes, arch)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Error auto-detecting model arch: {e}")
+                arch = ""
+
         self.initial_arch = arch or t("detail_arch_auto")
 
         self.arch_combo.blockSignals(True)
@@ -273,13 +404,65 @@ class ModelSection(QWidget):
         self.name_edit.blockSignals(False)
         self.notes_edit.blockSignals(False)
 
-        self.path_label.setText(f"{t('detail_card_path')} {model_data.get('file_path', '')}")
+        self.path_label.setText(f"{t('detail_card_path')} {file_path}")
         self.save_btn.setEnabled(False)
 
         self.update_image()
         self.update_sample_generation_info()
         self.reload_tags()
         self.reload_pills()
+
+    def _on_arch_combo_changed(self, index):
+        if not self.model_data:
+            self.check_changes()
+            return
+        
+        selected_text = self.arch_combo.currentText().strip()
+        # If user explicitly selected "Auto Detect", trigger automatic detection
+        if selected_text == t("detail_arch_auto"):
+            self.run_manual_arch_detect()
+            return
+            
+        self.check_changes()
+
+    def run_manual_arch_detect(self):
+        """Runs the lightweight Safetensors header detector, updates ComboBox, and persists via signal."""
+        if not self.model_data:
+            return
+        file_path = self.model_data.get('file_path', '')
+        name = self.name_edit.text().strip() or self.model_data.get('name', '')
+        notes = self.notes_edit.toPlainText().strip() or self.model_data.get('notes', '')
+        tags = self.model_data.get('tags', [])
+        detected_arch = "Unknown"
+        mapped = ""
+        try:
+            from utils.safetensors_parser import detect_lora_architecture, map_architecture_to_canonical
+            detected_arch = detect_lora_architecture(file_path, tags=tags)
+            mapped = map_architecture_to_canonical(detected_arch)
+            if not mapped:
+                from utils.png_parser import detect_base_architecture
+                fallback = detect_base_architecture([name, file_path])
+                mapped = map_architecture_to_canonical(fallback)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error detecting arch in run_manual_arch_detect: {e}")
+            mapped = ""
+
+        if mapped:
+            idx = self.arch_combo.findText(mapped)
+            if idx >= 0:
+                self.arch_combo.blockSignals(True)
+                self.arch_combo.setCurrentIndex(idx)
+                self.arch_combo.blockSignals(False)
+
+            # Persist to SQLite and update card UI via signal (MVC clean)
+            model_id = self.model_data.get('id')
+            if model_id:
+                self.model_data['base_architecture'] = mapped
+                self.initial_arch = mapped
+                self.save_model_data_requested.emit(model_id, name, notes, mapped)
+
+            self.check_changes()
 
     def check_changes(self):
         if not self.model_data:
@@ -301,8 +484,21 @@ class ModelSection(QWidget):
         notes = self.notes_edit.toPlainText().strip()
         current_arch = self.arch_combo.currentText().strip()
         if current_arch == t("detail_arch_auto"):
-            from utils.png_parser import detect_base_architecture
-            current_arch = detect_base_architecture([name, self.model_data.get('file_path', '')])
+            file_path = self.model_data.get('file_path', '')
+            try:
+                from utils.safetensors_parser import detect_lora_architecture, map_architecture_to_canonical
+                det = detect_lora_architecture(file_path, tags=self.model_data.get('tags', []))
+                mapped = map_architecture_to_canonical(det)
+                if mapped:
+                    current_arch = mapped
+                else:
+                    from utils.png_parser import detect_base_architecture
+                    fallback = detect_base_architecture([name, file_path])
+                    current_arch = map_architecture_to_canonical(fallback) or fallback
+            except Exception:
+                from utils.png_parser import detect_base_architecture
+                current_arch = detect_base_architecture([name, file_path])
+
         if not name:
             QMessageBox.warning(self, t("msg_copy_error_title"), t("msg_model_name_empty"), QMessageBox.Ok)
             return
@@ -383,6 +579,94 @@ class ModelSection(QWidget):
         )
         if reply == QMessageBox.Yes:
             self.delete_tag_requested.emit(self.model_data['id'], tag)
+
+    def run_fetch_triggers(self):
+        """Extracts triggers and tags from .safetensors header and merges with existing triggers."""
+        if not self.model_data:
+            return
+        file_path = self.model_data.get('file_path', '')
+        if not file_path or not file_path.lower().endswith('.safetensors') or not os.path.exists(file_path):
+            win = self.window()
+            if win and hasattr(win, 'show_toast'):
+                win.show_toast(t("msg_no_file_tw_found"), "warning")
+            return
+
+        try:
+            from utils.safetensors_parser import extract_metadata_tags_and_triggers, merge_tags
+            extracted_triggers = extract_metadata_tags_and_triggers(file_path, max_tags=15)
+            if not extracted_triggers:
+                win = self.window()
+                if win and hasattr(win, 'show_toast'):
+                    win.show_toast(t("msg_no_file_tw_found"), "warning")
+                return
+
+            merged = merge_tags(self.trigger_words, extracted_triggers)
+            model_id = self.model_data.get('id')
+            if model_id:
+                self.trigger_words = merged
+                self.set_triggers_requested.emit(model_id, merged)
+                self.reload_pills()
+
+                win = self.window()
+                if win and hasattr(win, 'show_toast'):
+                    win.show_toast(t("msg_tw_extracted").format(count=len(extracted_triggers)), "success")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error fetching triggers from safetensors: {e}")
+
+    def run_reset_triggers(self):
+        """Resets trigger words strictly to what is extracted from the .safetensors file."""
+        if not self.model_data:
+            return
+        file_path = self.model_data.get('file_path', '')
+        if not file_path or not file_path.lower().endswith('.safetensors') or not os.path.exists(file_path):
+            win = self.window()
+            if win and hasattr(win, 'show_toast'):
+                win.show_toast(t("msg_no_file_tw_found"), "warning")
+            return
+
+        reply = QMessageBox.question(
+            self, t("msg_confirm_reset_tw_title"), t("msg_confirm_reset_tw_text"),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            from utils.safetensors_parser import extract_metadata_tags_and_triggers
+            extracted_triggers = extract_metadata_tags_and_triggers(file_path, max_tags=15)
+            model_id = self.model_data.get('id')
+            if model_id:
+                self.trigger_words = extracted_triggers or []
+                self.set_triggers_requested.emit(model_id, self.trigger_words)
+                self.reload_pills()
+                win = self.window()
+                if win and hasattr(win, 'show_toast'):
+                    win.show_toast(t("msg_tw_reset_done").format(count=len(self.trigger_words)), "info")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error resetting triggers from safetensors: {e}")
+
+    def copy_tags_to_prompt(self):
+        """Copies all current tags formatted as comma-separated text to clipboard."""
+        if not self.model_data:
+            return
+        tags = self.model_data.get('tags', [])
+        if not tags:
+            win = self.window()
+            if win and hasattr(win, 'show_toast'):
+                win.show_toast(t("msg_no_tags_to_copy"), "warning")
+            else:
+                QMessageBox.information(self, t("msg_copied_title"), t("msg_no_tags_to_copy"), QMessageBox.Ok)
+            return
+
+        prompt_tags = ", ".join(tags)
+        QGuiApplication.clipboard().setText(prompt_tags)
+        win = self.window()
+        if win and hasattr(win, 'show_toast'):
+            win.show_toast(t("msg_tags_copied_prompt"), "success")
+        else:
+            QMessageBox.information(self, t("msg_copied_title"), t("msg_tags_copied_prompt"), QMessageBox.Ok)
 
     def on_add_trigger(self):
         if not self.model_data:
@@ -495,6 +779,9 @@ class ModelSection(QWidget):
         self.name_title.setText(t("detail_card_title"))
         self.name_edit.setPlaceholderText(t("detail_card_title_placeholder"))
         self.arch_label.setText(t("detail_arch_label") + ":")
+        if hasattr(self, 'detect_arch_btn'):
+            self.detect_arch_btn.setText(t("detail_arch_detect_btn"))
+            self.detect_arch_btn.setToolTip(t("detail_arch_detect_tooltip"))
         self.notes_title.setText(t("detail_notes_title"))
         self.notes_edit.setPlaceholderText(t("detail_notes_placeholder_model"))
         self.save_btn.setText(t("detail_save_changes"))
@@ -502,6 +789,12 @@ class ModelSection(QWidget):
         self.tags_title.setText(t("detail_tags_title"))
         self.new_tag_edit.setPlaceholderText(t("detail_new_tag_placeholder"))
         self.tw_title.setText(t("detail_triggers_title"))
+        if hasattr(self, 'fetch_tw_btn'):
+            self.fetch_tw_btn.setText(t("detail_tw_fetch_btn"))
+            self.fetch_tw_btn.setToolTip(t("detail_tw_fetch_tooltip"))
+        if hasattr(self, 'reset_tw_btn'):
+            self.reset_tw_btn.setText(t("detail_tw_reset_btn"))
+            self.reset_tw_btn.setToolTip(t("detail_tw_reset_tooltip"))
         self.new_tw_edit.setPlaceholderText(t("detail_new_trigger_placeholder"))
         self.add_tw_btn.setText("+ " + t("detail_add_btn"))
         self.copy_all_btn.setText(t("detail_copy_all_words"))

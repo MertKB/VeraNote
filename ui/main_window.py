@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
     save_model_data_signal = Signal(int, str, str, str) # model_id, name, notes, base_architecture
     add_trigger_signal = Signal(int, str) # model_id, word
     delete_trigger_signal = Signal(int, str) # model_id, word
+    set_triggers_signal = Signal(int, list) # model_id, triggers_list
     scan_library_signal = Signal(str)
     settings_requested_signal = Signal()
     image_changed_signal = Signal(int, str)
@@ -144,6 +145,7 @@ class MainWindow(QMainWindow):
     note_dissociate_model_signal = Signal(int, int)
     add_tag_signal = Signal(int, str)
     delete_tag_signal = Signal(int, str)
+    set_tags_signal = Signal(int, list)
     save_workflow_data_signal = Signal(int, str, str, str) # id, name, description, notes
     delete_workflow_signal = Signal(int)
     workflow_image_changed_signal = Signal(int, str)
@@ -243,8 +245,10 @@ class MainWindow(QMainWindow):
         self.detail_panel.save_model_data_requested.connect(self.save_model_data_signal.emit)
         self.detail_panel.add_trigger_requested.connect(self.add_trigger_signal.emit)
         self.detail_panel.delete_trigger_requested.connect(self.delete_trigger_signal.emit)
+        self.detail_panel.set_triggers_requested.connect(self.set_triggers_signal.emit)
         self.detail_panel.add_tag_requested.connect(self.add_tag_signal.emit)
         self.detail_panel.delete_tag_requested.connect(self.delete_tag_signal.emit)
+        self.detail_panel.set_tags_requested.connect(self.set_tags_signal.emit)
         self.detail_panel.delete_model_requested.connect(self.delete_model_signal.emit)
         self.detail_panel.image_changed.connect(self.image_changed_signal.emit)
         self.detail_panel.save_note_requested.connect(self.save_note_new_signal.emit)

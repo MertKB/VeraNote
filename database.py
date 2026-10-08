@@ -688,17 +688,50 @@ def register_model(library_id, name, file_path, file_hash, base_architecture=Non
             if lib_row:
                 library_id = lib_row
         if not base_architecture:
-            from utils.png_parser import detect_base_architecture
-            base_architecture = detect_base_architecture([name, file_path])
+            if file_path and file_path.lower().endswith('.safetensors'):
+                try:
+                    from utils.safetensors_parser import detect_lora_architecture, map_architecture_to_canonical
+                    det = detect_lora_architecture(file_path)
+                    mapped = map_architecture_to_canonical(det)
+                    if mapped:
+                        base_architecture = mapped
+                except Exception:
+                    base_architecture = None
+            if not base_architecture:
+                from utils.png_parser import detect_base_architecture
+                from utils.safetensors_parser import map_architecture_to_canonical
+                fallback = detect_base_architecture([name, file_path])
+                base_architecture = map_architecture_to_canonical(fallback) or fallback
+        cursor.execute("SELECT id FROM models WHERE file_path = ?;", (file_path,))
+        existing_row = cursor.fetchone()
+        is_new = (existing_row is None)
+
         cursor.execute("""
             INSERT INTO models (library_id, name, file_path, file_hash, base_architecture) 
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(file_path) DO UPDATE SET 
                 file_hash = excluded.file_hash,
-                base_architecture = COALESCE(models.base_architecture, excluded.base_architecture);
+                base_architecture = CASE 
+                    WHEN models.base_architecture IS NOT NULL AND models.base_architecture != '' 
+                    THEN models.base_architecture 
+                    ELSE excluded.base_architecture 
+                END;
         """, (library_id, name, file_path, file_hash, base_architecture))
+        
+        inserted_id = cursor.lastrowid if is_new else existing_row['id']
+
+        # Only extract trigger words if this is a newly inserted card!
+        if is_new and inserted_id and file_path and file_path.lower().endswith('.safetensors'):
+            try:
+                from utils.safetensors_parser import extract_metadata_tags_and_triggers
+                extracted_triggers = extract_metadata_tags_and_triggers(file_path, max_tags=15)
+                for w in extracted_triggers or []:
+                    cursor.execute("INSERT OR IGNORE INTO trigger_words (model_id, word) VALUES (?, ?);", (inserted_id, w))
+            except Exception:
+                pass
+
         conn.commit()
-        return cursor.lastrowid
+        return inserted_id
 
 def update_model_data(model_id, name, notes, base_architecture=None):
     with get_connection() as conn:
@@ -707,6 +740,13 @@ def update_model_data(model_id, name, notes, base_architecture=None):
             cursor.execute("UPDATE models SET name = ?, notes = ?, base_architecture = ? WHERE id = ?;", (name, notes, base_architecture, model_id))
         else:
             cursor.execute("UPDATE models SET name = ?, notes = ? WHERE id = ?;", (name, notes, model_id))
+        conn.commit()
+
+def update_model_base_architecture(model_id, base_architecture):
+    """Directly updates base architecture for a model in SQLite."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE models SET base_architecture = ? WHERE id = ?;", (base_architecture, model_id))
         conn.commit()
 
 def update_model_image(model_id, image_path):
@@ -738,6 +778,52 @@ def delete_trigger_word(model_id, word):
         cursor.execute("DELETE FROM trigger_words WHERE model_id = ? AND word = ?;", (model_id, word))
         conn.commit()
 
+def set_trigger_words(model_id, words_list):
+    """
+    Atomically updates the entire trigger words list for a model in SQLite.
+    Clears existing trigger words and inserts the new list.
+    """
+    if not model_id:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM trigger_words WHERE model_id = ?;", (model_id,))
+            seen = set()
+            for word in words_list or []:
+                w = str(word).strip()
+                if not w or w.lower() in seen:
+                    continue
+                seen.add(w.lower())
+                cursor.execute("INSERT OR IGNORE INTO trigger_words (model_id, word) VALUES (?, ?);", (model_id, w))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error setting trigger words for model {model_id}: {e}")
+            return False
+
+def add_trigger_words_batch(model_id, words_list):
+    """
+    Inserts multiple trigger words for a model in a single transaction without deleting existing ones.
+    """
+    if not model_id or not words_list:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            seen = set()
+            for word in words_list or []:
+                w = str(word).strip()
+                if not w or w.lower() in seen:
+                    continue
+                seen.add(w.lower())
+                cursor.execute("INSERT OR IGNORE INTO trigger_words (model_id, word) VALUES (?, ?);", (model_id, w))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error adding trigger words batch for model {model_id}: {e}")
+            return False
+
 def register_models_batch(models_list):
     """Insert or update multiple models in a single fast database transaction."""
     if not models_list:
@@ -745,6 +831,14 @@ def register_models_batch(models_list):
     with get_connection() as conn:
         cursor = conn.cursor()
         try:
+            # Check which models are genuinely new before inserting
+            new_paths = []
+            for item in models_list:
+                fpath = item[2]
+                cursor.execute("SELECT id FROM models WHERE file_path = ?;", (fpath,))
+                if not cursor.fetchone():
+                    new_paths.append(fpath)
+
             sample = models_list[0]
             if len(sample) == 5:
                 cursor.executemany("""
@@ -752,7 +846,11 @@ def register_models_batch(models_list):
                     VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(file_path) DO UPDATE SET 
                         file_hash = excluded.file_hash,
-                        base_architecture = COALESCE(models.base_architecture, excluded.base_architecture);
+                        base_architecture = CASE 
+                            WHEN models.base_architecture IS NOT NULL AND models.base_architecture != '' 
+                            THEN models.base_architecture 
+                            ELSE excluded.base_architecture 
+                        END;
                 """, models_list)
             else:
                 cursor.executemany("""
@@ -760,6 +858,23 @@ def register_models_batch(models_list):
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(file_path) DO UPDATE SET file_hash = excluded.file_hash;
                 """, models_list)
+
+            # Auto-extract initial trigger words ONLY for newly created cards
+            if new_paths:
+                from utils.safetensors_parser import extract_metadata_tags_and_triggers
+                for fpath in new_paths:
+                    if fpath.lower().endswith('.safetensors') and os.path.exists(fpath):
+                        cursor.execute("SELECT id FROM models WHERE file_path = ?;", (fpath,))
+                        row = cursor.fetchone()
+                        if row:
+                            mid = row['id']
+                            try:
+                                trigs = extract_metadata_tags_and_triggers(fpath, max_tags=15)
+                                for tr in trigs or []:
+                                    cursor.execute("INSERT OR IGNORE INTO trigger_words (model_id, word) VALUES (?, ?);", (mid, tr))
+                            except Exception:
+                                pass
+
             conn.commit()
         except sqlite3.Error as e:
             conn.rollback()
@@ -889,6 +1004,67 @@ def delete_model_tag(model_id, tag_name):
             return False
         except sqlite3.Error as e:
             print(f"Error deleting tag {tag_name} for model {model_id}: {e}")
+            return False
+
+def set_model_tags(model_id, tags_list):
+    """
+    Atomically updates the entire tag list for a model in SQLite.
+    Removes existing model tags, assigns new ones, and cleans up orphan tags.
+    """
+    if not model_id:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            # 1. Clear existing model_tags for this model
+            cursor.execute("DELETE FROM model_tags WHERE model_id = ?;", (model_id,))
+            
+            # 2. Add each tag in tags_list
+            seen = set()
+            for tag in tags_list or []:
+                tag_name = str(tag).strip()
+                if not tag_name or tag_name.lower() in seen:
+                    continue
+                seen.add(tag_name.lower())
+                
+                cursor.execute("INSERT OR IGNORE INTO tags (name) VALUES (?);", (tag_name,))
+                cursor.execute("SELECT id FROM tags WHERE name = ?;", (tag_name,))
+                row = cursor.fetchone()
+                if row:
+                    cursor.execute("INSERT OR IGNORE INTO model_tags (model_id, tag_id) VALUES (?, ?);", (model_id, row['id']))
+            
+            # 3. Clean up orphan tags
+            cursor.execute("""
+                DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM model_tags);
+            """)
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error setting model tags for model {model_id}: {e}")
+            return False
+
+def add_model_tags_batch(model_id, tags_list):
+    """
+    Inserts multiple tags for a model in a single transaction without deleting existing tags.
+    """
+    if not model_id or not tags_list:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            for tag in tags_list:
+                tag_name = str(tag).strip()
+                if not tag_name:
+                    continue
+                cursor.execute("INSERT OR IGNORE INTO tags (name) VALUES (?);", (tag_name,))
+                cursor.execute("SELECT id FROM tags WHERE name = ?;", (tag_name,))
+                row = cursor.fetchone()
+                if row:
+                    cursor.execute("INSERT OR IGNORE INTO model_tags (model_id, tag_id) VALUES (?, ?);", (model_id, row['id']))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error adding model tags batch for model {model_id}: {e}")
             return False
 
 def delete_model(model_id):

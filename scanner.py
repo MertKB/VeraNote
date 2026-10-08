@@ -13,6 +13,7 @@ import time
 from PySide6.QtCore import QThread, Signal
 import database
 from utils.png_parser import detect_base_architecture
+from utils.safetensors_parser import detect_lora_architecture, map_architecture_to_canonical
 
 SUPPORTED_EXTENSIONS = ('.safetensors', '.ckpt', '.gguf', '.pt', '.bin', '.onnx')
 IGNORED_DIRS = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', '.idea', '.vscode', '.system_generated'}
@@ -71,7 +72,18 @@ class ModelScanner(QThread):
                     
                     # Register to database in batch (name defaults to filename without extension)
                     name = os.path.splitext(file)[0]
-                    base_arch = detect_base_architecture([name, file_path])
+                    base_arch = ""
+                    if file.lower().endswith('.safetensors'):
+                        try:
+                            det = detect_lora_architecture(file_path)
+                            base_arch = map_architecture_to_canonical(det)
+                        except Exception:
+                            base_arch = ""
+
+                    if not base_arch:
+                        fallback = detect_base_architecture([name, file_path])
+                        base_arch = map_architecture_to_canonical(fallback) or fallback
+
                     batch.append((library_id, name, file_path, file_hash, base_arch))
                     
                     # Insert in batches of 100 to reduce transaction and IO locking overhead

@@ -51,6 +51,7 @@ class AppController:
         self.win.save_model_data_signal.connect(self.on_save_model_data)
         self.win.add_trigger_signal.connect(self.on_add_trigger)
         self.win.delete_trigger_signal.connect(self.on_delete_trigger)
+        self.win.set_triggers_signal.connect(self.on_set_triggers)
         self.win.image_changed_signal.connect(self.on_model_image_changed)
         self.win.scan_library_signal.connect(self.on_scan_library)
         
@@ -59,6 +60,7 @@ class AppController:
         self.win.workflow_favorite_toggled_signal.connect(self.on_workflow_favorite_toggled)
         self.win.add_tag_signal.connect(self.on_add_tag)
         self.win.delete_tag_signal.connect(self.on_delete_tag)
+        self.win.set_tags_signal.connect(self.on_set_tags)
         self.win.bulk_add_tag_signal.connect(self.on_bulk_add_tag)
         self.win.bulk_remove_tag_signal.connect(self.on_bulk_remove_tag)
         self.win.bulk_favorite_signal.connect(self.on_bulk_favorite)
@@ -987,6 +989,14 @@ class AppController:
         if model_data:
             self.win.detail_panel.set_model(model_data, trigger_words)
 
+    @Slot(int, list)
+    def on_set_triggers(self, model_id, triggers):
+        if database.set_trigger_words(model_id, triggers):
+            model_data = database.get_model_by_id(model_id)
+            trigger_words = database.get_trigger_words(model_id)
+            if model_data:
+                self.win.detail_panel.set_model(model_data, trigger_words)
+
     @Slot(int, str)
     def on_model_image_changed(self, model_id, file_path):
         dest_dir = os.path.abspath(database.SAVED_IMAGES_DIR)
@@ -1109,6 +1119,11 @@ class AppController:
         if database.delete_model_tag(model_id, tag_name):
             self.win.statusBar().showMessage(i18n.t("status_tag_removed").format(tag_name=tag_name), 2000)
             self.win.show_toast(i18n.t("status_tag_removed").format(tag_name=tag_name), "info")
+            self.refresh_active_model_details(model_id)
+
+    @Slot(int, list)
+    def on_set_tags(self, model_id, tags):
+        if database.set_model_tags(model_id, tags):
             self.refresh_active_model_details(model_id)
 
     @Slot(list)
