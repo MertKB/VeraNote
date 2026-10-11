@@ -37,10 +37,10 @@ class AppController:
         self.showing_trash = False
         self.incognito_active = False
 
-        # Setup Incognito Shortcut
+        # Setup Application Shortcuts
         from PySide6.QtGui import QKeySequence, QShortcut
-        self.incognito_shortcut = QShortcut(QKeySequence("Ctrl+Shift+N"), self.win)
-        self.incognito_shortcut.activated.connect(self.toggle_incognito_mode)
+        self.shortcuts = database.get_shortcuts()
+        self.setup_shortcuts()
 
         # Connect Notebook & Tag Signals
         self.win.notebook_selected_signal.connect(self.on_notebook_selected)
@@ -1038,8 +1038,9 @@ class AppController:
         lang = database.get_setting("lang", "en")
         custom_colors = database.get_setting("custom_theme_colors", "{}")
         sidebar_notebooks_limit = int(database.get_setting("sidebar_notebooks_limit", "5"))
+        shortcuts = database.get_shortcuts()
         
-        dialog.set_settings(lora_path, ckpt_path, int(auto_save_enabled), float(auto_save_interval), theme, lang, custom_colors, comfyui_enabled=comfyui_enabled, sidebar_notebooks_limit=sidebar_notebooks_limit)
+        dialog.set_settings(lora_path, ckpt_path, int(auto_save_enabled), float(auto_save_interval), theme, lang, custom_colors, comfyui_enabled=comfyui_enabled, sidebar_notebooks_limit=sidebar_notebooks_limit, shortcuts=shortcuts)
 
         def on_backup_restored(path):
             self.refresh_libraries()
@@ -1063,6 +1064,8 @@ class AppController:
             new_limit = int(settings.get('sidebar_notebooks_limit', 5))
             new_custom_colors = settings.get('custom_theme_colors', {})
             new_custom_colors_str = json.dumps(new_custom_colors)
+            new_shortcuts = settings.get('shortcuts', {})
+            new_shortcuts_str = json.dumps(new_shortcuts)
 
             # Check for actual modifications
             comfyui_changed = (int(new_comfyui) != comfyui_enabled)
@@ -1074,11 +1077,13 @@ class AppController:
             colors_changed = (new_custom_colors_str != custom_colors)
             lang_changed = (new_lang != lang)
             limit_changed = (new_limit != sidebar_notebooks_limit)
+            shortcuts_changed = (new_shortcuts_str != json.dumps(shortcuts))
 
             any_changed = any([
                 comfyui_changed, lora_changed, ckpt_changed,
                 ase_changed, asi_changed, theme_changed,
-                colors_changed, lang_changed, limit_changed
+                colors_changed, lang_changed, limit_changed,
+                shortcuts_changed
             ])
 
             if not any_changed:
@@ -1093,6 +1098,9 @@ class AppController:
             database.set_setting("lang", new_lang)
             database.set_setting("sidebar_notebooks_limit", str(new_limit))
             database.set_setting("custom_theme_colors", new_custom_colors_str)
+            if shortcuts_changed:
+                database.set_shortcuts(new_shortcuts)
+                self.apply_shortcuts(new_shortcuts)
 
             if limit_changed:
                 self.refresh_notebooks()
@@ -1385,6 +1393,64 @@ class AppController:
                 self.win.library_view.models_data = database.get_models_in_library(self.active_library, show_hidden=self.incognito_active)
                 
             self.win.library_view.on_local_search_changed(self.win.library_view.local_search.text())
+
+    def setup_shortcuts(self):
+        from PySide6.QtGui import QKeySequence, QShortcut
+        self.win.set_navigation_shortcuts(
+            self.shortcuts.get("nav_back", "Alt+Left"),
+            self.shortcuts.get("nav_forward", "Alt+Right")
+        )
+
+        self.incognito_shortcut = QShortcut(QKeySequence(self.shortcuts.get("incognito", "Ctrl+Shift+N")), self.win)
+        self.incognito_shortcut.activated.connect(self.toggle_incognito_mode)
+
+        self.new_note_shortcut = QShortcut(QKeySequence(self.shortcuts.get("new_note", "Ctrl+N")), self.win)
+        self.new_note_shortcut.activated.connect(self.on_create_new_note)
+
+        self.search_shortcut = QShortcut(QKeySequence(self.shortcuts.get("search", "Ctrl+F")), self.win)
+        self.search_shortcut.activated.connect(self.on_quick_search_requested)
+
+        self.settings_shortcut = QShortcut(QKeySequence(self.shortcuts.get("settings", "Ctrl+,")), self.win)
+        self.settings_shortcut.activated.connect(self.on_settings_requested)
+
+        if hasattr(self.win.notebooks_view, 'set_select_all_shortcut'):
+            self.win.notebooks_view.set_select_all_shortcut(self.shortcuts.get("select_all", "Ctrl+A"))
+        if hasattr(self.win.notes_view, 'set_select_all_shortcut'):
+            self.win.notes_view.set_select_all_shortcut(self.shortcuts.get("select_all", "Ctrl+A"))
+
+    def apply_shortcuts(self, shortcuts):
+        from PySide6.QtGui import QKeySequence
+        self.shortcuts = dict(shortcuts)
+        self.win.set_navigation_shortcuts(
+            self.shortcuts.get("nav_back", "Alt+Left"),
+            self.shortcuts.get("nav_forward", "Alt+Right")
+        )
+        if hasattr(self, 'incognito_shortcut'):
+            self.incognito_shortcut.setKey(QKeySequence(self.shortcuts.get("incognito", "Ctrl+Shift+N")))
+        if hasattr(self, 'new_note_shortcut'):
+            self.new_note_shortcut.setKey(QKeySequence(self.shortcuts.get("new_note", "Ctrl+N")))
+        if hasattr(self, 'search_shortcut'):
+            self.search_shortcut.setKey(QKeySequence(self.shortcuts.get("search", "Ctrl+F")))
+        if hasattr(self, 'settings_shortcut'):
+            self.settings_shortcut.setKey(QKeySequence(self.shortcuts.get("settings", "Ctrl+,")))
+        if hasattr(self.win.notebooks_view, 'set_select_all_shortcut'):
+            self.win.notebooks_view.set_select_all_shortcut(self.shortcuts.get("select_all", "Ctrl+A"))
+        if hasattr(self.win.notes_view, 'set_select_all_shortcut'):
+            self.win.notes_view.set_select_all_shortcut(self.shortcuts.get("select_all", "Ctrl+A"))
+
+    def on_quick_search_requested(self):
+        idx = self.win.center_stack.currentIndex()
+        if idx == 1 and hasattr(self.win.library_view, 'local_search'):
+            self.win.library_view.local_search.setFocus()
+            self.win.library_view.local_search.selectAll()
+        elif idx == 3 and hasattr(self.win.notes_view, 'search_edit'):
+            self.win.notes_view.search_edit.setFocus()
+            self.win.notes_view.search_edit.selectAll()
+        else:
+            self.on_all_notes_requested()
+            if hasattr(self.win.notes_view, 'search_edit'):
+                self.win.notes_view.search_edit.setFocus()
+                self.win.notes_view.search_edit.selectAll()
 
     def toggle_incognito_mode(self):
         self.incognito_active = not self.incognito_active

@@ -171,6 +171,10 @@ class NotebooksView(QWidget):
 
         self.init_ui()
 
+    def set_select_all_shortcut(self, key_seq_str):
+        if hasattr(self, 'select_all_shortcut') and self.select_all_shortcut:
+            self.select_all_shortcut.setKey(QKeySequence(key_seq_str or "Ctrl+A"))
+
     def init_ui(self):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(24, 24, 24, 24)

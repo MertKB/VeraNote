@@ -20,6 +20,20 @@ class NavigationEventFilter(QObject):
         super().__init__(main_window)
         self.main_window = main_window
 
+    def _matches_sequence(self, event, seq_str):
+        if not seq_str:
+            return False
+        # Backspace and Delete MUST NEVER match navigation shortcuts
+        if event.key() in (Qt.Key_Backspace, Qt.Key_Delete):
+            return False
+        target = QKeySequence(seq_str)
+        if target.isEmpty():
+            return False
+        try:
+            return QKeySequence(event.keyCombination()).toString() == target.toString()
+        except Exception:
+            return False
+
     def eventFilter(self, obj, event):
         etype = event.type()
         if etype == QEvent.MouseButtonPress:
@@ -31,15 +45,27 @@ class NavigationEventFilter(QObject):
                 self.main_window.navigate_forward()
                 return True
         elif etype == QEvent.KeyPress:
-            # Check for Back command (Qt.Key_Back, Alt+Left, or QKeySequence.Back)
-            if event.matches(QKeySequence.Back) or (event.modifiers() == Qt.AltModifier and event.key() == Qt.Key_Left) or event.key() == Qt.Key_Back:
-                from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit
-                if isinstance(obj, (QLineEdit, QTextEdit, QPlainTextEdit)) and event.key() == Qt.Key_Back:
-                    pass
-                else:
-                    self.main_window.navigate_back()
-                    return True
-            elif event.matches(QKeySequence.Forward) or (event.modifiers() == Qt.AltModifier and event.key() == Qt.Key_Right) or event.key() == Qt.Key_Forward:
+            # Under NO CIRCUMSTANCES intercept Backspace or Delete - they are strictly for text editing
+            if event.key() in (Qt.Key_Backspace, Qt.Key_Delete):
+                return super().eventFilter(obj, event)
+
+            # Check for Back command (custom shortcut, or Qt.Key_Back)
+            back_seq = getattr(self.main_window, 'nav_back_shortcut', 'Alt+Left')
+            if event.key() == Qt.Key_Back or self._matches_sequence(event, back_seq):
+                from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox
+                if isinstance(obj, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)) or (hasattr(obj, 'parent') and isinstance(obj.parent(), (QTextEdit, QPlainTextEdit))):
+                    if not (event.modifiers() & (Qt.AltModifier | Qt.ControlModifier)):
+                        return super().eventFilter(obj, event)
+                self.main_window.navigate_back()
+                return True
+
+            # Check for Forward command (custom shortcut, or Qt.Key_Forward)
+            forward_seq = getattr(self.main_window, 'nav_forward_shortcut', 'Alt+Right')
+            if event.key() == Qt.Key_Forward or self._matches_sequence(event, forward_seq):
+                from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox
+                if isinstance(obj, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)) or (hasattr(obj, 'parent') and isinstance(obj.parent(), (QTextEdit, QPlainTextEdit))):
+                    if not (event.modifiers() & (Qt.AltModifier | Qt.ControlModifier)):
+                        return super().eventFilter(obj, event)
                 self.main_window.navigate_forward()
                 return True
         return super().eventFilter(obj, event)
@@ -221,6 +247,8 @@ class MainWindow(QMainWindow):
         self._nav_history = []
         self._nav_forward = []
         self._nav_navigating = False
+        self.nav_back_shortcut = "Alt+Left"
+        self.nav_forward_shortcut = "Alt+Right"
 
         self.init_ui()
         self.setStyleSheet(STYLE_SHEET)
@@ -416,6 +444,14 @@ class MainWindow(QMainWindow):
             self._restore_nav_state(nxt)
             return True
         return False
+
+    def set_navigation_shortcuts(self, back_shortcut, forward_shortcut):
+        if back_shortcut in ("Backspace", "Delete"):
+            back_shortcut = "Alt+Left"
+        if forward_shortcut in ("Backspace", "Delete"):
+            forward_shortcut = "Alt+Right"
+        self.nav_back_shortcut = back_shortcut or "Alt+Left"
+        self.nav_forward_shortcut = forward_shortcut or "Alt+Right"
 
     def _restore_nav_state(self, state: tuple):
         self._nav_navigating = True

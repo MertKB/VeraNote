@@ -4,10 +4,12 @@ import json
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QFileDialog, QDialogButtonBox,
                              QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox, QWidget, QColorDialog,
-                             QApplication, QGridLayout, QScrollArea, QFrame, QMessageBox)
+                             QApplication, QGridLayout, QScrollArea, QFrame, QMessageBox,
+                             QKeySequenceEdit)
 from PySide6.QtCore import Qt, QObject, QEvent, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeySequence
 from utils.i18n import t, get_lang
+from database import DEFAULT_SHORTCUTS
 
 DEFAULT_CUSTOM_COLORS = {
     "bg_main": "#131314",
@@ -484,6 +486,101 @@ class SettingsDialog(QDialog):
         
         layout.addLayout(general_layout)
 
+        # Keyboard Shortcuts Section
+        shortcuts_layout = QVBoxLayout()
+        self.shortcuts_lbl = QLabel(t("settings_shortcuts_section"))
+        self.shortcuts_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #E3E3E3; margin-top: 10px;")
+        shortcuts_layout.addWidget(self.shortcuts_lbl)
+
+        self.shortcuts_desc_lbl = QLabel(t("settings_shortcuts_desc"))
+        self.shortcuts_desc_lbl.setStyleSheet("color: #9AA0A6; font-size: 11px;")
+        self.shortcuts_desc_lbl.setWordWrap(True)
+        shortcuts_layout.addWidget(self.shortcuts_desc_lbl)
+
+        # Shortcuts Grid
+        self.shortcuts_widget = QWidget()
+        shortcuts_grid = QGridLayout(self.shortcuts_widget)
+        shortcuts_grid.setContentsMargins(0, 4, 0, 4)
+        shortcuts_grid.setHorizontalSpacing(16)
+        shortcuts_grid.setVerticalSpacing(8)
+
+        self.shortcut_items = [
+            ("nav_back", "shortcut_nav_back"),
+            ("nav_forward", "shortcut_nav_forward"),
+            ("new_note", "shortcut_new_note"),
+            ("search", "shortcut_search"),
+            ("incognito", "shortcut_incognito"),
+            ("select_all", "shortcut_select_all"),
+            ("settings", "shortcut_settings"),
+        ]
+
+        self.shortcut_edits = {}
+        self.shortcut_labels = {}
+
+        for row_idx, (s_key, tr_key) in enumerate(self.shortcut_items):
+            lbl = QLabel(t(tr_key))
+            lbl.setStyleSheet("color: #E3E3E3; font-size: 12px;")
+            edit = QKeySequenceEdit()
+            edit.setStyleSheet("""
+                QKeySequenceEdit {
+                    background-color: #2D2F31;
+                    border: 1px solid #444746;
+                    border-radius: 6px;
+                    color: #E3E3E3;
+                    padding: 4px 8px;
+                    font-size: 12px;
+                    min-width: 140px;
+                }
+                QKeySequenceEdit:focus {
+                    border: 1px solid #8AB4F8;
+                    background-color: #35383B;
+                }
+            """)
+            def _make_validator(k, ed):
+                def _on_seq_changed(seq):
+                    s_str = seq.toString()
+                    if s_str in ("Backspace", "Delete"):
+                        ed.setKeySequence(QKeySequence(DEFAULT_SHORTCUTS.get(k, "")))
+                        ed.setToolTip(t("shortcut_backspace_warning"))
+                    else:
+                        ed.setToolTip("")
+                return _on_seq_changed
+            edit.keySequenceChanged.connect(_make_validator(s_key, edit))
+
+            shortcuts_grid.addWidget(lbl, row_idx, 0)
+            shortcuts_grid.addWidget(edit, row_idx, 1)
+            self.shortcut_labels[s_key] = (lbl, tr_key)
+            self.shortcut_edits[s_key] = edit
+
+        shortcuts_layout.addWidget(self.shortcuts_widget)
+
+        # Reset Shortcuts Button
+        reset_bar = QHBoxLayout()
+        self.reset_shortcuts_btn = QPushButton(t("shortcut_reset_defaults"))
+        self.reset_shortcuts_btn.setCursor(Qt.PointingHandCursor)
+        self.reset_shortcuts_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #9AA0A6;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                color: #E3E3E3;
+                border-color: #C4C7C5;
+            }
+        """)
+        self.reset_shortcuts_btn.clicked.connect(self.reset_shortcuts_to_defaults)
+        reset_bar.addWidget(self.reset_shortcuts_btn)
+        reset_bar.addStretch()
+        shortcuts_layout.addLayout(reset_bar)
+
+        layout.addLayout(shortcuts_layout)
+
         # Storage Info Section
         storage_layout = QVBoxLayout()
         self.storage_lbl = QLabel(t("settings_storage_title"))
@@ -717,6 +814,29 @@ class SettingsDialog(QDialog):
         except Exception:
             return "0 KB", "0 KB", "0 KB"
 
+    def reset_shortcuts_to_defaults(self):
+        for key, edit in getattr(self, 'shortcut_edits', {}).items():
+            def_seq = DEFAULT_SHORTCUTS.get(key, "")
+            edit.setKeySequence(QKeySequence(def_seq))
+
+    def get_shortcuts(self):
+        res = {}
+        for key, edit in getattr(self, 'shortcut_edits', {}).items():
+            seq_str = edit.keySequence().toString()
+            if not seq_str or seq_str in ("Backspace", "Delete"):
+                seq_str = DEFAULT_SHORTCUTS.get(key, "")
+            res[key] = seq_str
+        return res
+
+    def set_shortcuts(self, shortcuts_dict):
+        if not isinstance(shortcuts_dict, dict):
+            shortcuts_dict = {}
+        for key, edit in getattr(self, 'shortcut_edits', {}).items():
+            val = shortcuts_dict.get(key, DEFAULT_SHORTCUTS.get(key, ""))
+            if val in ("Backspace", "Delete"):
+                val = DEFAULT_SHORTCUTS.get(key, "")
+            edit.setKeySequence(QKeySequence(val))
+
     def get_settings(self):
         return {
             'comfyui_enabled': 1 if self.comfyui_enable_check.isChecked() else 0,
@@ -727,10 +847,11 @@ class SettingsDialog(QDialog):
             'theme': self.theme_combo.currentData(),
             'lang': self.lang_combo.currentData(),
             'custom_theme_colors': self.custom_colors,
-            'sidebar_notebooks_limit': int(self.sidebar_nb_combo.currentData() if (hasattr(self, 'sidebar_nb_combo') and self.sidebar_nb_combo.currentData() is not None) else 5)
+            'sidebar_notebooks_limit': int(self.sidebar_nb_combo.currentData() if (hasattr(self, 'sidebar_nb_combo') and self.sidebar_nb_combo.currentData() is not None) else 5),
+            'shortcuts': self.get_shortcuts()
         }
 
-    def set_settings(self, lora_path, ckpt_path, auto_save_enabled, auto_save_interval, theme, lang, custom_colors_data=None, comfyui_enabled=1, sidebar_notebooks_limit=5):
+    def set_settings(self, lora_path, ckpt_path, auto_save_enabled, auto_save_interval, theme, lang, custom_colors_data=None, comfyui_enabled=1, sidebar_notebooks_limit=5, shortcuts=None):
         self.comfyui_enable_check.setChecked(bool(comfyui_enabled))
         self.comfyui_paths_widget.setVisible(bool(comfyui_enabled))
         self.lora_path_edit.setText(lora_path)
@@ -751,6 +872,10 @@ class SettingsDialog(QDialog):
                 self.custom_colors.update(custom_colors_data)
                 
         self.update_color_buttons()
+
+        # Load shortcuts
+        if shortcuts is not None:
+            self.set_shortcuts(shortcuts)
 
         # Select items in combos
         idx = self.theme_combo.findData(theme)
@@ -790,6 +915,16 @@ class SettingsDialog(QDialog):
         for p_btn, tr_key in getattr(self, 'preset_buttons', []):
             p_btn.setText(t(tr_key))
         self.update_color_buttons()
+
+        # Shortcuts Section
+        if hasattr(self, 'shortcuts_lbl'):
+            self.shortcuts_lbl.setText(t("settings_shortcuts_section"))
+        if hasattr(self, 'shortcuts_desc_lbl'):
+            self.shortcuts_desc_lbl.setText(t("settings_shortcuts_desc"))
+        if hasattr(self, 'reset_shortcuts_btn'):
+            self.reset_shortcuts_btn.setText(t("shortcut_reset_defaults"))
+        for s_key, (lbl, tr_key) in getattr(self, 'shortcut_labels', {}).items():
+            lbl.setText(t(tr_key))
         
         # Re-populate theme combo box items dynamically
         self.theme_combo.blockSignals(True)

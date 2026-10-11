@@ -15,6 +15,7 @@ import contextlib
 import threading
 import zipfile
 import time
+import json
 
 # Thread-local storage for persistent per-thread SQLite connections
 _thread_local = threading.local()
@@ -460,6 +461,7 @@ def initialize_db():
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('lang', 'en');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('sidebar_notebooks_limit', '5');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('custom_theme_colors', '{\"bg_main\":\"#131314\",\"bg_card\":\"#1E1F20\",\"accent_color\":\"#1A73E8\"}');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('shortcuts', ?);", (json.dumps(DEFAULT_SHORTCUTS),))
             conn.commit()
         except sqlite3.Error as e:
             print(f"Error seeding libraries or settings: {e}")
@@ -467,6 +469,16 @@ def initialize_db():
 # --- CRUD METHODS ---
 
 # Settings
+DEFAULT_SHORTCUTS = {
+    "nav_back": "Alt+Left",
+    "nav_forward": "Alt+Right",
+    "new_note": "Ctrl+N",
+    "search": "Ctrl+F",
+    "incognito": "Ctrl+Shift+N",
+    "select_all": "Ctrl+A",
+    "settings": "Ctrl+,"
+}
+
 def get_setting(key, default=None):
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -479,6 +491,23 @@ def set_setting(key, value):
         cursor = conn.cursor()
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?);", (key, str(value)))
         conn.commit()
+
+def get_shortcuts():
+    val = get_setting("shortcuts")
+    if not val:
+        return dict(DEFAULT_SHORTCUTS)
+    try:
+        data = json.loads(val)
+        if isinstance(data, dict):
+            res = dict(DEFAULT_SHORTCUTS)
+            res.update(data)
+            return res
+    except Exception:
+        pass
+    return dict(DEFAULT_SHORTCUTS)
+
+def set_shortcuts(shortcuts_dict):
+    set_setting("shortcuts", json.dumps(shortcuts_dict))
 
 # Notes
 def save_note(note_id, title, content, image_path=None, display_mode='WITH_IMAGE', is_favorite=0, is_deleted=0, color_hex=None, notebook_id=None):

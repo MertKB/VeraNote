@@ -1297,7 +1297,7 @@ class LibraryView(QWidget):
         if event.key() == Qt.Key_Escape and self.selected_model_ids:
             self.clear_selection()
             return
-        elif event.key() in (Qt.Key_Delete, Qt.Key_Backspace) and self.selected_model_ids:
+        elif event.key() == Qt.Key_Delete and self.selected_model_ids:
             self.on_bulk_delete_clicked()
             return
         super().keyPressEvent(event)
