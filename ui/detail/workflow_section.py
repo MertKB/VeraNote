@@ -31,6 +31,9 @@ class WorkflowSection(QWidget):
         self.initial_workflow_description = ""
         self.initial_workflow_notes = ""
         self.node_widgets = []
+        self.highlight_color = "#8AB4F8"
+        self.accent_color = "#1A73E8"
+        self.palette = {}
         self.init_ui()
 
     def init_ui(self):
@@ -40,11 +43,11 @@ class WorkflowSection(QWidget):
 
         # Image preview
         self.image_label = QLabel()
+        self.image_label.setObjectName("DetailImageLabel")
         self.image_label.setFixedHeight(180)
         self.image_label.setMinimumWidth(0)
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.image_label.setStyleSheet("background-color: #131314; border-radius: 8px;")
         self.image_label.setCursor(Qt.PointingHandCursor)
         self.image_label.mousePressEvent = self.on_image_clicked
         layout.addWidget(self.image_label)
@@ -57,7 +60,6 @@ class WorkflowSection(QWidget):
         self.name_edit = QLineEdit()
         self.name_edit.setMinimumWidth(0)
         self.name_edit.setPlaceholderText(t("detail_card_title_placeholder"))
-        self.name_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.name_edit.textChanged.connect(self.check_changes)
         layout.addWidget(self.name_edit)
 
@@ -97,32 +99,18 @@ class WorkflowSection(QWidget):
         pos_hdr.addStretch()
 
         self.copy_pos_btn = QPushButton(t("workflow_copy_prompt"))
-        self.copy_pos_btn.setIcon(get_icon("notes", "#C2E7FF", 12))
-        self.copy_pos_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #C2E7FF;
-                border: 1px solid #444746;
-                border-radius: 12px;
-                padding: 3px 10px;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #8AB4F8;
-            }
-        """)
+        self.copy_pos_btn.setIcon(get_icon("notes", "#FFFFFF", 12))
+        self.copy_pos_btn.setObjectName("DetailSubBtn")
         self.copy_pos_btn.clicked.connect(self.copy_positive_prompt)
         pos_hdr.addWidget(self.copy_pos_btn)
         pos_layout.addLayout(pos_hdr)
 
         self.pos_prompt_edit = ZoomableTextEdit()
+        self.pos_prompt_edit.setObjectName("WorkflowPromptEdit")
         self.pos_prompt_edit.setMinimumWidth(0)
         self.pos_prompt_edit.setReadOnly(True)
         self.pos_prompt_edit.setMinimumHeight(60)
         self.pos_prompt_edit.setMaximumHeight(140)
-        self.pos_prompt_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 8px; color: #D1D5DB; font-size: 11px; padding: 6px;")
         pos_layout.addWidget(self.pos_prompt_edit)
         layout.addWidget(self.pos_prompt_container)
         self.pos_prompt_container.setVisible(False)
@@ -141,31 +129,17 @@ class WorkflowSection(QWidget):
 
         self.copy_neg_btn = QPushButton(t("workflow_copy_prompt"))
         self.copy_neg_btn.setIcon(get_icon("notes", "#F28B82", 12))
-        self.copy_neg_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #F28B82;
-                border: 1px solid #444746;
-                border-radius: 12px;
-                padding: 3px 10px;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #F28B82;
-            }
-        """)
+        self.copy_neg_btn.setObjectName("DetailSubBtnNeg")
         self.copy_neg_btn.clicked.connect(self.copy_negative_prompt)
         neg_hdr.addWidget(self.copy_neg_btn)
         neg_layout.addLayout(neg_hdr)
 
         self.neg_prompt_edit = ZoomableTextEdit()
+        self.neg_prompt_edit.setObjectName("WorkflowPromptEdit")
         self.neg_prompt_edit.setMinimumWidth(0)
         self.neg_prompt_edit.setReadOnly(True)
         self.neg_prompt_edit.setMinimumHeight(45)
         self.neg_prompt_edit.setMaximumHeight(100)
-        self.neg_prompt_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 8px; color: #D1D5DB; font-size: 11px; padding: 6px;")
         neg_layout.addWidget(self.neg_prompt_edit)
         layout.addWidget(self.neg_prompt_container)
         self.neg_prompt_container.setVisible(False)
@@ -189,61 +163,35 @@ class WorkflowSection(QWidget):
         params_hdr.addStretch()
 
         self.copy_params_btn = QPushButton(t("workflow_copy_params"))
-        self.copy_params_btn.setIcon(get_icon("notes", "#C2E7FF", 12))
-        self.copy_params_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #C2E7FF;
-                border: 1px solid #444746;
-                border-radius: 12px;
-                padding: 3px 10px;
-                font-size: 11px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #8AB4F8;
-            }
-        """)
+        self.copy_params_btn.setIcon(get_icon("notes", "#FFFFFF", 12))
+        self.copy_params_btn.setObjectName("DetailSubBtn")
         self.copy_params_btn.clicked.connect(self.copy_all_params)
         params_hdr.addWidget(self.copy_params_btn)
         params_layout.addLayout(params_hdr)
 
         # Seed row card with dedicated copy button
         self.seed_card = QWidget()
-        self.seed_card.setStyleSheet("background-color: #1E2022; border: 1px solid #383B3E; border-radius: 8px;")
+        self.seed_card.setObjectName("WorkflowSeedCard")
         seed_layout = QHBoxLayout(self.seed_card)
         seed_layout.setContentsMargins(10, 4, 8, 4)
         seed_layout.setSpacing(8)
 
         seed_title_lbl = QLabel("Seed:")
-        seed_title_lbl.setStyleSheet("color: #9AA0A6; font-size: 11px; font-weight: bold;")
+        seed_title_lbl.setObjectName("SeedTitleLabel")
         seed_layout.addWidget(seed_title_lbl)
 
         self.seed_value_lbl = QLabel("-")
-        self.seed_value_lbl.setStyleSheet("color: #E3E3E3; font-size: 12px; font-family: monospace; font-weight: bold;")
+        self.seed_value_lbl.setObjectName("SeedValueLabel")
         self.seed_value_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
         seed_layout.addWidget(self.seed_value_lbl)
         seed_layout.addStretch()
 
         self.copy_seed_btn = QPushButton()
-        self.copy_seed_btn.setIcon(get_icon("notes", "#A8C7FA", 12))
+        self.copy_seed_btn.setIcon(get_icon("notes", "#FFFFFF", 12))
         self.copy_seed_btn.setToolTip(t("workflow_copy_seed"))
+        self.copy_seed_btn.setObjectName("DetailSubBtn")
         self.copy_seed_btn.setFixedSize(26, 22)
         self.copy_seed_btn.setCursor(Qt.PointingHandCursor)
-        self.copy_seed_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #A8C7FA;
-                border: 1px solid #444746;
-                border-radius: 4px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #8AB4F8;
-            }
-        """)
         self.copy_seed_btn.clicked.connect(self.copy_seed_value)
         seed_layout.addWidget(self.copy_seed_btn)
         params_layout.addWidget(self.seed_card)
@@ -281,7 +229,6 @@ class WorkflowSection(QWidget):
         self.workflow_desc_edit = QTextEdit()
         self.workflow_desc_edit.setFixedHeight(60)
         self.workflow_desc_edit.setPlaceholderText(t("detail_workflow_desc_placeholder"))
-        self.workflow_desc_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.workflow_desc_edit.textChanged.connect(self.check_changes)
         layout.addWidget(self.workflow_desc_edit)
 
@@ -295,7 +242,6 @@ class WorkflowSection(QWidget):
         self.notes_edit.setPlaceholderText(t("detail_workflow_notes_ph"))
         self.notes_edit.setMinimumHeight(120)
         self.notes_edit.setMaximumHeight(200)
-        self.notes_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.notes_edit.textChanged.connect(self.check_changes)
         layout.addWidget(self.notes_edit)
 
@@ -374,17 +320,7 @@ class WorkflowSection(QWidget):
 
         for node_type, count in node_counts[:16]: # Top 16 node types
             pill = QLabel(f"{node_type} ×{count}" if count > 1 else node_type)
-            pill.setStyleSheet("""
-                QLabel {
-                    background-color: #242936;
-                    color: #A8C7FA;
-                    border: 1px solid #3c4456;
-                    border-radius: 10px;
-                    padding: 3px 8px;
-                    font-size: 11px;
-                    font-weight: 500;
-                }
-            """)
+            pill.setObjectName("WorkflowNodePill")
             self.nodes_layout.addWidget(pill)
             self.node_widgets.append(pill)
 
@@ -450,16 +386,7 @@ class WorkflowSection(QWidget):
             for label, val in param_labels:
                 if val is not None:
                     badge = QLabel(f"{label}: {val}")
-                    badge.setStyleSheet("""
-                        QLabel {
-                            background-color: #282A2C;
-                            color: #D1D5DB;
-                            border: 1px solid #3C4043;
-                            border-radius: 6px;
-                            padding: 3px 8px;
-                            font-size: 11px;
-                        }
-                    """)
+                    badge.setObjectName("WorkflowParamBadge")
                     self.other_params_layout.addWidget(badge)
             self.params_container.setVisible(True)
         else:
@@ -477,23 +404,9 @@ class WorkflowSection(QWidget):
         if models:
             for m in models:
                 pill = QPushButton(m)
+                pill.setObjectName("WorkflowModelPill")
                 pill.setCursor(Qt.PointingHandCursor)
                 pill.setToolTip(f"{m} (Kopyalamak için tıkla)")
-                pill.setStyleSheet("""
-                    QPushButton {
-                        background-color: #282A2C;
-                        color: #C2E7FF;
-                        border: 1px solid #3C4043;
-                        border-radius: 12px;
-                        padding: 3px 10px;
-                        font-size: 11px;
-                        font-weight: 500;
-                    }
-                    QPushButton:hover {
-                        background-color: #313438;
-                        border-color: #8AB4F8;
-                    }
-                """)
                 pill.clicked.connect(lambda _, name=m: self.copy_model_name(name))
                 self.models_pills_layout.addWidget(pill)
             self.used_models_container.setVisible(True)
@@ -579,7 +492,10 @@ class WorkflowSection(QWidget):
 
         self.image_label.setText(t("detail_select_image"))
         self.image_label.setPixmap(QPixmap())
-        self.image_label.setStyleSheet("color: #8AB4F8; font-size: 12px; background-color: #131314; border-radius: 8px; border: 2px dashed #444746; qproperty-alignment: AlignCenter;")
+        border_c = self.palette.get("border_color", "#444746") if hasattr(self, 'palette') and self.palette else "#444746"
+        bg_c = self.palette.get("card_img_bg", "#131314") if hasattr(self, 'palette') and self.palette else "#131314"
+        fg_c = self.palette.get("text_muted", "#9AA0A6") if hasattr(self, 'palette') and self.palette else "#9AA0A6"
+        self.image_label.setStyleSheet(f"color: {fg_c}; font-size: 12px; background-color: {bg_c}; border-radius: 8px; border: 2px dashed {border_c}; qproperty-alignment: AlignCenter;")
 
     def on_image_clicked(self, event):
         if not self.workflow_data:
@@ -678,3 +594,27 @@ class WorkflowSection(QWidget):
         self.copy_params_btn.setText(t("workflow_copy_params"))
         self.copy_seed_btn.setToolTip(t("workflow_copy_seed"))
         self.models_title.setText(t("workflow_used_models"))
+
+    def apply_theme(self, palette: dict):
+        if not palette:
+            return
+        from utils.icon_manager import get_icon
+        self.palette = palette
+        self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
+        self.accent_color = palette.get("accent_color", "#1A73E8")
+
+        fg = palette.get("text_main", "#FFFFFF")
+        self.copy_clip_btn.setIcon(get_icon("notes", fg, 14))
+        self.copy_pos_btn.setIcon(get_icon("notes", fg, 12))
+        self.copy_neg_btn.setIcon(get_icon("notes", "#F28B82", 12))
+        self.copy_params_btn.setIcon(get_icon("notes", fg, 12))
+        self.copy_seed_btn.setIcon(get_icon("notes", fg, 12))
+
+        self.update_image()
+        if self.workflow_data:
+            self.update_node_badges()
+            self.update_prompt_info()
+
+    def populate_nodes(self):
+        """Alias for update_node_badges for compatibility."""
+        self.update_node_badges()

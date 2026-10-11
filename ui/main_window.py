@@ -1,8 +1,8 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QStackedWidget, QSplitter, QTextEdit, QLineEdit, 
-                             QPushButton, QLabel, QMessageBox, QDockWidget)
-from PySide6.QtCore import Slot, Qt, Signal, QTimer, QEvent
-from PySide6.QtGui import QIcon
+                             QPushButton, QLabel, QMessageBox, QDockWidget, QApplication)
+from PySide6.QtCore import Slot, Qt, Signal, QTimer, QEvent, QObject
+from PySide6.QtGui import QIcon, QKeySequence
 from ui.sidebar import Sidebar
 from ui.welcome_screen import WelcomeScreen
 from ui.library_view import LibraryView
@@ -10,8 +10,39 @@ from ui.detail_panel import DetailPanel
 from ui.notes_view import NotesView
 from ui.workflow_view import WorkflowView
 from ui.agenda import AgendaView
+from ui.notebooks_view import NotebooksView
 from ui.styles import STYLE_SHEET
 from utils.i18n import t
+
+class NavigationEventFilter(QObject):
+    """Filters application-wide events for mouse and keyboard Back / Forward navigation commands."""
+    def __init__(self, main_window):
+        super().__init__(main_window)
+        self.main_window = main_window
+
+    def eventFilter(self, obj, event):
+        etype = event.type()
+        if etype == QEvent.MouseButtonPress:
+            btn = event.button()
+            if btn == Qt.BackButton:
+                self.main_window.navigate_back()
+                return True
+            elif btn == Qt.ForwardButton:
+                self.main_window.navigate_forward()
+                return True
+        elif etype == QEvent.KeyPress:
+            # Check for Back command (Qt.Key_Back, Alt+Left, or QKeySequence.Back)
+            if event.matches(QKeySequence.Back) or (event.modifiers() == Qt.AltModifier and event.key() == Qt.Key_Left) or event.key() == Qt.Key_Back:
+                from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit
+                if isinstance(obj, (QLineEdit, QTextEdit, QPlainTextEdit)) and event.key() == Qt.Key_Back:
+                    pass
+                else:
+                    self.main_window.navigate_back()
+                    return True
+            elif event.matches(QKeySequence.Forward) or (event.modifiers() == Qt.AltModifier and event.key() == Qt.Key_Right) or event.key() == Qt.Key_Forward:
+                self.main_window.navigate_forward()
+                return True
+        return super().eventFilter(obj, event)
 
 class ResettableDockWidget(QDockWidget):
     """Custom QDockWidget with styled background that cleanly notifies main window on close."""
@@ -164,6 +195,17 @@ class MainWindow(QMainWindow):
     bulk_delete_signal = Signal(list)
     delete_model_signal = Signal(int)
     file_dropped_signal = Signal(str)
+    add_note_tag_signal = Signal(int, str)
+    delete_note_tag_signal = Signal(int, str)
+    clear_note_tags_signal = Signal(int)
+    set_note_notebook_signal = Signal(int, object)
+    notebook_selected_signal = Signal(int, str)
+    all_notebooks_requested_signal = Signal()
+    new_notebook_signal = Signal()
+    rename_notebook_signal = Signal(int, str)
+    delete_notebook_signal = Signal(int, str)
+    bulk_delete_notebooks_signal = Signal(list)
+    notes_scope_changed_signal = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -175,6 +217,10 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self.setMinimumSize(960, 600)
         self.setAcceptDrops(True)
+
+        self._nav_history = []
+        self._nav_forward = []
+        self._nav_navigating = False
 
         self.init_ui()
         self.setStyleSheet(STYLE_SHEET)
@@ -210,6 +256,7 @@ class MainWindow(QMainWindow):
         self.notes_view.note_clicked.connect(self.note_clicked_signal.emit)
         self.notes_view.note_favorite_toggled.connect(self.note_favorite_toggled_signal.emit)
         self.notes_view.new_note_requested.connect(self.sidebar.new_note_requested.emit)
+        self.notes_view.scope_changed.connect(self.notes_scope_changed_signal.emit)
 
         self.workflow_view = WorkflowView()
         self.workflow_view.workflow_clicked.connect(self.workflow_clicked_signal.emit)
@@ -217,6 +264,7 @@ class MainWindow(QMainWindow):
         self.workflow_view.workflow_favorite_toggled.connect(self.workflow_favorite_toggled_signal.emit)
 
         self.agenda_view = AgendaView()
+        self.notebooks_view = NotebooksView()
 
         self.center_stack.addWidget(self.welcome_screen)  # index 0
         self.center_stack.addWidget(self.library_view)    # index 1
@@ -224,8 +272,30 @@ class MainWindow(QMainWindow):
         self.center_stack.addWidget(self.notes_view)     # index 3
         self.center_stack.addWidget(self.workflow_view)  # index 4
         self.center_stack.addWidget(self.agenda_view)    # index 5
+        self.center_stack.addWidget(self.notebooks_view) # index 6
         
         self.splitter.addWidget(self.center_stack)
+
+        # Connect Sidebar Notebook signals
+        self.sidebar.notebook_selected.connect(self.notebook_selected_signal.emit)
+        self.sidebar.all_notebooks_requested.connect(self.all_notebooks_requested_signal.emit)
+        self.sidebar.new_notebook_requested.connect(self.new_notebook_signal.emit)
+        self.sidebar.rename_notebook_requested.connect(self.rename_notebook_signal.emit)
+        self.sidebar.delete_notebook_requested.connect(self.delete_notebook_signal.emit)
+
+        # Connect NotebooksView signals
+        self.notebooks_view.notebook_opened.connect(self.notebook_selected_signal.emit)
+        self.notebooks_view.create_notebook_requested.connect(self.new_notebook_signal.emit)
+        self.notebooks_view.rename_notebook_requested.connect(self.rename_notebook_signal.emit)
+        self.notebooks_view.delete_notebook_requested.connect(self.delete_notebook_signal.emit)
+        self.notebooks_view.bulk_delete_notebooks_requested.connect(self.bulk_delete_notebooks_signal.emit)
+        self.notes_view.back_to_notebooks_requested.connect(self.all_notebooks_requested_signal.emit)
+
+        # Install Global Mouse & Keyboard Navigation Event Filter
+        app = QApplication.instance()
+        if app:
+            self._nav_filter = NavigationEventFilter(self)
+            app.installEventFilter(self._nav_filter)
 
         # Set stretch factors (Sidebar: 0, Center Stack: 1)
         self.splitter.setStretchFactor(0, 0) # Sidebar
@@ -257,6 +327,10 @@ class MainWindow(QMainWindow):
         self.detail_panel.workflow_image_changed.connect(self.workflow_image_changed_signal.emit)
         self.detail_panel.associate_model_requested.connect(self.note_associate_model_signal.emit)
         self.detail_panel.dissociate_model_requested.connect(self.note_dissociate_model_signal.emit)
+        self.detail_panel.add_note_tag_requested.connect(self.add_note_tag_signal.emit)
+        self.detail_panel.delete_note_tag_requested.connect(self.delete_note_tag_signal.emit)
+        self.detail_panel.clear_note_tags_requested.connect(self.clear_note_tags_signal.emit)
+        self.detail_panel.set_note_notebook_requested.connect(self.set_note_notebook_signal.emit)
 
         self.setObjectName("MainWindow")
 
@@ -314,12 +388,72 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'detail_panel') and getattr(self.detail_panel, 'mode', None) in ("MODEL", "WORKFLOW"):
                 self.hide_detail_panel()
 
+    def _record_nav_state(self, state: tuple):
+        if getattr(self, '_nav_navigating', False):
+            return
+        if not self._nav_history or self._nav_history[-1] != state:
+            self._nav_history.append(state)
+            self._nav_forward.clear()
+
+    def navigate_back(self):
+        # 1. If currently inside a notebook's notes view, return to notebooks overview
+        if self.center_stack.currentIndex() == 3 and self.notes_view.current_notebook_id is not None:
+            self.all_notebooks_requested_signal.emit()
+            return True
+        # 2. General history back
+        if len(self._nav_history) > 1:
+            curr = self._nav_history.pop()
+            self._nav_forward.append(curr)
+            prev = self._nav_history[-1]
+            self._restore_nav_state(prev)
+            return True
+        return False
+
+    def navigate_forward(self):
+        if self._nav_forward:
+            nxt = self._nav_forward.pop()
+            self._nav_history.append(nxt)
+            self._restore_nav_state(nxt)
+            return True
+        return False
+
+    def _restore_nav_state(self, state: tuple):
+        self._nav_navigating = True
+        try:
+            kind = state[0]
+            if kind == 'home':
+                self.sidebar.home_requested.emit()
+            elif kind == 'agenda':
+                self.sidebar.agenda_requested.emit()
+            elif kind == 'all_notebooks':
+                self.all_notebooks_requested_signal.emit()
+            elif kind == 'notebook':
+                self.notebook_selected_signal.emit(state[1], state[2])
+            elif kind == 'notes':
+                if len(state) > 1 and state[1]:
+                    self.sidebar.trash_requested.emit()
+                else:
+                    self.sidebar.all_notes_requested.emit()
+            elif kind == 'library':
+                self.sidebar.library_selected.emit(state[1])
+            elif kind == 'workflow_lib':
+                self.sidebar.workflow_library_selected.emit(state[2])
+        finally:
+            self._nav_navigating = False
+
     def show_welcome(self):
+        self._record_nav_state(('home',))
         self.sidebar.set_active_item('home')
         self.center_stack.setCurrentIndex(0)
         self.hide_detail_panel()
+        if getattr(self.welcome_screen, '_corkboard_dirty', False):
+            import database
+            cork_notes = database.get_corkboard_notes(show_hidden=getattr(self, 'incognito_active', False))
+            self.welcome_screen.set_corkboard_notes(cork_notes)
+            self.welcome_screen._corkboard_dirty = False
 
     def show_agenda(self):
+        self._record_nav_state(('agenda',))
         self.sidebar.set_active_item('agenda')
         self.center_stack.setCurrentIndex(5)
         self.hide_detail_panel()
@@ -335,6 +469,7 @@ class MainWindow(QMainWindow):
         self.hide_detail_panel()
 
     def show_library(self, name, models):
+        self._record_nav_state(('library', name))
         self.hide_detail_panel()
         self.sidebar.set_active_item('model', name)
         self.center_stack.setCurrentIndex(1)
@@ -343,6 +478,7 @@ class MainWindow(QMainWindow):
         self.library_view.set_library(name, models)
 
     def show_workflow_library(self, lib_id, name, workflows):
+        self._record_nav_state(('workflow_lib', lib_id, name))
         self.hide_detail_panel()
         self.sidebar.set_active_item('workflow', name)
         self.center_stack.setCurrentIndex(4)
@@ -350,13 +486,38 @@ class MainWindow(QMainWindow):
             self.workflow_view.resize(self.center_stack.size())
         self.workflow_view.set_workflows(lib_id, name, workflows)
 
-    def show_notes_panel(self, notes, is_trash=False):
+    def show_notes_panel(self, notes, is_trash=False, notebook_id=None, notebook_name=None):
+        if is_trash:
+            self._record_nav_state(('notes', True))
+        elif notebook_id is not None:
+            self._record_nav_state(('notebook', notebook_id, notebook_name))
+        else:
+            self._record_nav_state(('notes', False))
         self.hide_detail_panel()
-        self.sidebar.set_active_item('trash' if is_trash else 'all_notes')
+        if is_trash:
+            self.sidebar.set_active_item('trash')
+        elif notebook_id is not None:
+            self.sidebar.set_active_item('notebook', notebook_name)
+        else:
+            self.sidebar.set_active_item('all_notes')
         self.center_stack.setCurrentIndex(3)
         if self.center_stack.width() > 100:
             self.notes_view.resize(self.center_stack.size())
-        self.notes_view.set_notes(notes, is_trash=is_trash)
+        self.notes_view.set_notebook_context(notebook_id=notebook_id, notebook_name=notebook_name)
+        if notes is not None:
+            self.notes_view.set_notes(notes, is_trash=is_trash)
+
+    def show_notebook_panel(self, notebook_id, notebook_name, notes):
+        self.show_notes_panel(notes, is_trash=False, notebook_id=notebook_id, notebook_name=notebook_name)
+
+    def show_notebooks_overview(self, notebooks):
+        self._record_nav_state(('all_notebooks',))
+        self.hide_detail_panel()
+        self.sidebar.set_active_item('all_notebooks')
+        self.center_stack.setCurrentIndex(6)
+        if self.center_stack.width() > 100:
+            self.notebooks_view.resize(self.center_stack.size())
+        self.notebooks_view.set_notebooks(notebooks)
 
     def on_model_clicked(self, model_data):
         pass
@@ -398,22 +559,37 @@ class MainWindow(QMainWindow):
         self.save_note_signal.emit(None, title, content)
 
     def change_theme(self, theme_name, custom_colors=None):
-        from ui.styles import get_stylesheet, get_calendar_theme_config
-        from PySide6.QtWidgets import QApplication
+        from ui.styles import get_stylesheet, get_calendar_theme_config, get_palette
+        from utils.icon_manager import clear_cache
+        clear_cache()
+        
         stylesheet = get_stylesheet(theme_name, custom_colors)
-        app = QApplication.instance()
-        if app:
-            app.setStyleSheet(stylesheet)
-        self.setStyleSheet(stylesheet)
-        if hasattr(self, 'sidebar') and self.sidebar:
-            from ui.styles import get_palette
-            self.sidebar.apply_theme(get_palette(theme_name, custom_colors))
-        if hasattr(self, 'agenda_view') and self.agenda_view:
-            cal_theme = get_calendar_theme_config(theme_name, custom_colors)
-            self.agenda_view.set_calendar_theme(cal_theme)
-        if hasattr(self, 'detail_dock') and self.detail_dock:
-            self.detail_dock.setStyleSheet(stylesheet)
-            self.detail_dock.update()
+        palette = get_palette(theme_name, custom_colors)
+
+        # Freeze widget updates during style & theme cascade to avoid multiple redundant layout & paint passes
+        self.setUpdatesEnabled(False)
+        try:
+            self.setStyleSheet(stylesheet)
+            if hasattr(self, 'sidebar') and self.sidebar:
+                self.sidebar.apply_theme(palette)
+            if hasattr(self, 'notebooks_view') and self.notebooks_view:
+                self.notebooks_view.apply_theme(palette)
+            if hasattr(self, 'notes_view') and self.notes_view:
+                self.notes_view.apply_theme(palette)
+            if hasattr(self, 'agenda_view') and self.agenda_view:
+                cal_theme = get_calendar_theme_config(theme_name, custom_colors)
+                self.agenda_view.set_calendar_theme(cal_theme)
+            if hasattr(self, 'detail_panel') and self.detail_panel and hasattr(self.detail_panel, 'apply_theme'):
+                self.detail_panel.apply_theme(palette)
+            if hasattr(self, 'welcome_screen') and self.welcome_screen and hasattr(self.welcome_screen, 'apply_theme'):
+                self.welcome_screen.apply_theme(palette)
+            if hasattr(self, 'workflow_view') and self.workflow_view and hasattr(self.workflow_view, 'apply_theme'):
+                self.workflow_view.apply_theme(palette)
+            if hasattr(self, 'detail_dock') and self.detail_dock and self.detail_dock.isFloating():
+                self.detail_dock.setStyleSheet(stylesheet)
+        finally:
+            self.setUpdatesEnabled(True)
+            self.update()
 
     def retranslate_ui(self):
         self.setWindowTitle(t("app_title"))
@@ -424,6 +600,7 @@ class MainWindow(QMainWindow):
         self.library_view.retranslate_ui()
         self.workflow_view.retranslate_ui()
         self.agenda_view.retranslate_ui()
+        self.notebooks_view.retranslate_ui()
         self.detail_panel.retranslate_ui()
         if hasattr(self, 'detail_dock') and self.detail_dock and hasattr(self.detail_dock, 'setWindowTitle'):
             self.detail_dock.setWindowTitle(t("detail_dock_title"))

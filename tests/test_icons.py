@@ -265,5 +265,27 @@ class TestIconManager(unittest.TestCase):
         self.assertNotIn("[Gizle]", note_card.title_label.text())
         self.assertNotIn("[ Gizle]", note_card.title_label.text())
 
+    def test_sidebar_unified_icon_and_text_color(self):
+        from ui.sidebar import Sidebar
+        from ui.styles import get_palette, get_stylesheet
+        sidebar = Sidebar()
+        purple_pal = get_palette("Derin Mor")
+        sidebar.apply_theme(purple_pal)
+        
+        # Verify unified color returns white for dark theme
+        self.assertEqual(sidebar.get_unified_color(), "#FFFFFF")
+        self.assertEqual(sidebar.get_inactive_color(), "#FFFFFF")
+        
+        # Verify stylesheet sets unified sidebar_fg (#FFFFFF) for title, buttons, labels and badges
+        stylesheet = get_stylesheet("Derin Mor")
+        self.assertIn("color: #FFFFFF;", stylesheet)
+        
+        # Verify active color is theme's border_focus
+        self.assertEqual(sidebar.get_active_color(), "#D7AEF5")
+        
+        # Verify models and workflows header heights are standardized to 40px
+        self.assertEqual(sidebar.models_header.height(), 40)
+        self.assertEqual(sidebar.lib_header.height(), 40)
+
 if __name__ == "__main__":
     unittest.main()

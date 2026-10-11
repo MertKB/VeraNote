@@ -102,9 +102,10 @@ class WorkflowCardWidget(QFrame):
     unhide_requested = Signal(dict)
     favorite_toggled = Signal(int, bool)
 
-    def __init__(self, workflow_data, parent=None):
+    def __init__(self, workflow_data, highlight_color="#8AB4F8", parent=None):
         super().__init__(parent)
         self.workflow_data = workflow_data
+        self.highlight_color = highlight_color
         self.setObjectName("ModelCard") # Reuse ModelCard styles (border-radius, hover, etc.)
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedSize(200, 240)
@@ -154,26 +155,26 @@ class WorkflowCardWidget(QFrame):
         # Quick Copy Prompt Button Overlay on bottom-right of image
         self.copy_prompt_btn = QPushButton(self.image_label)
         from utils.icon_manager import get_icon
-        self.copy_prompt_btn.setIcon(get_icon("notes", "#C2E7FF", 12))
+        self.copy_prompt_btn.setIcon(get_icon("notes", self.highlight_color, 12))
         self.copy_prompt_btn.setObjectName("CardCopyPromptBtn")
         self.copy_prompt_btn.setFixedSize(26, 26)
         self.copy_prompt_btn.setGeometry(166, 101, 26, 26)
         self.copy_prompt_btn.setCursor(Qt.PointingHandCursor)
         self.copy_prompt_btn.setToolTip(t("workflow_copy_prompt"))
-        self.copy_prompt_btn.setStyleSheet("""
-            QPushButton#CardCopyPromptBtn {
+        self.copy_prompt_btn.setStyleSheet(f"""
+            QPushButton#CardCopyPromptBtn {{
                 background-color: rgba(30, 31, 34, 0.75);
                 border: 1px solid rgba(68, 71, 70, 0.8);
                 border-radius: 13px;
-                color: #C2E7FF;
+                color: {self.highlight_color};
                 font-size: 11px;
                 padding: 0px;
-            }
-            QPushButton#CardCopyPromptBtn:hover {
+            }}
+            QPushButton#CardCopyPromptBtn:hover {{
                 background-color: rgba(26, 115, 232, 0.9);
-                border-color: #8AB4F8;
+                border-color: {self.highlight_color};
                 color: #FFFFFF;
-            }
+            }}
         """)
         self.copy_prompt_btn.clicked.connect(self.on_copy_prompt_clicked)
 
@@ -262,7 +263,7 @@ class WorkflowCardWidget(QFrame):
             self.copy_prompt_btn.setText("✓")
             self.copy_prompt_btn.setIcon(QIcon())
             from utils.icon_manager import get_icon
-            QTimer.singleShot(1500, lambda: [self.copy_prompt_btn.setText(""), self.copy_prompt_btn.setIcon(get_icon("notes", "#C2E7FF", 12)), self.copy_prompt_btn.setEnabled(True)] if hasattr(self, 'copy_prompt_btn') and self.copy_prompt_btn else None)
+            QTimer.singleShot(1500, lambda: [self.copy_prompt_btn.setText(""), self.copy_prompt_btn.setIcon(get_icon("notes", self.highlight_color, 12)), self.copy_prompt_btn.setEnabled(True)] if hasattr(self, 'copy_prompt_btn') and self.copy_prompt_btn else None)
 
     def update_content(self):
         metrics = QFontMetrics(self.font())
@@ -363,11 +364,33 @@ class WorkflowCardWidget(QFrame):
         # Default Flow placeholder (vector icon styling)
         self.image_label.setText("")
         from utils.icon_manager import get_pixmap
-        self.image_label.setPixmap(get_pixmap("workflows", "#8AB4F8", 48))
+        self.image_label.setPixmap(get_pixmap("workflows", self.highlight_color, 48))
         self.image_label.setStyleSheet("""
             background-color: #2D2F31; 
             border-radius: 8px;
         """)
+
+    def update_theme(self, highlight_color: str):
+        self.highlight_color = highlight_color
+        from utils.icon_manager import get_icon
+        self.copy_prompt_btn.setIcon(get_icon("notes", self.highlight_color, 12))
+        self.copy_prompt_btn.setStyleSheet(f"""
+            QPushButton#CardCopyPromptBtn {{
+                background-color: rgba(30, 31, 34, 0.75);
+                border: 1px solid rgba(68, 71, 70, 0.8);
+                border-radius: 13px;
+                color: {self.highlight_color};
+                font-size: 11px;
+                padding: 0px;
+            }}
+            QPushButton#CardCopyPromptBtn:hover {{
+                background-color: rgba(26, 115, 232, 0.9);
+                border-color: {self.highlight_color};
+                color: #FFFFFF;
+            }}
+        """)
+        if not self.image_loaded:
+            self.show_default_placeholder()
 
     def contextMenuEvent(self, event):
         main_win = self.window()
@@ -449,6 +472,7 @@ class WorkflowView(QWidget):
         self.filtered_workflows_data = []
         self.cards = []
         self.current_columns = -1
+        self.highlight_color = "#8AB4F8"
         
         self.search_debounce_timer = QTimer(self)
         self.search_debounce_timer.setSingleShot(True)
@@ -612,7 +636,7 @@ class WorkflowView(QWidget):
         self.retranslate_ui()
 
     def _create_card(self, workflow):
-        card = WorkflowCardWidget(workflow, parent=self.grid_container)
+        card = WorkflowCardWidget(workflow, highlight_color=self.highlight_color, parent=self.grid_container)
         card.clicked.connect(self.workflow_clicked.emit)
         card.hide_requested.connect(self.workflow_hide_requested.emit)
         card.unhide_requested.connect(self.workflow_unhide_requested.emit)
@@ -922,3 +946,11 @@ class WorkflowView(QWidget):
         self.sort_combo.blockSignals(False)
         
         self.populate_grid()
+
+    def apply_theme(self, palette: dict):
+        if not palette:
+            return
+        self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
+        for card in self.cards:
+            if hasattr(card, 'update_theme'):
+                card.update_theme(self.highlight_color)

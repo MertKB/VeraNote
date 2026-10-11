@@ -36,6 +36,10 @@ class DetailPanel(QWidget):
     note_color_changed = Signal(int, str)
     associate_model_requested = Signal(int, int) # note_id, model_id
     dissociate_model_requested = Signal(int, int) # note_id, model_id
+    add_note_tag_requested = Signal(int, str) # note_id, tag
+    delete_note_tag_requested = Signal(int, str) # note_id, tag
+    clear_note_tags_requested = Signal(int) # note_id
+    set_note_notebook_requested = Signal(int, object) # note_id, notebook_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -164,6 +168,10 @@ class DetailPanel(QWidget):
         self.note_section.delete_note_requested.connect(self.delete_note_requested.emit)
         self.note_section.associate_model_requested.connect(self.associate_model_requested.emit)
         self.note_section.dissociate_model_requested.connect(self.dissociate_model_requested.emit)
+        self.note_section.add_note_tag_requested.connect(self.add_note_tag_requested.emit)
+        self.note_section.delete_note_tag_requested.connect(self.delete_note_tag_requested.emit)
+        self.note_section.clear_note_tags_requested.connect(self.clear_note_tags_requested.emit)
+        self.note_section.set_note_notebook_requested.connect(self.set_note_notebook_requested.emit)
         self.stack.addWidget(self.note_section) # index 1
 
         # 3. Workflow Section
@@ -186,11 +194,11 @@ class DetailPanel(QWidget):
             self.scroll_area.verticalScrollBar().setValue(0)
         self.setFocus()
 
-    def set_note(self, note_data, all_models=None):
+    def set_note(self, note_data, all_models=None, all_notebooks=None):
         self.mode = "NOTE"
         self.header_label.setText(t("detail_header_note"))
         self.stack.setCurrentIndex(1)
-        self.note_section.set_note(note_data, all_models, auto_save_settings=self.auto_save_settings)
+        self.note_section.set_note(note_data, all_models, auto_save_settings=self.auto_save_settings, all_notebooks=all_notebooks)
         if hasattr(self, 'scroll_area'):
             self.scroll_area.verticalScrollBar().setValue(0)
         self.setFocus()
@@ -227,3 +235,13 @@ class DetailPanel(QWidget):
         self.model_section.retranslate_ui()
         self.note_section.retranslate_ui()
         self.workflow_section.retranslate_ui()
+
+    def apply_theme(self, palette: dict):
+        if not palette:
+            return
+        if hasattr(self.model_section, 'apply_theme'):
+            self.model_section.apply_theme(palette)
+        if hasattr(self.note_section, 'apply_theme'):
+            self.note_section.apply_theme(palette)
+        if hasattr(self.workflow_section, 'apply_theme'):
+            self.workflow_section.apply_theme(palette)

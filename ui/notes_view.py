@@ -4,9 +4,10 @@ import re
 import html
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QScrollArea, QGridLayout, QFrame, 
-                             QSizePolicy, QLineEdit, QComboBox, QMessageBox, QMenu)
+                             QSizePolicy, QLineEdit, QComboBox, QMessageBox, QMenu, QApplication)
 from PySide6.QtCore import Signal, Qt, QSize, QTimer, QThreadPool, Slot, QPoint, QRect
-from PySide6.QtGui import QPixmap, QFontMetrics, QGuiApplication, QImage, QKeyEvent, QCursor
+from PySide6.QtGui import (QPixmap, QFontMetrics, QGuiApplication, QImage, QKeyEvent, 
+                           QCursor, QKeySequence, QShortcut, QTextDocument)
 from utils.i18n import t
 from utils.icon_manager import get_icon
 from ui.library_view import get_rounded_pixmap, THUMBNAIL_CACHE, cache_thumbnail, ImageLoadWorker
@@ -22,6 +23,8 @@ def html_to_plain(html_str: str) -> str:
     """Ultra-fast regex and entity decoder to extract plain text without QTextDocument allocation."""
     if not html_str:
         return ""
+    if len(html_str) > 2000:
+        html_str = html_str[:2000]
     # Strip style, head and script blocks along with their inner css/scripts
     text = _STYLE_RE.sub('', html_str)
     text = _HEAD_RE.sub('', text)
@@ -43,10 +46,11 @@ class NoteCardWidget(QFrame):
     color_changed = Signal(int, str)
     selection_toggled = Signal(dict, bool)
 
-    def __init__(self, note_data, is_trash=False, parent=None):
+    def __init__(self, note_data, is_trash=False, highlight_color="#8AB4F8", parent=None):
         super().__init__(parent)
         self.note_data = note_data
         self.is_trash = is_trash
+        self.highlight_color = highlight_color
         self.setObjectName("NoteCard")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setFixedSize(240, 260)
@@ -92,17 +96,17 @@ class NoteCardWidget(QFrame):
             self.restore_btn.setFixedSize(26, 26)
             self.restore_btn.setCursor(Qt.PointingHandCursor)
             self.restore_btn.setToolTip(t("menu_restore"))
-            self.restore_btn.setStyleSheet("""
-                QPushButton {
+            self.restore_btn.setStyleSheet(f"""
+                QPushButton {{
                     background-color: rgba(45, 47, 49, 0.7);
                     border: 1px solid rgba(68, 71, 70, 0.7);
                     border-radius: 13px;
                     padding: 0px;
-                }
-                QPushButton:hover {
+                }}
+                QPushButton:hover {{
                     background-color: rgba(0, 74, 119, 0.9);
-                    border-color: #8AB4F8;
-                }
+                    border-color: {self.highlight_color};
+                }}
             """)
             self.restore_btn.clicked.connect(self.on_restore_clicked)
             top_overlay_layout.addWidget(self.restore_btn)
@@ -147,18 +151,18 @@ class NoteCardWidget(QFrame):
             self.copy_btn.setFixedSize(26, 26)
             self.copy_btn.setCursor(Qt.PointingHandCursor)
             self.copy_btn.setToolTip(t("copy_text"))
-            self.copy_btn.setStyleSheet("""
-                QPushButton {
+            self.copy_btn.setStyleSheet(f"""
+                QPushButton {{
                     background-color: rgba(45, 47, 49, 0.7);
                     border: 1px solid rgba(68, 71, 70, 0.7);
                     border-radius: 13px;
                     padding: 0px;
-                }
-                QPushButton:hover {
+                }}
+                QPushButton:hover {{
                     background-color: rgba(60, 64, 67, 0.9);
-                    border-color: #8AB4F8;
+                    border-color: {self.highlight_color};
                     color: #E3E3E3;
-                }
+                }}
             """)
             self.copy_btn.clicked.connect(self.on_copy_clicked)
             top_overlay_layout.addWidget(self.copy_btn)
@@ -197,12 +201,24 @@ class NoteCardWidget(QFrame):
         self.content_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         layout.addWidget(self.content_label)
 
-        # Date Label
-        self.date_label = QLabel(self)
+        # Bottom Bar: Notebook / Tags badges on left, Date on right
+        self.bottom_bar = QWidget(self)
+        bottom_layout = QHBoxLayout(self.bottom_bar)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+        bottom_layout.setSpacing(4)
+
+        self.tags_label = QLabel(self.bottom_bar)
+        self.tags_label.setObjectName("NoteCardTagsLabel")
+        self.tags_label.setStyleSheet(f"color: {self.highlight_color}; font-size: 10px; font-weight: 500;")
+        bottom_layout.addWidget(self.tags_label, 1)
+
+        self.date_label = QLabel(self.bottom_bar)
         self.date_label.setObjectName("NoteCardDate")
         self.date_label.setStyleSheet("color: #71717A; font-size: 10px; font-weight: 500;")
         self.date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        layout.addWidget(self.date_label)
+        bottom_layout.addWidget(self.date_label, 0)
+
+        layout.addWidget(self.bottom_bar)
 
         # Render layout according to display mode and path
         self.update_layout()
@@ -211,6 +227,12 @@ class NoteCardWidget(QFrame):
         self.top_overlay_container.raise_()
         if hasattr(self, 'hidden_badge'):
             self.hidden_badge.raise_()
+
+    def update_theme(self, highlight_color: str):
+        self.highlight_color = highlight_color
+        if hasattr(self, 'tags_label') and self.tags_label:
+            self.tags_label.setStyleSheet(f"color: {self.highlight_color}; font-size: 10px; font-weight: 500;")
+        self.update_card_style()
 
     def set_selected(self, selected):
         self.is_selected = selected
@@ -222,12 +244,12 @@ class NoteCardWidget(QFrame):
 
     def update_card_style(self):
         if self.is_selected:
-            self.setStyleSheet("""
-                QFrame#NoteCard {
+            self.setStyleSheet(f"""
+                QFrame#NoteCard {{
                     background-color: #263238;
-                    border: 2px solid #8AB4F8;
+                    border: 2px solid {self.highlight_color};
                     border-radius: 12px;
-                }
+                }}
             """)
         elif self.note_data.get('color_hex') and self.note_data.get('color_hex') != "default":
             color_hex = self.note_data['color_hex']
@@ -252,22 +274,22 @@ class NoteCardWidget(QFrame):
     def open_color_menu(self):
         from ui.welcome_screen import PASTEL_PALETTE
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
+        menu.setStyleSheet(f"""
+            QMenu {{
                 background-color: #1E1F20;
                 color: #E3E3E3;
                 border: 1px solid #444746;
                 padding: 4px;
                 border-radius: 8px;
-            }
-            QMenu::item {
+            }}
+            QMenu::item {{
                 padding: 6px 16px;
                 border-radius: 4px;
-            }
-            QMenu::item:selected {
+            }}
+            QMenu::item:selected {{
                 background-color: #2D2F31;
-                color: #8AB4F8;
-            }
+                color: {self.highlight_color};
+            }}
         """)
         for bg, border, text_col, name in PASTEL_PALETTE:
             action = menu.addAction(f"{name}")
@@ -314,7 +336,7 @@ class NoteCardWidget(QFrame):
 
     def update_layout(self):
         self.image_path = resolve_image_path(self.image_path or self.note_data.get('image_path') or '')
-        show_img = (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
+        show_img = (self.display_mode == 'WITH_IMAGE') and bool(self.image_path)
         layout = self.layout()
         if not layout:
             return
@@ -334,7 +356,6 @@ class NoteCardWidget(QFrame):
                 self.image_label.setPixmap(QPixmap())
                 self.image_label.setStyleSheet("background-color: #242527; border-radius: 8px;")
                 self.image_loaded = False
-                self.ensure_image_loaded()
                 
             self.content_label.setFixedHeight(50)
             self.content_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -352,8 +373,7 @@ class NoteCardWidget(QFrame):
         if getattr(self, 'image_loaded', False) or getattr(self, 'image_loading', False):
             return
         self.image_path = resolve_image_path(self.image_path or self.note_data.get('image_path') or '')
-        show_img = (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
-        if not show_img:
+        if not (self.display_mode == 'WITH_IMAGE' and self.image_path):
             self.image_loaded = True
             return
         if self.image_path in THUMBNAIL_CACHE:
@@ -441,6 +461,22 @@ class NoteCardWidget(QFrame):
             if len(display_text) > 250:
                 display_text = display_text[:250] + "..."
             self.content_label.setText(display_text)
+
+        if hasattr(self, 'tags_label'):
+            tag_parts = []
+            nb_name = self.note_data.get('notebook_name')
+            if nb_name:
+                tag_parts.append(f"📁 {nb_name}")
+            tags = self.note_data.get('tags', [])
+            if tags:
+                tag_parts.extend([f"#{t}" for t in tags[:2]])
+                if len(tags) > 2:
+                    tag_parts.append(f"+{len(tags)-2}")
+            full_str = " ".join(tag_parts)
+            elided_tags = metrics.elidedText(full_str, Qt.ElideRight, 130)
+            self.tags_label.setText(elided_tags)
+            self.tags_label.setToolTip(full_str if full_str else "")
+            self.tags_label.setVisible(bool(full_str))
 
         if hasattr(self, 'date_label'):
             dt_raw = self.note_data.get('updated_at') or self.note_data.get('created_at') or ''
@@ -566,6 +602,8 @@ class NotesView(QWidget):
     bulk_restore_requested = Signal(list) # ids
     corkboard_pin_toggled = Signal(int, bool)
     note_color_changed = Signal(int, str)
+    scope_changed = Signal(str) # 'unassigned' or 'all'
+    back_to_notebooks_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -576,7 +614,10 @@ class NotesView(QWidget):
         self.selected_note_ids = set()
         self.is_trash = False
         self.current_columns = -1
-        
+        self.current_notebook_id = None
+        self.current_notebook_name = None
+        self.current_scope = "unassigned"
+        self.highlight_color = "#8AB4F8"
 
         self.resize_debounce_timer = QTimer(self)
         self.resize_debounce_timer.setSingleShot(True)
@@ -585,6 +626,9 @@ class NotesView(QWidget):
         self.scroll_check_timer = QTimer(self)
         self.scroll_check_timer.setSingleShot(True)
         self.scroll_check_timer.timeout.connect(self.check_visible_cards)
+
+        self.select_all_shortcut = QShortcut(QKeySequence("Ctrl+A"), self)
+        self.select_all_shortcut.activated.connect(self.on_select_all_shortcut)
 
         self.init_ui()
 
@@ -597,6 +641,33 @@ class NotesView(QWidget):
         self.main_layout.setSpacing(16)
 
         header_layout = QHBoxLayout()
+
+        # Back to Notebooks Button (visible when inside a notebook)
+        self.back_btn = QPushButton(f"←  {t('back_to_notebooks')}")
+        self.back_btn.setObjectName("BackToNotebooksBtn")
+        self.back_btn.setToolTip(t("back_to_notebooks_tooltip"))
+        self.back_btn.setCursor(Qt.PointingHandCursor)
+        self.back_btn.setFixedHeight(36)
+        self.back_btn.setStyleSheet(f"""
+            QPushButton#BackToNotebooksBtn {{
+                background-color: #2D2F31;
+                border: 1px solid #444746;
+                border-radius: 8px;
+                color: #E3E3E3;
+                padding: 6px 14px;
+                font-size: 13px;
+                font-weight: 600;
+            }}
+            QPushButton#BackToNotebooksBtn:hover {{
+                background-color: #3C4043;
+                border-color: {self.highlight_color};
+                color: #FFFFFF;
+            }}
+        """)
+        self.back_btn.clicked.connect(self.back_to_notebooks_requested.emit)
+        self.back_btn.setVisible(False)
+        header_layout.addWidget(self.back_btn)
+
         self.title_label = QLabel(t("trash") if self.is_trash else t("notes"))
         self.title_label.setStyleSheet("color: #E3E3E3; font-size: 24px; font-weight: bold;")
         header_layout.addWidget(self.title_label)
@@ -638,6 +709,47 @@ class NotesView(QWidget):
         self.sort_combo.currentTextChanged.connect(self.on_sort_changed)
         header_layout.addWidget(self.sort_combo)
 
+        # Scope ComboBox (Deftersiz Notlar vs Tüm Notlar) - Placed to the right of sort_combo / favorites
+        self.scope_combo = QComboBox()
+        self.scope_combo.addItem(t("notes_scope_unassigned"), "unassigned")
+        self.scope_combo.addItem(t("notes_scope_all"), "all")
+        self.scope_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #2D2F31;
+                border: 1px solid #444746;
+                border-radius: 8px;
+                color: #E3E3E3;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+        """)
+        self.scope_combo.currentIndexChanged.connect(self.on_scope_changed)
+        header_layout.addWidget(self.scope_combo)
+
+        # Tag Filter ComboBox
+        self.tag_combo = QComboBox()
+        self.tag_combo.addItem(t("notes_tag_all"), "")
+        self.tag_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #2D2F31;
+                border: 1px solid #444746;
+                border-radius: 8px;
+                color: #E3E3E3;
+                padding: 6px 12px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+        """)
+        self.tag_combo.currentIndexChanged.connect(self.on_tag_combo_changed)
+        header_layout.addWidget(self.tag_combo)
+
         header_layout.addStretch()
 
         self.empty_trash_btn = QPushButton(f"  {t('trash_empty_title')}")
@@ -677,7 +789,7 @@ class NotesView(QWidget):
         bulk_layout.setSpacing(12)
 
         self.bulk_count_label = QLabel(t("bulk_selected_count").format(count=0), self.bulk_bar)
-        self.bulk_count_label.setStyleSheet("color: #38BDF8; font-weight: bold; font-size: 14px;")
+        self.bulk_count_label.setStyleSheet(f"color: {self.highlight_color}; font-weight: bold; font-size: 14px;")
         bulk_layout.addWidget(self.bulk_count_label)
 
         bulk_layout.addStretch()
@@ -727,9 +839,59 @@ class NotesView(QWidget):
         self.scroll_area.verticalScrollBar().valueChanged.connect(lambda: self.scroll_check_timer.start(40))
         self.main_layout.addWidget(self.scroll_area)
 
+    def set_notebook_context(self, notebook_id=None, notebook_name=None):
+        self.current_notebook_id = notebook_id
+        self.current_notebook_name = notebook_name
+        if notebook_id is not None:
+            self.back_btn.setVisible(True)
+            self.scope_combo.setVisible(False)
+            self.tag_combo.setVisible(True)
+            self.title_label.setText(notebook_name or t("notebook"))
+        elif self.is_trash:
+            self.back_btn.setVisible(False)
+            self.scope_combo.setVisible(False)
+            self.tag_combo.setVisible(False)
+            self.title_label.setText(t("trash_title"))
+        else:
+            self.back_btn.setVisible(False)
+            self.scope_combo.setVisible(True)
+            self.tag_combo.setVisible(True)
+            self.title_label.setText(t("notes"))
+
+    def on_scope_changed(self, index):
+        scope_data = self.scope_combo.currentData() or "unassigned"
+        self.current_scope = scope_data
+        self.scope_changed.emit(scope_data)
+        self.apply_filters_and_sorting()
+
+    def on_tag_combo_changed(self, index):
+        self.apply_filters_and_sorting()
+
+    def update_tags_combo(self):
+        curr_tag = self.tag_combo.currentData() or ""
+        self.tag_combo.blockSignals(True)
+        self.tag_combo.clear()
+        self.tag_combo.addItem(t("notes_tag_all"), "")
+        
+        all_tags = set()
+        for n in self.notes_data:
+            for tag in n.get('tags', []):
+                if tag:
+                    all_tags.add(tag)
+        for tag in sorted(all_tags):
+            self.tag_combo.addItem(f"🏷 {tag}", tag)
+            
+        idx = self.tag_combo.findData(curr_tag)
+        if idx >= 0:
+            self.tag_combo.setCurrentIndex(idx)
+        else:
+            self.tag_combo.setCurrentIndex(0)
+        self.tag_combo.blockSignals(False)
+
     def set_notes(self, notes, is_trash=False):
         same_trash = (self.is_trash == is_trash)
         self.is_trash = is_trash
+        is_same_data = (self.notes_data == (notes or []))
         self.notes_data = notes or []
         self.clear_selection()
         
@@ -738,6 +900,22 @@ class NotesView(QWidget):
         self.fav_toggle_btn.setVisible(not is_trash)
         self.bulk_pin_btn.setVisible(not is_trash)
         self.bulk_restore_btn.setVisible(is_trash)
+
+        if is_trash:
+            self.back_btn.setVisible(False)
+            self.scope_combo.setVisible(False)
+            self.tag_combo.setVisible(False)
+            self.title_label.setText(t("trash_title"))
+        elif self.current_notebook_id is not None:
+            self.back_btn.setVisible(True)
+            self.scope_combo.setVisible(False)
+            self.tag_combo.setVisible(True)
+            self.title_label.setText(self.current_notebook_name or t("notebook"))
+        else:
+            self.back_btn.setVisible(False)
+            self.scope_combo.setVisible(True)
+            self.tag_combo.setVisible(True)
+            self.title_label.setText(t("notes"))
 
         if not same_trash:
             # Only reset local filters when switching view modes (e.g. into/out of Trash)
@@ -750,7 +928,10 @@ class NotesView(QWidget):
             self.search_edit.clear()
             self.search_edit.blockSignals(False)
         
-        self.title_label.setText(t("trash_title") if self.is_trash else t("view_all_notes"))
+        self.update_tags_combo()
+        if same_trash and is_same_data and getattr(self, '_has_populated_once', False) and len(self.cards) > 0:
+            return
+        self._has_populated_once = True
         self.apply_filters_and_sorting()
 
     def on_card_favorite_toggled(self, note_id, is_fav):
@@ -763,7 +944,7 @@ class NotesView(QWidget):
             self.apply_filters_and_sorting()
 
     def _create_card(self, note):
-        card = NoteCardWidget(note, is_trash=self.is_trash, parent=self.grid_container)
+        card = NoteCardWidget(note, is_trash=self.is_trash, highlight_color=self.highlight_color, parent=self.grid_container)
         card.selection_toggled.connect(self.on_card_selection_toggled)
         card.corkboard_pin_toggled.connect(self.corkboard_pin_toggled.emit)
         card.color_changed.connect(self.note_color_changed.emit)
@@ -807,6 +988,49 @@ class NotesView(QWidget):
                 if note_id:
                     self.selected_note_ids.add(note_id)
         self.update_bulk_bar()
+
+    def on_select_all_shortcut(self):
+        focus_widget = QApplication.focusWidget()
+        from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit
+        if isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+            focus_widget.selectAll()
+            return
+        self.select_all_notes()
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.matches(QKeySequence.SelectAll):
+            focus_widget = QApplication.focusWidget()
+            from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit
+            if not isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                self.select_all_notes()
+                event.accept()
+                return
+        super().keyPressEvent(event)
+
+    def apply_theme(self, palette: dict):
+        if not palette:
+            return
+        self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
+        if hasattr(self, 'back_btn') and self.back_btn:
+            self.back_btn.setStyleSheet(f"""
+                QPushButton#BackToNotebooksBtn {{
+                    background-color: #2D2F31;
+                    border: 1px solid #444746;
+                    border-radius: 8px;
+                    color: #E3E3E3;
+                    padding: 6px 14px;
+                    font-size: 13px;
+                    font-weight: 600;
+                }}
+                QPushButton#BackToNotebooksBtn:hover {{
+                    background-color: #3C4043;
+                    border-color: {self.highlight_color};
+                    color: #FFFFFF;
+                }}
+            """)
+        for card in self.cards:
+            if isinstance(card, NoteCardWidget):
+                card.update_theme(self.highlight_color)
 
     def clear_selection(self):
         self.selected_note_ids.clear()
@@ -855,11 +1079,21 @@ class NotesView(QWidget):
         query = self.search_edit.text().strip().lower()
         show_only_favs = self.fav_toggle_btn.isChecked()
         sort_idx = self.sort_combo.currentIndex()
+        selected_tag = self.tag_combo.currentData() if hasattr(self, 'tag_combo') else ""
+        selected_scope = self.scope_combo.currentData() if (hasattr(self, 'scope_combo') and self.scope_combo.isVisible()) else None
 
         filtered = []
         for n in self.notes_data:
             if show_only_favs and not n.get('is_favorite', 0):
                 continue
+            if selected_scope == "unassigned":
+                nb_id = n.get('notebook_id')
+                if nb_id and nb_id != 0:
+                    continue
+            if selected_tag:
+                note_tags = n.get('tags', [])
+                if selected_tag not in note_tags:
+                    continue
             if query:
                 title_match = query in n.get('title', '').lower()
                 plain_content = html_to_plain(n.get('content', '')).lower()
@@ -924,15 +1158,14 @@ class NotesView(QWidget):
             row_height = 260 + spacing
             self.grid_container.setMinimumHeight(total_rows * row_height)
 
-            # Responsive Phase 1: fill entire visible screen (FHD: ~24, 2K/4K: ~40-60 notes)
-            viewport_h = max(600, self.scroll_area.viewport().height())
-            visible_rows = (viewport_h // row_height) + 2
-            needed_cards = max(24, columns * visible_rows)
-            initial_count = min(needed_cards, len(self.filtered_notes_data))
+            # Responsive Phase 1: render immediate visible cards (~12) instantly
+            initial_count = min(12, len(self.filtered_notes_data))
             for i in range(initial_count):
                 card = self._create_card(self.filtered_notes_data[i])
                 self.grid_layout.addWidget(card, i // columns, i % columns)
                 self.cards.append(card)
+                if i < columns * 2:
+                    card.ensure_image_loaded()
         finally:
             self.grid_container.setUpdatesEnabled(True)
             self.scroll_area.setUpdatesEnabled(True)
@@ -943,16 +1176,16 @@ class NotesView(QWidget):
                 self._chunk_timer = QTimer(self)
                 self._chunk_timer.setSingleShot(True)
                 self._chunk_timer.timeout.connect(self._load_remaining_notes)
-            self._chunk_timer.start(0)
+            self._chunk_timer.start(15)
 
-        self.scroll_check_timer.start(10)
+        self.scroll_check_timer.start(20)
 
     def _load_remaining_notes(self):
         if not hasattr(self, '_pending_load_index') or self._pending_load_index >= len(self.filtered_notes_data):
             return
 
         columns = self.current_columns if self.current_columns > 0 else 1
-        chunk_size = 40
+        chunk_size = 20
         end_idx = min(self._pending_load_index + chunk_size, len(self.filtered_notes_data))
 
         self.scroll_area.setUpdatesEnabled(False)
@@ -968,7 +1201,9 @@ class NotesView(QWidget):
 
         self._pending_load_index = end_idx
         if self._pending_load_index < len(self.filtered_notes_data):
-            self._chunk_timer.start(0)
+            self._chunk_timer.start(15)
+        else:
+            self.scroll_check_timer.start(20)
 
     def update_grid_layout(self):
         if not self.cards or isinstance(self.cards[0], QLabel):
@@ -1073,7 +1308,17 @@ class NotesView(QWidget):
             self.empty_trash_requested.emit()
 
     def retranslate_ui(self):
-        self.title_label.setText(t("trash") if self.is_trash else t("notes"))
+        if hasattr(self, 'back_btn'):
+            self.back_btn.setText(f"←  {t('back_to_notebooks')}")
+            self.back_btn.setToolTip(t("back_to_notebooks_tooltip"))
+
+        if self.is_trash:
+            self.title_label.setText(t("trash_title"))
+        elif self.current_notebook_id is not None:
+            self.title_label.setText(self.current_notebook_name or t("notebook"))
+        else:
+            self.title_label.setText(t("notes"))
+
         self.search_edit.setPlaceholderText(t("view_search_notes_placeholder"))
         is_fav = self.fav_toggle_btn.isChecked() if hasattr(self, 'fav_toggle_btn') else False
         self.fav_toggle_btn.setText(f"  {t('view_favorites')}")
@@ -1097,5 +1342,43 @@ class NotesView(QWidget):
         if current_idx >= 0:
             self.sort_combo.setCurrentIndex(current_idx)
         self.sort_combo.blockSignals(False)
-        
+
+        if hasattr(self, 'scope_combo'):
+            self.scope_combo.blockSignals(True)
+            curr_scope = self.scope_combo.currentData() or "unassigned"
+            self.scope_combo.clear()
+            self.scope_combo.addItem(t("notes_scope_unassigned"), "unassigned")
+            self.scope_combo.addItem(t("notes_scope_all"), "all")
+            s_idx = self.scope_combo.findData(curr_scope)
+            if s_idx >= 0:
+                self.scope_combo.setCurrentIndex(s_idx)
+            self.scope_combo.blockSignals(False)
+
+        self.update_tags_combo()
         self.apply_filters_and_sorting()
+
+    def apply_theme(self, palette: dict):
+        if not palette:
+            return
+        self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
+        self.bulk_count_label.setStyleSheet(f"color: {self.highlight_color}; font-weight: bold; font-size: 14px;")
+        if hasattr(self, 'back_btn'):
+            self.back_btn.setStyleSheet(f"""
+                QPushButton#BackToNotebooksBtn {{
+                    background-color: #2D2F31;
+                    border: 1px solid #444746;
+                    border-radius: 8px;
+                    color: #E3E3E3;
+                    padding: 6px 14px;
+                    font-size: 13px;
+                    font-weight: 600;
+                }}
+                QPushButton#BackToNotebooksBtn:hover {{
+                    background-color: #3C4043;
+                    border-color: {self.highlight_color};
+                    color: #FFFFFF;
+                }}
+            """)
+        for card in self.cards:
+            if hasattr(card, 'update_theme'):
+                card.update_theme(self.highlight_color)

@@ -38,6 +38,9 @@ ICON_MAP = {
     'notes': 'nav_notes.png',
     'all_notes': 'nav_notes.png',
     'nav_notes': 'nav_notes.png',
+    'notebooks': 'nav_notebooks.png',
+    'notebook': 'nav_notebooks.png',
+    'nav_notebooks': 'nav_notebooks.png',
     'trash': 'nav_trash.png',
     'recycle_bin': 'nav_trash.png',
     'nav_trash': 'nav_trash.png',
@@ -138,3 +141,8 @@ def get_icon(name: str, color_hex: str = "#E3E3E3", size: int = 18) -> QIcon:
     icon = QIcon(pm)
     _ICON_CACHE[key] = icon
     return icon
+
+def clear_cache():
+    """Clears cached QPixmap and QIcon instances."""
+    _PIXMAP_CACHE.clear()
+    _ICON_CACHE.clear()

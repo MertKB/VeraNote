@@ -19,6 +19,11 @@ class Sidebar(QWidget):
     all_notes_requested = Signal()
     new_note_requested = Signal()
     trash_requested = Signal()
+    notebook_selected = Signal(int, str) # notebook_id, notebook_name
+    all_notebooks_requested = Signal()
+    new_notebook_requested = Signal()
+    rename_notebook_requested = Signal(int, str) # notebook_id, notebook_name
+    delete_notebook_requested = Signal(int, str) # notebook_id, notebook_name
     new_library_requested = Signal()
     note_selected = Signal(int) # note_id
     library_selected = Signal(str) # model_library_name
@@ -33,6 +38,8 @@ class Sidebar(QWidget):
         self.incognito_active_state = False
         self.comfyui_visible = True
         self.current_palette = {}
+        self.notebooks_data = []
+        self.last_selected_notebook = None
         self.model_lib_names = []
         self.last_selected_model_lib = None
         self.workflow_lib_names = []
@@ -64,10 +71,18 @@ class Sidebar(QWidget):
             self.init_palette()
         return self.current_palette.get('border_focus', '#8AB4F8')
 
+    def get_unified_color(self):
+        try:
+            from ui.styles import is_light
+            bg = self.current_palette.get('bg_sidebar', self.current_palette.get('bg_card', '#17121C'))
+            if is_light(bg):
+                return "#1A1A1A"
+        except Exception:
+            pass
+        return "#FFFFFF"
+
     def get_inactive_color(self):
-        if not hasattr(self, 'current_palette') or not self.current_palette:
-            self.init_palette()
-        return self.current_palette.get('text_muted', '#9AA0A6')
+        return self.get_unified_color()
 
     def apply_theme(self, palette: dict):
         self.current_palette = palette or {}
@@ -116,7 +131,7 @@ class Sidebar(QWidget):
         self.brand_logo.setObjectName("SidebarBrandLogo")
         self.brand_logo.setFixedSize(32, 32)
         self.brand_logo.setScaledContents(True)
-        self.brand_logo.setPixmap(get_pixmap("brand", self.get_active_color(), 32))
+        self.brand_logo.setPixmap(get_pixmap("brand", self.get_unified_color(), 32))
 
         # Brand label
         self.brand_label = QLabel("Vera Note")
@@ -139,7 +154,7 @@ class Sidebar(QWidget):
         self.collapse_btn.setObjectName("SidebarCollapseBtn")
         self.collapse_btn.setFixedSize(32, 32)
         self.collapse_btn.setCursor(Qt.PointingHandCursor)
-        self.collapse_btn.setIcon(get_icon("sidebar", self.get_inactive_color(), 20))
+        self.collapse_btn.setIcon(get_icon("sidebar", self.get_unified_color(), 20))
         self.collapse_btn.setIconSize(QSize(20, 20))
         self.collapse_btn.setToolTip(t("sidebar_collapse"))
         self.collapse_btn.clicked.connect(self.toggle_collapsed)
@@ -173,7 +188,7 @@ class Sidebar(QWidget):
         self.home_icon.setFixedSize(20, 20)
         self.home_icon.setScaledContents(True)
         self.home_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.home_icon.setPixmap(get_pixmap("home", self.get_active_color(), 20))
+        self.home_icon.setPixmap(get_pixmap("home", self.get_unified_color(), 20))
         
         self.home_label = QLabel(t("home"))
         self.home_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -200,7 +215,7 @@ class Sidebar(QWidget):
         self.agenda_icon.setFixedSize(20, 20)
         self.agenda_icon.setScaledContents(True)
         self.agenda_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.agenda_icon.setPixmap(get_pixmap("calendar", "#E3E3E3", 20))
+        self.agenda_icon.setPixmap(get_pixmap("calendar", self.get_unified_color(), 20))
         
         self.agenda_label = QLabel(t("nav_agenda"))
         self.agenda_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -255,7 +270,7 @@ class Sidebar(QWidget):
         self.all_notes_icon.setFixedSize(20, 20)
         self.all_notes_icon.setScaledContents(True)
         self.all_notes_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.all_notes_icon.setPixmap(get_pixmap("notes", "#E3E3E3", 20))
+        self.all_notes_icon.setPixmap(get_pixmap("notes", self.get_unified_color(), 20))
         
         self.all_notes_label = QLabel(t("notes"))
         self.all_notes_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -275,6 +290,79 @@ class Sidebar(QWidget):
         self.all_notes_layout.addWidget(self.all_notes_badge)
         self.main_layout.addWidget(self.all_notes_btn, 0, Qt.AlignCenter)
 
+        # --- SECTION: NEW NOTEBOOK BUTTON ---
+        self.new_notebook_btn = QPushButton()
+        self.new_notebook_btn.setObjectName("NewNotebookBtn")
+        self.new_notebook_btn.setFixedSize(236, 40)
+        self.new_notebook_btn.setCursor(Qt.PointingHandCursor)
+        self.new_notebook_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_notebook_requested.emit()))
+
+        self.new_notebook_layout = QHBoxLayout(self.new_notebook_btn)
+        self.new_notebook_layout.setContentsMargins(16, 0, 16, 0)
+        self.new_notebook_layout.setSpacing(12)
+
+        self.new_notebook_icon = QLabel()
+        self.new_notebook_icon.setFixedSize(20, 20)
+        self.new_notebook_icon.setScaledContents(True)
+        self.new_notebook_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.new_notebook_icon.setPixmap(get_pixmap("add", "#FFFFFF", 20))
+
+        self.new_notebook_label = QLabel(t("new_notebook"))
+        self.new_notebook_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.new_notebook_label.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
+
+        self.new_notebook_stretch = QWidget()
+        self.new_notebook_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        self.new_notebook_layout.addWidget(self.new_notebook_icon, 0, Qt.AlignCenter)
+        self.new_notebook_layout.addWidget(self.new_notebook_label)
+        self.new_notebook_layout.addWidget(self.new_notebook_stretch)
+        self.main_layout.addWidget(self.new_notebook_btn, 0, Qt.AlignCenter)
+
+        # --- SECTION: NOTEBOOKS (NOT DEFTERLERİ) ---
+        self.notebooks_header = QPushButton()
+        self.notebooks_header.setObjectName("NotebooksHeaderBtn")
+        self.notebooks_header.setFixedSize(236, 40)
+        self.notebooks_header.setCursor(Qt.PointingHandCursor)
+        self.notebooks_header.clicked.connect(self.on_notebooks_header_clicked)
+
+        self.notebooks_h_layout = QHBoxLayout(self.notebooks_header)
+        self.notebooks_h_layout.setContentsMargins(16, 0, 16, 0)
+        self.notebooks_h_layout.setSpacing(12)
+
+        self.notebooks_icon = QLabel()
+        self.notebooks_icon.setFixedSize(20, 20)
+        self.notebooks_icon.setScaledContents(True)
+        self.notebooks_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.notebooks_icon.setPixmap(get_pixmap("notebooks", self.get_unified_color(), 20))
+
+        self.notebooks_label = QLabel(t("notebooks_title"))
+        self.notebooks_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self.notebooks_badge = QLabel("0")
+        self.notebooks_badge.setObjectName("NotebooksBadge")
+        self.notebooks_badge.setAlignment(Qt.AlignCenter)
+        self.notebooks_badge.setFixedSize(24, 20)
+        self.notebooks_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self.notebooks_stretch = QWidget()
+        self.notebooks_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        self.notebooks_h_layout.addWidget(self.notebooks_icon, 0, Qt.AlignCenter)
+        self.notebooks_h_layout.addWidget(self.notebooks_label)
+        self.notebooks_h_layout.addWidget(self.notebooks_stretch)
+        self.notebooks_h_layout.addWidget(self.notebooks_badge)
+        self.main_layout.addWidget(self.notebooks_header, 0, Qt.AlignCenter)
+
+        self.notebooks_list = StaticListWidget()
+        self.notebooks_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.notebooks_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.notebooks_list.setFocusPolicy(Qt.NoFocus)
+        self.notebooks_list.itemClicked.connect(self.on_notebook_clicked)
+        self.notebooks_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.notebooks_list.customContextMenuRequested.connect(self.on_notebook_context_menu)
+        self.main_layout.addWidget(self.notebooks_list)
+
         # --- TRASH BUTTON ---
         self.trash_btn = QPushButton()
         self.trash_btn.setObjectName("TrashBtn")
@@ -289,7 +377,7 @@ class Sidebar(QWidget):
         self.trash_icon.setFixedSize(20, 20)
         self.trash_icon.setScaledContents(True)
         self.trash_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.trash_icon.setPixmap(get_pixmap("trash", "#E3E3E3", 20))
+        self.trash_icon.setPixmap(get_pixmap("trash", self.get_unified_color(), 20))
         
         self.trash_label = QLabel(t("trash"))
         self.trash_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -312,6 +400,7 @@ class Sidebar(QWidget):
         # --- SECTION: MODELS (MODELLER) ---
         self.models_header = QPushButton()
         self.models_header.setObjectName("ModelsHeaderBtn")
+        self.models_header.setFixedSize(236, 40)
         self.models_header.setCursor(Qt.PointingHandCursor)
         self.models_header.clicked.connect(self.on_models_header_clicked)
         
@@ -323,10 +412,9 @@ class Sidebar(QWidget):
         self.models_icon.setFixedSize(20, 20)
         self.models_icon.setScaledContents(True)
         self.models_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.models_icon.setPixmap(get_pixmap("models", "#B5A9BC", 20))
+        self.models_icon.setPixmap(get_pixmap("models", self.get_unified_color(), 20))
         
         self.models_label = QLabel(t("models_title"))
-        self.models_label.setStyleSheet("color: #B5A9BC; font-size: 11px; font-weight: bold;")
         self.models_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
         self.models_stretch = QWidget()
@@ -355,6 +443,7 @@ class Sidebar(QWidget):
 
         self.lib_header = QPushButton()
         self.lib_header.setObjectName("LibHeaderBtn")
+        self.lib_header.setFixedSize(236, 40)
         self.lib_header.setCursor(Qt.PointingHandCursor)
         self.lib_header.clicked.connect(self.on_lib_header_clicked)
         
@@ -366,10 +455,9 @@ class Sidebar(QWidget):
         self.lib_icon.setFixedSize(20, 20)
         self.lib_icon.setScaledContents(True)
         self.lib_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.lib_icon.setPixmap(get_pixmap("workflows", "#B5A9BC", 20))
+        self.lib_icon.setPixmap(get_pixmap("workflows", self.get_unified_color(), 20))
 
         self.lib_label = QLabel(t("workflows_title"))
-        self.lib_label.setStyleSheet("color: #B5A9BC; font-size: 11px; font-weight: bold;")
         self.lib_label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         self.lib_stretch = QWidget()
@@ -405,7 +493,7 @@ class Sidebar(QWidget):
         self.settings_icon.setFixedSize(20, 20)
         self.settings_icon.setScaledContents(True)
         self.settings_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.settings_icon.setPixmap(get_pixmap("settings", "#E3E3E3", 20))
+        self.settings_icon.setPixmap(get_pixmap("settings", self.get_unified_color(), 20))
         
         self.settings_label = QLabel(t("settings"))
         self.settings_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -444,9 +532,10 @@ class Sidebar(QWidget):
 
         # Toggle inner stretch widgets (when hidden in collapsed mode, icons are 100% dead-centered)
         for st in [self.header_stretch, self.home_stretch, self.agenda_stretch,
-                   self.new_note_stretch, self.all_notes_stretch, self.trash_stretch,
+                   self.new_note_stretch, self.all_notes_stretch, getattr(self, 'notebooks_stretch', None), self.trash_stretch,
                    self.models_stretch, self.lib_stretch, self.settings_stretch]:
-            st.setVisible(not collapsed)
+            if st:
+                st.setVisible(not collapsed)
 
         if collapsed:
             # Compact Navigation Rail margins
@@ -497,6 +586,19 @@ class Sidebar(QWidget):
             self.all_notes_layout.setContentsMargins(0, 0, 0, 0)
             self.all_notes_layout.setSpacing(0)
             self.all_notes_btn.setToolTip(f"{t('notes')} ({self.all_notes_badge.text()})")
+
+            # Notebooks (Not Defterleri)
+            if hasattr(self, 'notebooks_header'):
+                self.notebooks_header.setFixedSize(btn_w, btn_h)
+                self.notebooks_label.setVisible(False)
+                if hasattr(self, 'notebooks_badge'):
+                    self.notebooks_badge.setVisible(False)
+                self.notebooks_h_layout.setContentsMargins(0, 0, 0, 0)
+                self.notebooks_h_layout.setSpacing(0)
+                curr_nb = self.last_selected_notebook.get('name') if getattr(self, 'last_selected_notebook', None) else ""
+                self.notebooks_header.setToolTip(f"{t('notebooks_title')}: {curr_nb}" if curr_nb else t("notebooks_title"))
+                self.notebooks_list.setVisible(False)
+                self.new_notebook_btn.setVisible(False)
             
             # Trash
             self.trash_btn.setFixedSize(btn_w, btn_h)
@@ -582,6 +684,20 @@ class Sidebar(QWidget):
             self.all_notes_layout.setContentsMargins(16, 0, 16, 0)
             self.all_notes_layout.setSpacing(12)
             self.all_notes_btn.setToolTip("")
+
+            # Notebooks (Not Defterleri)
+            if hasattr(self, 'notebooks_header'):
+                self.notebooks_header.setFixedSize(btn_w, btn_h)
+                self.notebooks_label.setVisible(True)
+                if hasattr(self, 'notebooks_badge'):
+                    self.notebooks_badge.setVisible(True)
+                self.notebooks_h_layout.setContentsMargins(16, 0, 16, 0)
+                self.notebooks_h_layout.setSpacing(12)
+                self.notebooks_header.setToolTip("")
+                self.new_notebook_btn.setFixedSize(btn_w, btn_h)
+                self.new_notebook_btn.setVisible(True)
+                self.new_notebook_label.setVisible(True)
+                self.notebooks_list.setVisible(bool(self.notebooks_data) and self.notebooks_list.count() > 0)
             
             # Trash
             self.trash_btn.setFixedSize(btn_w, btn_h)
@@ -592,7 +708,7 @@ class Sidebar(QWidget):
             self.trash_btn.setToolTip("")
             
             # Models
-            self.models_header.setFixedSize(btn_w, 32)
+            self.models_header.setFixedSize(btn_w, btn_h)
             self.models_label.setVisible(True)
             self.models_h_layout.setContentsMargins(16, 0, 16, 0)
             self.models_h_layout.setSpacing(12)
@@ -612,7 +728,7 @@ class Sidebar(QWidget):
                 self.new_lib_btn.setVisible(True)
             
             # Workflows
-            self.lib_header.setFixedSize(btn_w, 32)
+            self.lib_header.setFixedSize(btn_w, btn_h)
             self.lib_label.setVisible(True)
             self.lib_h_layout.setContentsMargins(16, 0, 16, 0)
             self.lib_h_layout.setSpacing(12)
@@ -681,12 +797,16 @@ class Sidebar(QWidget):
             'home': self.home_btn,
             'agenda': self.agenda_btn,
             'all_notes': self.all_notes_btn,
+            'all_notebooks': self.notebooks_header,
+            'notebook': self.notebooks_header,
             'trash': self.trash_btn,
             'settings': self.settings_btn,
             'model': self.models_header,
             'workflow': self.lib_header,
         }
         for k, btn in buttons.items():
+            if not btn:
+                continue
             is_active = (k == item_type)
             btn.setProperty("active", is_active)
             btn.style().unpolish(btn)
@@ -695,17 +815,30 @@ class Sidebar(QWidget):
 
         # Update dynamic icon colors for active vs inactive state based on theme
         active_color = self.get_active_color()
-        inactive_color = "#E3E3E3"
-        self.brand_logo.setPixmap(get_pixmap("brand", active_color, 32))
-        self.collapse_btn.setIcon(get_icon("sidebar", active_color if self.is_collapsed else self.get_inactive_color(), 20))
-        self.home_icon.setPixmap(get_pixmap("home", active_color if item_type == 'home' else inactive_color, 20))
-        self.agenda_icon.setPixmap(get_pixmap("calendar", active_color if item_type == 'agenda' else inactive_color, 20))
+        unified_color = self.get_unified_color()
+        self.brand_logo.setPixmap(get_pixmap("brand", unified_color, 32))
+        self.collapse_btn.setIcon(get_icon("sidebar", active_color if self.is_collapsed else unified_color, 20))
+        self.home_icon.setPixmap(get_pixmap("home", active_color if item_type == 'home' else unified_color, 20))
+        self.agenda_icon.setPixmap(get_pixmap("calendar", active_color if item_type == 'agenda' else unified_color, 20))
         self.new_note_icon.setPixmap(get_pixmap("add", "#FFFFFF", 20))
-        self.all_notes_icon.setPixmap(get_pixmap("notes", active_color if item_type == 'all_notes' else inactive_color, 20))
-        self.trash_icon.setPixmap(get_pixmap("trash", active_color if item_type == 'trash' else inactive_color, 20))
-        self.settings_icon.setPixmap(get_pixmap("settings", active_color if item_type == 'settings' else inactive_color, 20))
-        self.models_icon.setPixmap(get_pixmap("models", active_color if item_type == 'model' else "#B5A9BC", 20))
-        self.lib_icon.setPixmap(get_pixmap("workflows", active_color if item_type == 'workflow' else "#B5A9BC", 20))
+        self.all_notes_icon.setPixmap(get_pixmap("notes", active_color if item_type == 'all_notes' else unified_color, 20))
+        if hasattr(self, 'notebooks_icon'):
+            self.notebooks_icon.setPixmap(get_pixmap("notebooks", active_color if item_type in ('all_notebooks', 'notebook') else unified_color, 20))
+        self.trash_icon.setPixmap(get_pixmap("trash", active_color if item_type == 'trash' else unified_color, 20))
+        self.settings_icon.setPixmap(get_pixmap("settings", active_color if item_type == 'settings' else unified_color, 20))
+        self.models_icon.setPixmap(get_pixmap("models", active_color if item_type == 'model' else unified_color, 20))
+        self.lib_icon.setPixmap(get_pixmap("workflows", active_color if item_type == 'workflow' else unified_color, 20))
+
+        if item_type == 'notebook':
+            if name is not None and hasattr(self, 'notebooks_list'):
+                for r in range(self.notebooks_list.count()):
+                    it = self.notebooks_list.item(r)
+                    if it and it.data(Qt.UserRole) == name:
+                        self.notebooks_list.setCurrentRow(r)
+                        break
+        else:
+            if hasattr(self, 'notebooks_list'):
+                self.notebooks_list.clearSelection()
 
         if item_type == 'model':
             if name:
@@ -735,6 +868,10 @@ class Sidebar(QWidget):
         self.new_note_label.setText(t("new_note"))
         self.new_lib_btn.setText(f"  {t('new_lib')}")
         self.all_notes_label.setText(t("notes"))
+        if hasattr(self, 'notebooks_label'):
+            self.notebooks_label.setText(t("notebooks_title"))
+        if hasattr(self, 'new_notebook_label'):
+            self.new_notebook_label.setText(t("new_notebook"))
         self.trash_label.setText(t("trash"))
         self.models_label.setText(t("models_title"))
         self.lib_label.setText(t("workflows_title"))
@@ -749,6 +886,9 @@ class Sidebar(QWidget):
             self.update_models_list(self.last_models_data, getattr(self, 'last_selected_model_lib', None))
         if hasattr(self, 'last_workflow_libs_data') and self.last_workflow_libs_data:
             self.update_workflow_libraries_list(self.last_workflow_libs_data, getattr(self, 'last_selected_workflow_lib', None))
+        if hasattr(self, 'notebooks_data'):
+            selected_id = self.last_selected_notebook['id'] if getattr(self, 'last_selected_notebook', None) else None
+            self.update_notebooks_list(self.notebooks_data, selected_id)
 
     def set_comfyui_visible(self, visible: bool):
         self.comfyui_visible = visible
@@ -847,9 +987,93 @@ class Sidebar(QWidget):
             if action == del_action:
                 self.delete_workflow_library_requested.emit(lib_name)
 
+    def on_notebooks_header_clicked(self):
+        self.set_active_item('all_notebooks')
+        self.all_notebooks_requested.emit()
+
+    def on_notebook_clicked(self, item):
+        nb_id = item.data(Qt.UserRole)
+        if nb_id == -1:
+            self.set_active_item('all_notebooks')
+            self.all_notebooks_requested.emit()
+            return
+
+        nb = next((n for n in self.notebooks_data if n['id'] == nb_id), None)
+        if nb:
+            self.last_selected_notebook = nb
+            self.set_active_item('notebook', nb['id'])
+            self.notebook_selected.emit(nb['id'], nb['name'])
+
+    def on_notebook_context_menu(self, pos):
+        item = self.notebooks_list.itemAt(pos)
+        if not item:
+            return
+        nb_id = item.data(Qt.UserRole)
+        if not nb_id or nb_id == -1:
+            return
+        nb = next((n for n in self.notebooks_data if n['id'] == nb_id), None)
+        if not nb:
+            return
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QCursor
+        menu = QMenu(self)
+        rename_act = menu.addAction(t("notebook_rename"))
+        del_act = menu.addAction(t("notebook_delete"))
+        chosen = menu.exec(QCursor.pos())
+        if chosen == rename_act:
+            self.rename_notebook_requested.emit(nb_id, nb['name'])
+        elif chosen == del_act:
+            self.delete_notebook_requested.emit(nb_id, nb['name'])
+
+    def update_notebooks_list(self, notebooks, active_id=None, selected_notebook_id=None, limit=None):
+        target_active_id = active_id if active_id is not None else selected_notebook_id
+        self.notebooks_data = notebooks or []
+        self.notebooks_list.clear()
+
+        if hasattr(self, 'notebooks_badge'):
+            self.notebooks_badge.setText(str(len(self.notebooks_data)))
+
+        if limit is None:
+            try:
+                import database
+                limit = int(database.get_setting("sidebar_notebooks_limit", "5"))
+            except Exception:
+                limit = 5
+        else:
+            try:
+                limit = int(limit)
+            except Exception:
+                limit = 5
+
+        if limit <= 0:
+            self.notebooks_list.clear()
+            self.notebooks_list.setFixedHeight(0)
+            self.notebooks_list.setVisible(False)
+            return
+
+        display_items = self.notebooks_data[:limit]
+        for nb in display_items:
+            count = nb.get('note_count', 0)
+            item = QListWidgetItem(f"   {nb['name']} ({count})")
+            item.setData(Qt.UserRole, nb['id'])
+            self.notebooks_list.addItem(item)
+            if target_active_id and nb['id'] == target_active_id:
+                self.last_selected_notebook = nb
+                self.notebooks_list.setCurrentRow(self.notebooks_list.count() - 1)
+
+        count = self.notebooks_list.count()
+        if count == 0 or self.is_collapsed or not self.notebooks_data:
+            self.notebooks_list.setFixedHeight(0)
+            self.notebooks_list.setVisible(False)
+        else:
+            self.notebooks_list.setFixedHeight(count * 44 + 8)
+            self.notebooks_list.setVisible(True)
+
     def clear_list_selections(self):
         self.models_list.clearSelection()
         self.libraries_list.clearSelection()
+        if hasattr(self, 'notebooks_list'):
+            self.notebooks_list.clearSelection()
 
     def set_incognito_active(self, active):
         self.incognito_active_state = active

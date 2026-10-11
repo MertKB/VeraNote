@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=VeraNote
+Comment=AI Model & ComfyUI Workflow Manager with Rich Notes
+Exec=VeraNote %F
+Icon=veranote
+Categories=Graphics;Utility;Office;
+Terminal=false
+StartupNotify=true

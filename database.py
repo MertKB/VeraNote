@@ -249,6 +249,27 @@ def initialize_db():
             );
         """)
 
+        # Notebooks (Özel Not Defterleri)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notebooks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+
+        # Note Tags (Many-to-Many for notes-tags)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS note_tags (
+                note_id INTEGER NOT NULL,
+                tag_id INTEGER NOT NULL,
+                FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE,
+                FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+                UNIQUE(note_id, tag_id)
+            );
+        """)
+
         # Daily Notes (Ajanda / Günlük Notlar)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS daily_notes (
@@ -331,6 +352,8 @@ def initialize_db():
                 cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_w INTEGER DEFAULT 200;")
             if 'corkboard_h' not in columns:
                 cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_h INTEGER DEFAULT 180;")
+            if 'notebook_id' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN notebook_id INTEGER REFERENCES notebooks(id) ON DELETE SET NULL;")
                 
             conn.commit()
         except sqlite3.Error as e:
@@ -416,6 +439,11 @@ def initialize_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_daily_date ON tasks(daily_note_date);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(is_completed);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_routines_active ON recurring_routines(is_active);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_notebook_id ON notes(notebook_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_del_hidden_nb ON notes(is_deleted, is_hidden, notebook_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_note_id ON note_tags(note_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_tag_id ON note_tags(tag_id);")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_notebooks_updated_at ON notebooks(updated_at);")
 
         conn.commit()
 
@@ -430,6 +458,7 @@ def initialize_db():
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('comfyui_enabled', '1');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'Koyu Gece');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('lang', 'en');")
+            cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('sidebar_notebooks_limit', '5');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('custom_theme_colors', '{\"bg_main\":\"#131314\",\"bg_card\":\"#1E1F20\",\"accent_color\":\"#1A73E8\"}');")
             conn.commit()
         except sqlite3.Error as e:
@@ -452,31 +481,62 @@ def set_setting(key, value):
         conn.commit()
 
 # Notes
-def save_note(note_id, title, content, image_path=None, display_mode='WITH_IMAGE', is_favorite=0, is_deleted=0, color_hex=None):
+def save_note(note_id, title, content, image_path=None, display_mode='WITH_IMAGE', is_favorite=0, is_deleted=0, color_hex=None, notebook_id=None):
     with get_connection() as conn:
         cursor = conn.cursor()
         if note_id is None:
             c_hex = color_hex if color_hex is not None else 'default'
             cursor.execute("""
-                INSERT INTO notes (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex) 
-                VALUES (?, ?, ?, ?, ?, ?, ?);
-            """, (title, content, image_path, display_mode, is_favorite, is_deleted, c_hex))
+                INSERT INTO notes (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex, notebook_id) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """, (title, content, image_path, display_mode, is_favorite, is_deleted, c_hex, notebook_id))
             note_id = cursor.lastrowid
+            if notebook_id:
+                touch_notebook(notebook_id)
         else:
-            if color_hex is not None:
-                cursor.execute("""
-                    UPDATE notes 
-                    SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, color_hex = ?, updated_at = CURRENT_TIMESTAMP 
-                    WHERE id = ?;
-                """, (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex, note_id))
+            if notebook_id is not None:
+                if color_hex is not None:
+                    cursor.execute("""
+                        UPDATE notes 
+                        SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, color_hex = ?, notebook_id = ?, updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = ?;
+                    """, (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex, notebook_id, note_id))
+                else:
+                    cursor.execute("""
+                        UPDATE notes 
+                        SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, notebook_id = ?, updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = ?;
+                    """, (title, content, image_path, display_mode, is_favorite, is_deleted, notebook_id, note_id))
+                if notebook_id:
+                    touch_notebook(notebook_id)
             else:
-                cursor.execute("""
-                    UPDATE notes 
-                    SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, updated_at = CURRENT_TIMESTAMP 
-                    WHERE id = ?;
-                """, (title, content, image_path, display_mode, is_favorite, is_deleted, note_id))
+                if color_hex is not None:
+                    cursor.execute("""
+                        UPDATE notes 
+                        SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, color_hex = ?, updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = ?;
+                    """, (title, content, image_path, display_mode, is_favorite, is_deleted, color_hex, note_id))
+                else:
+                    cursor.execute("""
+                        UPDATE notes 
+                        SET title = ?, content = ?, image_path = ?, display_mode = ?, is_favorite = ?, is_deleted = ?, updated_at = CURRENT_TIMESTAMP 
+                        WHERE id = ?;
+                    """, (title, content, image_path, display_mode, is_favorite, is_deleted, note_id))
+                cursor.execute("SELECT notebook_id FROM notes WHERE id = ?;", (note_id,))
+                row = cursor.fetchone()
+                if row and row[0]:
+                    touch_notebook(row[0])
         conn.commit()
         return note_id
+
+def set_note_notebook(note_id, notebook_id):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notes SET notebook_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;", (notebook_id, note_id))
+        conn.commit()
+        if notebook_id:
+            touch_notebook(notebook_id)
+        return True
 
 def update_note_color(note_id, color_hex):
     with get_connection() as conn:
@@ -532,40 +592,55 @@ def empty_recycle_bin():
         cursor.execute("DELETE FROM notes WHERE is_deleted = 1;")
         conn.commit()
 
-def get_notes(search_query=None, show_only_favs=False, sort_by="En Yeni", only_deleted=False, show_hidden=False, limit=None, offset=None):
+def get_notes(search_query=None, show_only_favs=False, sort_by="En Yeni", only_deleted=False, show_hidden=False, limit=None, offset=None, notebook_id=None, scope=None, tag=None):
     with get_connection() as conn:
         cursor = conn.cursor()
-        query = "SELECT * FROM notes WHERE "
+        query = """
+            SELECT n.*,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tags_list,
+                   (SELECT nb.name FROM notebooks nb WHERE nb.id = n.notebook_id) as notebook_name
+            FROM notes n WHERE 
+        """
         if only_deleted:
-            query += "is_deleted = 1"
+            query += "n.is_deleted = 1"
         else:
-            query += "is_deleted = 0"
+            query += "n.is_deleted = 0"
             
         if not show_hidden:
-            query += " AND is_hidden = 0"
+            query += " AND n.is_hidden = 0"
             
         params = []
+
+        if notebook_id is not None:
+            query += " AND n.notebook_id = ?"
+            params.append(int(notebook_id))
+        elif scope == "unassigned":
+            query += " AND (n.notebook_id IS NULL OR n.notebook_id = 0)"
+            
+        if tag:
+            query += " AND n.id IN (SELECT nt.note_id FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE t.name = ?)"
+            params.append(str(tag).strip())
         
         if show_only_favs:
-            query += " AND is_favorite = 1"
+            query += " AND n.is_favorite = 1"
             
         if search_query:
-            query += " AND (title LIKE ? OR content LIKE ?)"
+            query += " AND (n.title LIKE ? OR n.content LIKE ?)"
             q = f"%{search_query}%"
             params.extend([q, q])
             
         # Sorting (Multilingual: TR & EN support)
         s_lower = (sort_by or "").lower().strip()
         if s_lower in ("a-z", "a to z"):
-            query += " ORDER BY title ASC"
+            query += " ORDER BY n.title ASC"
         elif s_lower in ("z-a", "z to a"):
-            query += " ORDER BY title DESC"
+            query += " ORDER BY n.title DESC"
         elif s_lower in ("en eski", "oldest"):
-            query += " ORDER BY created_at ASC"
+            query += " ORDER BY n.created_at ASC"
         elif s_lower in ("en son düzenlenen", "son düzenlenen", "last edited", "recently edited"):
-            query += " ORDER BY updated_at DESC"
+            query += " ORDER BY n.updated_at DESC"
         else: # "En Yeni", "Newest"
-            query += " ORDER BY created_at DESC"
+            query += " ORDER BY n.created_at DESC"
             
         if limit is not None:
             query += " LIMIT ?"
@@ -575,16 +650,30 @@ def get_notes(search_query=None, show_only_favs=False, sort_by="En Yeni", only_d
                 params.append(int(offset))
                 
         cursor.execute(query, params)
-        return [dict(row) for row in cursor.fetchall()]
+        results = []
+        for row in cursor.fetchall():
+            row_dict = dict(row)
+            tags_str = row_dict.get('tags_list')
+            row_dict['tags'] = [x.strip() for x in tags_str.split(',') if x.strip()] if tags_str else []
+            results.append(row_dict)
+        return results
 
 def get_note_by_id(note_id):
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM notes WHERE id = ?;", (note_id,))
+        cursor.execute("""
+            SELECT n.*,
+                   (SELECT GROUP_CONCAT(t.name, ',') FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tags_list,
+                   (SELECT nb.name FROM notebooks nb WHERE nb.id = n.notebook_id) as notebook_name
+            FROM notes n
+            WHERE n.id = ?;
+        """, (note_id,))
         row = cursor.fetchone()
         if not row:
             return None
         row_dict = dict(row)
+        tags_str = row_dict.get('tags_list')
+        row_dict['tags'] = [x.strip() for x in tags_str.split(',') if x.strip()] if tags_str else []
         # Fetch associated models
         cursor.execute("""
             SELECT m.id, m.name 
@@ -1160,6 +1249,215 @@ def get_all_models_for_association():
 
 associate_model_with_note = associate_note_model
 dissociate_model_from_note = dissociate_note_model
+
+# --- NOTEBOOKS (Özel Not Defterleri) ---
+def create_notebook(name: str):
+    name = (name or '').strip()
+    if not name:
+        return None
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            import datetime
+            now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+            cursor.execute("""
+                INSERT INTO notebooks (name, created_at, updated_at)
+                VALUES (?, ?, ?);
+            """, (name, now_str, now_str))
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError:
+            return None
+        except sqlite3.Error as e:
+            print(f"Error creating notebook {name}: {e}")
+            return None
+
+def get_notebooks(order_by_recent=True):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        order_clause = "ORDER BY updated_at DESC, id DESC" if order_by_recent else "ORDER BY name ASC"
+        cursor.execute(f"""
+            SELECT id, name, created_at, updated_at,
+                   (SELECT COUNT(*) FROM notes WHERE notebook_id = notebooks.id AND is_deleted = 0) as note_count
+            FROM notebooks
+            {order_clause};
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+def get_notebook_by_id(notebook_id: int):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, name, created_at, updated_at,
+                   (SELECT COUNT(*) FROM notes WHERE notebook_id = notebooks.id AND is_deleted = 0) as note_count
+            FROM notebooks WHERE id = ?;
+        """, (notebook_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def update_notebook_name(notebook_id: int, name: str) -> bool:
+    name = (name or '').strip()
+    if not name:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            import datetime
+            now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+            cursor.execute("""
+                UPDATE notebooks
+                SET name = ?, updated_at = ?
+                WHERE id = ?;
+            """, (name, now_str, notebook_id))
+            conn.commit()
+            return True
+        except sqlite3.IntegrityError:
+            return False
+        except sqlite3.Error as e:
+            print(f"Error updating notebook {notebook_id}: {e}")
+            return False
+
+def delete_notebook(notebook_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            # Unassign notes to preserve them
+            cursor.execute("UPDATE notes SET notebook_id = NULL WHERE notebook_id = ?;", (notebook_id,))
+            cursor.execute("DELETE FROM notebooks WHERE id = ?;", (notebook_id,))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error deleting notebook {notebook_id}: {e}")
+            return False
+
+def touch_notebook(notebook_id: int) -> bool:
+    if not notebook_id:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            import datetime
+            now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+            cursor.execute("SELECT MAX(updated_at) FROM notebooks;")
+            row = cursor.fetchone()
+            max_dt = row[0] if row and row[0] else ""
+            if max_dt and max_dt >= now_str:
+                try:
+                    dt = datetime.datetime.fromisoformat(max_dt) + datetime.timedelta(microseconds=1000)
+                    now_str = dt.strftime('%Y-%m-%d %H:%M:%S.%f')
+                except Exception:
+                    pass
+            cursor.execute("UPDATE notebooks SET updated_at = ? WHERE id = ?;", (now_str, notebook_id))
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error touching notebook {notebook_id}: {e}")
+            return False
+
+# --- NOTE TAGS (Not Etiketleri) ---
+def add_note_tag(note_id: int, tag_name: str) -> bool:
+    tag_name = (tag_name or '').strip()
+    if not note_id or not tag_name:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT OR IGNORE INTO tags (name) VALUES (?);", (tag_name,))
+            cursor.execute("SELECT id FROM tags WHERE name = ?;", (tag_name,))
+            row = cursor.fetchone()
+            if row:
+                tag_id = row['id']
+                cursor.execute("INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?);", (note_id, tag_id))
+                conn.commit()
+                return True
+            return False
+        except sqlite3.Error as e:
+            print(f"Error adding note tag {tag_name} for note {note_id}: {e}")
+            return False
+
+def delete_note_tag(note_id: int, tag_name: str) -> bool:
+    tag_name = (tag_name or '').strip()
+    if not note_id or not tag_name:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT id FROM tags WHERE name = ?;", (tag_name,))
+            row = cursor.fetchone()
+            if row:
+                tag_id = row['id']
+                cursor.execute("DELETE FROM note_tags WHERE note_id = ? AND tag_id = ?;", (note_id, tag_id))
+                cursor.execute("""
+                    DELETE FROM tags 
+                    WHERE id = ? 
+                      AND id NOT IN (SELECT DISTINCT tag_id FROM note_tags)
+                      AND id NOT IN (SELECT DISTINCT tag_id FROM model_tags);
+                """, (tag_id,))
+                conn.commit()
+                return True
+            return False
+        except sqlite3.Error as e:
+            print(f"Error deleting note tag {tag_name} for note {note_id}: {e}")
+            return False
+
+def set_note_tags(note_id: int, tags_list: list) -> bool:
+    if not note_id:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM note_tags WHERE note_id = ?;", (note_id,))
+            seen = set()
+            for tag in tags_list or []:
+                tag_name = str(tag).strip()
+                if not tag_name or tag_name.lower() in seen:
+                    continue
+                seen.add(tag_name.lower())
+                cursor.execute("INSERT OR IGNORE INTO tags (name) VALUES (?);", (tag_name,))
+                cursor.execute("SELECT id FROM tags WHERE name = ?;", (tag_name,))
+                row = cursor.fetchone()
+                if row:
+                    cursor.execute("INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?);", (note_id, row['id']))
+            cursor.execute("""
+                DELETE FROM tags 
+                WHERE id NOT IN (SELECT DISTINCT tag_id FROM note_tags)
+                  AND id NOT IN (SELECT DISTINCT tag_id FROM model_tags);
+            """)
+            conn.commit()
+            return True
+        except sqlite3.Error as e:
+            print(f"Error setting note tags for note {note_id}: {e}")
+            return False
+
+def clear_note_tags(note_id: int) -> bool:
+    return set_note_tags(note_id, [])
+
+def get_note_tags(note_id: int) -> list:
+    if not note_id:
+        return []
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT t.name 
+            FROM note_tags nt 
+            JOIN tags t ON nt.tag_id = t.id 
+            WHERE nt.note_id = ?
+            ORDER BY t.name ASC;
+        """, (note_id,))
+        return [row['name'] for row in cursor.fetchall()]
+
+def get_all_note_tags() -> list:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT t.name 
+            FROM note_tags nt 
+            JOIN tags t ON nt.tag_id = t.id 
+            ORDER BY t.name ASC;
+        """)
+        return [row['name'] for row in cursor.fetchall()]
+
+
 
 # --- BACKUP & RESTORE UTILITIES ---
 def export_backup_zip(target_zip_path: str) -> bool:

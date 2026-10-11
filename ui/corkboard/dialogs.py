@@ -46,26 +46,28 @@ class HomePageSettingsDialog(QDialog):
         self._child_dialog_open = False
         self._outside_filter = AutoSaveOnOutsideClickFilter(self)
         self.welcome_screen = welcome_screen
+        self.highlight_color = getattr(welcome_screen, 'highlight_color', '#8AB4F8')
+        self.accent_color = getattr(welcome_screen, 'accent_color', '#1A73E8')
         self.setWindowTitle(t("home_settings_title"))
         self.resize(480, 560)
         self.setMinimumSize(440, 500)
-        self.setStyleSheet("""
-            QDialog {
+        self.setStyleSheet(f"""
+            QDialog {{
                 background-color: #1E1F20;
                 color: #E3E3E3;
                 border-radius: 14px;
-            }
-            QLabel {
+            }}
+            QLabel {{
                 color: #E3E3E3;
                 font-size: 13px;
-            }
-            QLabel#SectionHeader {
-                color: #8AB4F8;
+            }}
+            QLabel#SectionHeader {{
+                color: {self.highlight_color};
                 font-weight: bold;
                 font-size: 14px;
                 padding-top: 6px;
-            }
-            QPushButton {
+            }}
+            QPushButton {{
                 background-color: #2D2F31;
                 color: #E3E3E3;
                 border: 1px solid #444746;
@@ -73,34 +75,34 @@ class HomePageSettingsDialog(QDialog):
                 padding: 8px 14px;
                 font-size: 12px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #3C4043;
                 color: #FFFFFF;
-            }
-            QPushButton[primary="true"] {
-                background-color: #1A73E8;
+            }}
+            QPushButton[primary="true"] {{
+                background-color: {self.accent_color};
                 color: #FFFFFF;
-                border-color: #8AB4F8;
-            }
-            QCheckBox {
+                border-color: {self.highlight_color};
+            }}
+            QCheckBox {{
                 color: #E3E3E3;
                 font-size: 13px;
                 font-weight: bold;
                 spacing: 8px;
-            }
-            QSlider::groove:horizontal {
+            }}
+            QSlider::groove:horizontal {{
                 height: 6px;
                 background: #2D2F31;
                 border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                background: #8AB4F8;
+            }}
+            QSlider::handle:horizontal {{
+                background: {self.highlight_color};
                 width: 16px;
                 margin-top: -5px;
                 margin-bottom: -5px;
                 border-radius: 8px;
-            }
+            }}
         """)
 
         dialog_layout = QVBoxLayout(self)
@@ -109,7 +111,7 @@ class HomePageSettingsDialog(QDialog):
 
         # Header Title
         hdr = QLabel(t("home_settings_title"), self)
-        hdr.setStyleSheet("font-size: 18px; font-weight: bold; color: #8AB4F8; padding-bottom: 4px;")
+        hdr.setStyleSheet(f"font-size: 18px; font-weight: bold; color: {self.highlight_color}; padding-bottom: 4px;")
         dialog_layout.addWidget(hdr)
 
         # Scroll Area to prevent squeezing/clipping
@@ -159,22 +161,24 @@ class HomePageSettingsDialog(QDialog):
         self.coord_mode_lbl.setStyleSheet("font-weight: 500; font-size: 12px; color: #C4C7C5; margin-top: 4px;")
         coord_layout.addWidget(self.coord_mode_lbl)
 
-        self.coord_mode_combo = QComboBox(scroll_content)
-        self.coord_mode_combo.setStyleSheet("""
-            QComboBox {
+        combo_qss = f"""
+            QComboBox {{
                 background-color: #2D2F31;
                 border: 1px solid #444746;
                 border-radius: 8px;
                 color: #E3E3E3;
                 padding: 6px 12px;
                 font-size: 12px;
-            }
-            QComboBox QAbstractItemView {
+            }}
+            QComboBox QAbstractItemView {{
                 background-color: #2D2F31;
                 color: #E3E3E3;
-                selection-background-color: #1A73E8;
-            }
-        """)
+                selection-background-color: {self.accent_color};
+            }}
+        """
+
+        self.coord_mode_combo = QComboBox(scroll_content)
+        self.coord_mode_combo.setStyleSheet(combo_qss)
         self.coord_mode_options = [
             ("clamp", t("coord_mode_clamp")),
             ("proportional", t("coord_mode_proportional")),
@@ -215,21 +219,7 @@ class HomePageSettingsDialog(QDialog):
         font_family_layout.addWidget(self.font_family_lbl)
         
         self.font_family_combo = QComboBox(scroll_content)
-        self.font_family_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                color: #E3E3E3;
-                padding: 6px 12px;
-                font-size: 12px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #2D2F31;
-                color: #E3E3E3;
-                selection-background-color: #1A73E8;
-            }
-        """)
+        self.font_family_combo.setStyleSheet(combo_qss)
         font_list = ["Segoe UI", "Arial", "Inter", "Roboto", "Trebuchet MS", "Verdana", "Georgia", "Comic Sans MS", "Courier New", "Impact"]
         curr_font = self.welcome_screen.title_font_family
         if curr_font and curr_font not in font_list:
@@ -247,21 +237,7 @@ class HomePageSettingsDialog(QDialog):
         font_weight_layout.addWidget(self.font_weight_lbl)
 
         self.font_weight_combo = QComboBox(scroll_content)
-        self.font_weight_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                color: #E3E3E3;
-                padding: 6px 12px;
-                font-size: 12px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #2D2F31;
-                color: #E3E3E3;
-                selection-background-color: #1A73E8;
-            }
-        """)
+        self.font_weight_combo.setStyleSheet(combo_qss)
         self.weight_map = [
             (t("weight_thin"), 100),
             (t("weight_light"), 300),

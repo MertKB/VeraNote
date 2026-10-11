@@ -12,6 +12,7 @@ from PySide6.QtGui import (QPainter, QImage, QTextDocument, QFontMetrics, QCurso
 from utils.i18n import t
 from utils.cache import THUMBNAIL_CACHE, resolve_image_path
 from ui.library_view import get_rounded_pixmap
+from ui.styles import adjust_brightness
 
 
 _DATA_URI_RE = re.compile(r'data:image/[^;\s]+;base64,[A-Za-z0-9+/=]+', re.IGNORECASE)
@@ -21,6 +22,8 @@ def extract_plain_text(html_content: str) -> str:
     """Clean HTML content into human-readable plain text without giant base64 data URIs."""
     if not html_content:
         return ""
+    if len(html_content) > 3000:
+        html_content = html_content[:3000]
     cleaned_html = _DATA_URI_RE.sub('[Görsel]', html_content)
     doc = QTextDocument()
     doc.setHtml(cleaned_html)
@@ -157,7 +160,7 @@ class QuickNoteCardWidget(QFrame):
     position_changed = Signal(int, int) # x, y
     size_changed = Signal(int, int) # w, h
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, highlight_color="#8AB4F8", accent_color="#1A73E8"):
         super().__init__(parent)
         self.setObjectName("QuickNoteCard")
         self.setMinimumSize(220, 120)
@@ -168,7 +171,9 @@ class QuickNoteCardWidget(QFrame):
         self.drag_start_pos = QPoint()
         self.is_locked = False
         self.bg_color = "#1E1F20"
-        self.border_color = "#8AB4F8"
+        self.highlight_color = highlight_color
+        self.accent_color = accent_color
+        self.border_color = highlight_color
         self.setCursor(Qt.PointingHandCursor)
         
         self.update_style()
@@ -198,22 +203,35 @@ class QuickNoteCardWidget(QFrame):
         btn_layout.addStretch()
         
         self.save_btn = QPushButton(t("workflow_dialog_save"), self)
-        self.save_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #1A73E8;
+        self.update_save_btn_style()
+        self.save_btn.clicked.connect(self.on_save)
+        btn_layout.addWidget(self.save_btn)
+        layout.addLayout(btn_layout)
+
+    def update_save_btn_style(self):
+        hover_col = adjust_brightness(self.accent_color, 0.85) if self.accent_color else "#1557B0"
+        self.save_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.accent_color};
                 color: #FFFFFF;
                 font-weight: bold;
                 border-radius: 8px;
                 padding: 5px 14px;
                 font-size: 12px;
-            }
-            QPushButton:hover {
-                background-color: #1557B0;
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {hover_col};
+            }}
         """)
-        self.save_btn.clicked.connect(self.on_save)
-        btn_layout.addWidget(self.save_btn)
-        layout.addLayout(btn_layout)
+
+    def apply_theme(self, highlight_color, accent_color):
+        self.highlight_color = highlight_color
+        self.accent_color = accent_color
+        if not self.border_color or self.border_color in ("#8AB4F8", "#1A73E8") or self.border_color == getattr(self, '_prev_highlight', ''):
+            self.border_color = highlight_color
+        self._prev_highlight = highlight_color
+        self.update_save_btn_style()
+        self.update_style()
 
     def update_style(self):
         bg = self.bg_color if self.bg_color else "transparent"
@@ -301,12 +319,14 @@ class CorkboardNoteCard(QFrame):
     clicked = Signal(dict)
     position_changed = Signal(int, int, int, int, int) # note_id, x, y, w, h
 
-    def __init__(self, note_data, color_idx=0, mode="free", show_images=True, parent=None):
+    def __init__(self, note_data, color_idx=0, mode="free", show_images=True, parent=None, highlight_color="#8AB4F8", accent_color="#1A73E8"):
         super().__init__(parent)
         self.setObjectName("CorkboardCard")
         self.note_data = note_data
         self.mode = mode
         self.show_images = show_images
+        self.highlight_color = highlight_color
+        self.accent_color = accent_color
         self.drag_position = None
         self.is_resizing = False
         self.drag_start_size = QSize()
@@ -377,8 +397,8 @@ class CorkboardNoteCard(QFrame):
         self.copy_btn.setIcon(get_icon("notes", "#E3E3E3", 12))
         self.copy_btn.setCursor(Qt.PointingHandCursor)
         self.copy_btn.setToolTip(t("home_copy_note"))
-        self.copy_btn.setStyleSheet("""
-            QPushButton {
+        self.copy_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: rgba(30, 31, 32, 0.85);
                 color: #E3E3E3;
                 border: 1px solid #444746;
@@ -386,12 +406,12 @@ class CorkboardNoteCard(QFrame):
                 font-size: 11px;
                 font-weight: bold;
                 padding: 2px 6px;
-            }
-            QPushButton:hover {
-                background-color: #1A73E8;
+            }}
+            QPushButton:hover {{
+                background-color: {self.accent_color};
                 color: #FFFFFF;
-                border-color: #8AB4F8;
-            }
+                border-color: {self.highlight_color};
+            }}
         """)
         self.copy_btn.clicked.connect(self.on_copy_text)
         top_overlay_layout.addWidget(self.copy_btn)
@@ -585,7 +605,8 @@ class CorkboardNoteCard(QFrame):
         if not self.is_locked and self.mode == "free":
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
-            painter.setPen(QPen(QColor("#8AB4F8"), 1.5))
+            pen_color = getattr(self, 'highlight_color', '#8AB4F8')
+            painter.setPen(QPen(QColor(pen_color), 1.5))
             w, h = self.width(), self.height()
             painter.drawLine(w - 12, h - 4, w - 4, h - 12)
             painter.drawLine(w - 8, h - 4, w - 4, h - 8)

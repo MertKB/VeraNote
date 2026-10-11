@@ -31,6 +31,9 @@ class ModelSection(QWidget):
         self.initial_name = ""
         self.initial_notes = ""
         self.initial_arch = ""
+        self.highlight_color = "#8AB4F8"
+        self.accent_color = "#1A73E8"
+        self.palette = {}
         self.init_ui()
 
     def init_ui(self):
@@ -40,11 +43,11 @@ class ModelSection(QWidget):
 
         # Image preview label
         self.image_label = QLabel()
+        self.image_label.setObjectName("DetailImageLabel")
         self.image_label.setFixedHeight(180)
         self.image_label.setMinimumWidth(0)
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.image_label.setStyleSheet("background-color: #131314; border-radius: 8px;")
         self.image_label.setCursor(Qt.PointingHandCursor)
         self.image_label.mousePressEvent = self.on_image_clicked
         layout.addWidget(self.image_label)
@@ -57,7 +60,6 @@ class ModelSection(QWidget):
         self.name_edit = QLineEdit()
         self.name_edit.setMinimumWidth(0)
         self.name_edit.setPlaceholderText(t("detail_card_title_placeholder"))
-        self.name_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.name_edit.textChanged.connect(self.check_changes)
         layout.addWidget(self.name_edit)
 
@@ -65,7 +67,6 @@ class ModelSection(QWidget):
         arch_row = QHBoxLayout()
         self.arch_label = QLabel(t("detail_arch_label") + ":")
         self.arch_label.setObjectName("DetailWordLabel")
-        self.arch_label.setStyleSheet("color: #E3E3E3; font-weight: bold; font-size: 12px;")
         arch_row.addWidget(self.arch_label)
 
         self.arch_combo = QComboBox()
@@ -80,40 +81,15 @@ class ModelSection(QWidget):
             "SD 2.1",
             "Diğer"
         ])
-        self.arch_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 6px;
-                color: #8AB4F8;
-                font-weight: bold;
-                padding: 4px 10px;
-                font-size: 12px;
-            }
-        """)
         self.arch_combo.currentIndexChanged.connect(self._on_arch_combo_changed)
         arch_row.addWidget(self.arch_combo)
 
         from utils.icon_manager import get_icon
         self.detect_arch_btn = QPushButton(t("detail_arch_detect_btn"))
-        self.detect_arch_btn.setIcon(get_icon("lightning", "#8AB4F8", 12))
+        self.detect_arch_btn.setIcon(get_icon("lightning", "#FFFFFF", 12))
+        self.detect_arch_btn.setObjectName("DetailSubBtn")
         self.detect_arch_btn.setToolTip(t("detail_arch_detect_tooltip"))
         self.detect_arch_btn.setCursor(Qt.PointingHandCursor)
-        self.detect_arch_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #8AB4F8;
-                border: 1px solid #444746;
-                border-radius: 6px;
-                padding: 4px 10px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #8AB4F8;
-            }
-        """)
         self.detect_arch_btn.clicked.connect(self.run_manual_arch_detect)
         arch_row.addWidget(self.detect_arch_btn)
 
@@ -136,7 +112,6 @@ class ModelSection(QWidget):
         self.notes_edit.setPlaceholderText(t("detail_notes_placeholder_model"))
         self.notes_edit.setMinimumHeight(120)
         self.notes_edit.setMaximumHeight(200)
-        self.notes_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.notes_edit.textChanged.connect(self.check_changes)
         layout.addWidget(self.notes_edit)
 
@@ -171,25 +146,20 @@ class ModelSection(QWidget):
         # Copy to prompt button
         self.copy_tags_btn = QPushButton(t("detail_tags_copy_prompt_btn"))
         self.copy_tags_btn.setIcon(get_icon("notes", "#81C995", 12))
+        self.copy_tags_btn.setObjectName("DetailSubBtn")
         self.copy_tags_btn.setToolTip(t("detail_tags_copy_prompt_tooltip"))
         self.copy_tags_btn.setCursor(Qt.PointingHandCursor)
-        self.copy_tags_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #81C995;
-                border: 1px solid #444746;
-                border-radius: 6px;
-                padding: 3px 8px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #81C995;
-            }
-        """)
         self.copy_tags_btn.clicked.connect(self.copy_tags_to_prompt)
         tags_header_layout.addWidget(self.copy_tags_btn)
+
+        # Clear all tags button
+        self.clear_tags_btn = QPushButton(t("detail_tags_clear"))
+        self.clear_tags_btn.setIcon(get_icon("trash", "#F28B82", 12))
+        self.clear_tags_btn.setObjectName("DetailSubBtnNeg")
+        self.clear_tags_btn.setToolTip(t("detail_tags_clear_tooltip"))
+        self.clear_tags_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_tags_btn.clicked.connect(self.run_clear_tags)
+        tags_header_layout.addWidget(self.clear_tags_btn)
 
         layout.addLayout(tags_header_layout)
 
@@ -200,7 +170,6 @@ class ModelSection(QWidget):
         self.new_tag_edit = QLineEdit()
         self.new_tag_edit.setMinimumWidth(0)
         self.new_tag_edit.setPlaceholderText(t("detail_new_tag_placeholder"))
-        self.new_tag_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.new_tag_edit.returnPressed.connect(self.on_add_tag)
         layout.addWidget(self.new_tag_edit)
 
@@ -213,47 +182,19 @@ class ModelSection(QWidget):
 
         # Extract / Fetch from file button for triggers
         self.fetch_tw_btn = QPushButton(t("detail_tw_fetch_btn"))
-        self.fetch_tw_btn.setIcon(get_icon("lightning", "#8AB4F8", 12))
+        self.fetch_tw_btn.setIcon(get_icon("lightning", "#FFFFFF", 12))
+        self.fetch_tw_btn.setObjectName("DetailSubBtn")
         self.fetch_tw_btn.setToolTip(t("detail_tw_fetch_tooltip"))
         self.fetch_tw_btn.setCursor(Qt.PointingHandCursor)
-        self.fetch_tw_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #8AB4F8;
-                border: 1px solid #444746;
-                border-radius: 6px;
-                padding: 3px 8px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #8AB4F8;
-            }
-        """)
         self.fetch_tw_btn.clicked.connect(self.run_fetch_triggers)
         tw_header_layout.addWidget(self.fetch_tw_btn)
 
         # Reset triggers button
         self.reset_tw_btn = QPushButton(t("detail_tw_reset_btn"))
         self.reset_tw_btn.setIcon(get_icon("refresh", "#F28B82", 12))
+        self.reset_tw_btn.setObjectName("DetailSubBtnNeg")
         self.reset_tw_btn.setToolTip(t("detail_tw_reset_tooltip"))
         self.reset_tw_btn.setCursor(Qt.PointingHandCursor)
-        self.reset_tw_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #F28B82;
-                border: 1px solid #444746;
-                border-radius: 6px;
-                padding: 3px 8px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #F28B82;
-            }
-        """)
         self.reset_tw_btn.clicked.connect(self.run_reset_triggers)
         tw_header_layout.addWidget(self.reset_tw_btn)
 
@@ -265,10 +206,9 @@ class ModelSection(QWidget):
         self.new_tw_edit = QLineEdit()
         self.new_tw_edit.setMinimumWidth(0)
         self.new_tw_edit.setPlaceholderText(t("detail_new_trigger_placeholder"))
-        self.new_tw_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
         self.new_tw_edit.returnPressed.connect(self.on_add_trigger)
         self.add_tw_btn = QPushButton("+ " + t("detail_add_btn"))
-        self.add_tw_btn.setStyleSheet("padding: 6px 12px;")
+        self.add_tw_btn.setObjectName("DetailSubBtn")
         self.add_tw_btn.clicked.connect(self.on_add_trigger)
         add_tw_layout.addWidget(self.new_tw_edit)
         add_tw_layout.addWidget(self.add_tw_btn)
@@ -299,24 +239,21 @@ class ModelSection(QWidget):
         pos_layout.setSpacing(4)
         pos_hdr = QHBoxLayout()
         self.sample_pos_lbl = QLabel(t("detail_sample_prompt_pos"))
-        self.sample_pos_lbl.setStyleSheet("color: #8AB4F8; font-size: 11px; font-weight: bold;")
+        self.sample_pos_lbl.setObjectName("DetailWordLabel")
         pos_hdr.addWidget(self.sample_pos_lbl)
         pos_hdr.addStretch()
         self.copy_sample_pos_btn = QPushButton(t("workflow_copy_prompt"))
         from utils.icon_manager import get_icon
-        self.copy_sample_pos_btn.setIcon(get_icon("notes", "#8AB4F8", 12))
-        self.copy_sample_pos_btn.setStyleSheet("""
-            QPushButton { background-color: #2D2F31; color: #8AB4F8; border: 1px solid #444746; border-radius: 12px; padding: 2px 8px; font-size: 11px; }
-            QPushButton:hover { background-color: #3C4043; border-color: #8AB4F8; }
-        """)
+        self.copy_sample_pos_btn.setIcon(get_icon("notes", "#FFFFFF", 12))
+        self.copy_sample_pos_btn.setObjectName("DetailSubBtn")
         self.copy_sample_pos_btn.clicked.connect(self.copy_sample_pos)
         pos_hdr.addWidget(self.copy_sample_pos_btn)
         pos_layout.addLayout(pos_hdr)
 
         self.sample_pos_edit = ZoomableTextEdit()
+        self.sample_pos_edit.setObjectName("WorkflowPromptEdit")
         self.sample_pos_edit.setReadOnly(True)
         self.sample_pos_edit.setMaximumHeight(85)
-        self.sample_pos_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 6px; color: #D1D5DB; font-size: 11px; padding: 4px;")
         pos_layout.addWidget(self.sample_pos_edit)
         sample_layout.addWidget(self.sample_pos_box)
 
@@ -327,23 +264,20 @@ class ModelSection(QWidget):
         neg_layout.setSpacing(4)
         neg_hdr = QHBoxLayout()
         self.sample_neg_lbl = QLabel(t("detail_sample_prompt_neg"))
-        self.sample_neg_lbl.setStyleSheet("color: #F28B82; font-size: 11px; font-weight: bold;")
+        self.sample_neg_lbl.setObjectName("DetailWordLabel")
         neg_hdr.addWidget(self.sample_neg_lbl)
         neg_hdr.addStretch()
         self.copy_sample_neg_btn = QPushButton(t("workflow_copy_prompt"))
         self.copy_sample_neg_btn.setIcon(get_icon("notes", "#F28B82", 12))
-        self.copy_sample_neg_btn.setStyleSheet("""
-            QPushButton { background-color: #2D2F31; color: #F28B82; border: 1px solid #444746; border-radius: 12px; padding: 2px 8px; font-size: 11px; }
-            QPushButton:hover { background-color: #3C4043; border-color: #F28B82; }
-        """)
+        self.copy_sample_neg_btn.setObjectName("DetailSubBtnNeg")
         self.copy_sample_neg_btn.clicked.connect(self.copy_sample_neg)
         neg_hdr.addWidget(self.copy_sample_neg_btn)
         neg_layout.addLayout(neg_hdr)
 
         self.sample_neg_edit = ZoomableTextEdit()
+        self.sample_neg_edit.setObjectName("WorkflowPromptEdit")
         self.sample_neg_edit.setReadOnly(True)
         self.sample_neg_edit.setMaximumHeight(65)
-        self.sample_neg_edit.setStyleSheet("background-color: #1A1C1E; border: 1px solid #36383B; border-radius: 6px; color: #D1D5DB; font-size: 11px; padding: 4px;")
         neg_layout.addWidget(self.sample_neg_edit)
         sample_layout.addWidget(self.sample_neg_box)
 
@@ -580,6 +514,21 @@ class ModelSection(QWidget):
         if reply == QMessageBox.Yes:
             self.delete_tag_requested.emit(self.model_data['id'], tag)
 
+    def run_clear_tags(self):
+        if not self.model_data:
+            return
+        tags = self.model_data.get('tags', [])
+        if not tags:
+            return
+        model_id = self.model_data.get('id')
+        if model_id:
+            self.model_data['tags'] = []
+            self.set_tags_requested.emit(model_id, [])
+            self.reload_tags()
+            win = self.window()
+            if win and hasattr(win, 'show_toast'):
+                win.show_toast(t("toast_tags_cleared"), "info")
+
     def run_fetch_triggers(self):
         """Extracts triggers and tags from .safetensors header and merges with existing triggers."""
         if not self.model_data:
@@ -764,7 +713,10 @@ class ModelSection(QWidget):
                 return
         self.image_label.setText(t("detail_upload_image"))
         self.image_label.setPixmap(QPixmap())
-        self.image_label.setStyleSheet("color: #8AB4F8; font-size: 12px; background-color: #131314; border-radius: 8px; border: 2px dashed #444746; qproperty-alignment: AlignCenter;")
+        border_c = self.palette.get("border_color", "#444746") if hasattr(self, 'palette') and self.palette else "#444746"
+        bg_c = self.palette.get("card_img_bg", "#131314") if hasattr(self, 'palette') and self.palette else "#131314"
+        fg_c = self.palette.get("text_muted", "#9AA0A6") if hasattr(self, 'palette') and self.palette else "#9AA0A6"
+        self.image_label.setStyleSheet(f"color: {fg_c}; font-size: 12px; background-color: {bg_c}; border-radius: 8px; border: 2px dashed {border_c}; qproperty-alignment: AlignCenter;")
 
     def on_image_clicked(self, event):
         if not self.model_data:
@@ -787,6 +739,12 @@ class ModelSection(QWidget):
         self.save_btn.setText(t("detail_save_changes"))
         self.delete_btn.setText(t("detail_delete_model"))
         self.tags_title.setText(t("detail_tags_title"))
+        if hasattr(self, 'clear_tags_btn'):
+            self.clear_tags_btn.setText(t("detail_tags_clear"))
+            self.clear_tags_btn.setToolTip(t("detail_tags_clear_tooltip"))
+        if hasattr(self, 'copy_tags_btn'):
+            self.copy_tags_btn.setText(t("detail_tags_copy_prompt_btn"))
+            self.copy_tags_btn.setToolTip(t("detail_tags_copy_prompt_tooltip"))
         self.new_tag_edit.setPlaceholderText(t("detail_new_tag_placeholder"))
         self.tw_title.setText(t("detail_triggers_title"))
         if hasattr(self, 'fetch_tw_btn'):
@@ -808,3 +766,29 @@ class ModelSection(QWidget):
             self.path_label.setText(f"{t('detail_card_path')} {self.model_data.get('file_path', '')}")
             self.reload_tags()
             self.reload_pills()
+
+    def apply_theme(self, palette: dict):
+        if not palette:
+            return
+        from utils.icon_manager import get_icon
+        self.palette = palette
+        self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
+        self.accent_color = palette.get("accent_color", "#1A73E8")
+
+        fg = palette.get("text_main", "#FFFFFF")
+        if hasattr(self, 'detect_arch_btn'):
+            self.detect_arch_btn.setIcon(get_icon("lightning", fg, 12))
+        if hasattr(self, 'copy_tags_btn'):
+            self.copy_tags_btn.setIcon(get_icon("notes", "#81C995", 12))
+        if hasattr(self, 'clear_tags_btn'):
+            self.clear_tags_btn.setIcon(get_icon("trash", "#F28B82", 12))
+        if hasattr(self, 'fetch_tw_btn'):
+            self.fetch_tw_btn.setIcon(get_icon("lightning", fg, 12))
+        if hasattr(self, 'reset_tw_btn'):
+            self.reset_tw_btn.setIcon(get_icon("refresh", "#F28B82", 12))
+        if hasattr(self, 'copy_sample_pos_btn'):
+            self.copy_sample_pos_btn.setIcon(get_icon("notes", fg, 12))
+        if hasattr(self, 'copy_sample_neg_btn'):
+            self.copy_sample_neg_btn.setIcon(get_icon("notes", "#F28B82", 12))
+
+        self.update_image()

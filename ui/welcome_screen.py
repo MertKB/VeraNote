@@ -178,23 +178,26 @@ class WelcomeScreen(QWidget):
         footer_layout.setSpacing(8)
         footer_layout.addStretch()
 
+        self.highlight_color = "#8AB4F8"
+        self.accent_color = "#1A73E8"
+
         self.home_settings_btn = QPushButton(f"  {t('home_settings_btn')}", self)
-        self.home_settings_btn.setIcon(get_icon("settings", "#8AB4F8", 16))
+        self.home_settings_btn.setIcon(get_icon("settings", self.highlight_color, 16))
         self.home_settings_btn.setIconSize(QSize(16, 16))
-        self.home_settings_btn.setStyleSheet("""
-            QPushButton {
+        self.home_settings_btn.setStyleSheet(f"""
+            QPushButton {{
                 background-color: rgba(45, 47, 49, 0.85);
-                color: #8AB4F8;
-                border: 1px solid #8AB4F8;
+                color: {self.highlight_color};
+                border: 1px solid {self.highlight_color};
                 border-radius: 16px;
                 padding: 7px 16px;
                 font-size: 12px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: rgba(26, 115, 232, 0.95);
+            }}
+            QPushButton:hover {{
+                background-color: {self.accent_color};
                 color: #FFFFFF;
-            }
+            }}
         """)
         self.home_settings_btn.clicked.connect(self.open_home_settings_dialog)
         footer_layout.addWidget(self.home_settings_btn)
@@ -482,8 +485,19 @@ class WelcomeScreen(QWidget):
         self.switch_corkboard_mode("free")
 
     def set_corkboard_notes(self, notes):
+        if hasattr(self, 'corkboard_notes') and self.corkboard_notes == notes:
+            return
         self.corkboard_notes = notes
-        self.render_corkboard()
+        if self.isVisible():
+            self.render_corkboard()
+        else:
+            self._corkboard_dirty = True
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if getattr(self, '_corkboard_dirty', False):
+            self._corkboard_dirty = False
+            self.render_corkboard()
 
     def render_corkboard(self):
         # Clear existing layout references & cards
@@ -511,14 +525,18 @@ class WelcomeScreen(QWidget):
             self.quick_note_widget.setParent(None)
             self.quick_note_widget.deleteLater()
 
-        self.quick_note_widget = QuickNoteCardWidget(parent=self.corkboard_grid_widget)
+        self.quick_note_widget = QuickNoteCardWidget(
+            parent=self.corkboard_grid_widget,
+            highlight_color=self.highlight_color,
+            accent_color=self.accent_color
+        )
         self.quick_note_widget.resize(self.quick_note_w, self.quick_note_h)
         self.quick_note_widget.quick_note_saved.connect(self.quick_note_saved.emit)
         self.quick_note_widget.position_changed.connect(self.on_quick_note_position_changed)
         self.quick_note_widget.size_changed.connect(self.on_quick_note_size_changed)
         self.quick_note_widget.is_locked = self.positions_locked
         self.quick_note_widget.bg_color = self.quick_note_bg
-        self.quick_note_widget.border_color = self.quick_note_border_color
+        self.quick_note_widget.border_color = self.quick_note_border_color if self.quick_note_border_color else self.highlight_color
         self.quick_note_widget.update_style()
         self.quick_note_widget.setVisible(self.quick_note_visible)
 
@@ -566,7 +584,13 @@ class WelcomeScreen(QWidget):
             max_y = max(title_y + title_h + 20, qn_y + 180, 300)
             
             for i, note in enumerate(notes):
-                card = CorkboardNoteCard(note, color_idx=i, mode="free", show_images=self.corkboard_show_images, parent=self.corkboard_grid_widget)
+                card = CorkboardNoteCard(
+                    note, color_idx=i, mode="free",
+                    show_images=self.corkboard_show_images,
+                    parent=self.corkboard_grid_widget,
+                    highlight_color=self.highlight_color,
+                    accent_color=self.accent_color
+                )
                 card.is_locked = self.positions_locked
                 card.position_changed.connect(self.corkboard_position_changed.emit)
                 card.clicked.connect(lambda data: self.note_open_requested.emit(data.get('id', 0)))
@@ -591,7 +615,13 @@ class WelcomeScreen(QWidget):
 
             columns = max(1, self.scroll_area.viewport().width() // 220)
             for i, note in enumerate(notes):
-                card = CorkboardNoteCard(note, color_idx=i, mode="grid", show_images=self.corkboard_show_images, parent=self.corkboard_grid_widget)
+                card = CorkboardNoteCard(
+                    note, color_idx=i, mode="grid",
+                    show_images=self.corkboard_show_images,
+                    parent=self.corkboard_grid_widget,
+                    highlight_color=self.highlight_color,
+                    accent_color=self.accent_color
+                )
                 card.is_locked = self.positions_locked
                 card.clicked.connect(lambda data: self.note_open_requested.emit(data.get('id', 0)))
                 card.setVisible(self.corkboard_notes_visible)
@@ -625,9 +655,54 @@ class WelcomeScreen(QWidget):
             self.quick_note_card.retranslate_ui()
         if hasattr(self, 'home_settings_btn'):
             self.home_settings_btn.setText(f"  {t('home_settings_btn')}")
-            self.home_settings_btn.setIcon(get_icon("settings", "#8AB4F8", 16))
+            self.home_settings_btn.setIcon(get_icon("settings", self.highlight_color, 16))
         if hasattr(self, 'corkboard_notes') and self.corkboard_notes:
             self.render_corkboard(self.corkboard_notes)
+
+    def apply_theme(self, palette: dict):
+        if not palette:
+            return
+        self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
+        self.accent_color = palette.get("accent_color", "#1A73E8")
+        if hasattr(self, 'home_settings_btn'):
+            self.home_settings_btn.setIcon(get_icon("settings", self.highlight_color, 16))
+            self.home_settings_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: rgba(45, 47, 49, 0.85);
+                    color: {self.highlight_color};
+                    border: 1px solid {self.highlight_color};
+                    border-radius: 16px;
+                    padding: 7px 16px;
+                    font-size: 12px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: {self.accent_color};
+                    color: #FFFFFF;
+                }}
+            """)
+        if hasattr(self, 'quick_note_widget') and self.quick_note_widget:
+            self.quick_note_widget.apply_theme(self.highlight_color, self.accent_color)
+        for card in getattr(self, 'corkboard_cards', []):
+            if isinstance(card, CorkboardNoteCard):
+                card.highlight_color = self.highlight_color
+                card.accent_color = self.accent_color
+                card.copy_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba(30, 31, 32, 0.85);
+                        color: #E3E3E3;
+                        border: 1px solid #444746;
+                        border-radius: 10px;
+                        font-size: 11px;
+                        font-weight: bold;
+                        padding: 2px 6px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {self.accent_color};
+                        color: #FFFFFF;
+                        border-color: {self.highlight_color};
+                    }}
+                """)
 
     def paintEvent(self, event):
         opt = QStyleOption()

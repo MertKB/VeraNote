@@ -3,7 +3,7 @@ import os
 import json
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QFileDialog, QDialogButtonBox,
-                             QCheckBox, QDoubleSpinBox, QComboBox, QWidget, QColorDialog,
+                             QCheckBox, QDoubleSpinBox, QSpinBox, QComboBox, QWidget, QColorDialog,
                              QApplication, QGridLayout, QScrollArea, QFrame, QMessageBox)
 from PySide6.QtCore import Qt, QObject, QEvent, Signal
 from PySide6.QtGui import QColor
@@ -16,10 +16,12 @@ DEFAULT_CUSTOM_COLORS = {
     "bg_sidebar": "#18191B",
     "bg_input": "#282A2E",
     "accent_color": "#1A73E8",
+    "highlight_color": "#8AB4F8",
+    "border_focus": "#8AB4F8",
+    "card_selected": "#192231",
     "text_main": "#E3E3E3",
     "text_muted": "#9AA0A6",
-    "cal_weekend_header": "#F472B6",
-    "cal_weekend_text": "#FB7185"
+    "cal_weekend_color": "#FB7185"
 }
 
 CUSTOM_PRESETS = [
@@ -30,10 +32,12 @@ CUSTOM_PRESETS = [
         "bg_sidebar": "#18191B",
         "bg_input": "#282A2E",
         "accent_color": "#1A73E8",
+        "highlight_color": "#8AB4F8",
+        "border_focus": "#8AB4F8",
+        "card_selected": "#192231",
         "text_main": "#E3E3E3",
         "text_muted": "#9AA0A6",
-        "cal_weekend_header": "#F472B6",
-        "cal_weekend_text": "#FB7185"
+        "cal_weekend_color": "#FB7185"
     }),
     ("custom_preset_amoled", {
         "bg_main": "#18191C",
@@ -42,10 +46,12 @@ CUSTOM_PRESETS = [
         "bg_sidebar": "#141517",
         "bg_input": "#222428",
         "accent_color": "#3B82F6",
+        "highlight_color": "#60A5FA",
+        "border_focus": "#60A5FA",
+        "card_selected": "#141E2E",
         "text_main": "#F1F3F5",
         "text_muted": "#909296",
-        "cal_weekend_header": "#60A5FA",
-        "cal_weekend_text": "#F87171"
+        "cal_weekend_color": "#F87171"
     }),
     ("custom_preset_midnight", {
         "bg_main": "#120E16",
@@ -54,10 +60,12 @@ CUSTOM_PRESETS = [
         "bg_sidebar": "#17121C",
         "bg_input": "#2A2033",
         "accent_color": "#A061D8",
+        "highlight_color": "#D7AEF5",
+        "border_focus": "#D7AEF5",
+        "card_selected": "#281838",
         "text_main": "#EAE5ED",
         "text_muted": "#B5A9BC",
-        "cal_weekend_header": "#D7AEF5",
-        "cal_weekend_text": "#E879F9"
+        "cal_weekend_color": "#E879F9"
     }),
     ("custom_preset_emerald", {
         "bg_main": "#0C1410",
@@ -66,10 +74,12 @@ CUSTOM_PRESETS = [
         "bg_sidebar": "#0E1813",
         "bg_input": "#182B23",
         "accent_color": "#10B981",
+        "highlight_color": "#34D399",
+        "border_focus": "#34D399",
+        "card_selected": "#112B20",
         "text_main": "#E6F4EA",
         "text_muted": "#829B8C",
-        "cal_weekend_header": "#34D399",
-        "cal_weekend_text": "#6EE7B7"
+        "cal_weekend_color": "#6EE7B7"
     }),
     ("custom_preset_espresso", {
         "bg_main": "#191512",
@@ -78,10 +88,12 @@ CUSTOM_PRESETS = [
         "bg_sidebar": "#1D1814",
         "bg_input": "#2E2620",
         "accent_color": "#D97706",
+        "highlight_color": "#FBBF24",
+        "border_focus": "#FBBF24",
+        "card_selected": "#2E2018",
         "text_main": "#F5EBE6",
         "text_muted": "#A8988F",
-        "cal_weekend_header": "#FBBF24",
-        "cal_weekend_text": "#F59E0B"
+        "cal_weekend_color": "#F59E0B"
     })
 ]
 
@@ -92,10 +104,12 @@ COLOR_ATTRIBUTES = [
     ("bg_sidebar", "custom_theme_sidebar", "custom_theme_sidebar_tooltip"),
     ("bg_input", "custom_theme_input", "custom_theme_input_tooltip"),
     ("accent_color", "custom_theme_accent", "custom_theme_accent_tooltip"),
+    ("highlight_color", "custom_theme_highlight", "custom_theme_highlight_tooltip"),
+    ("border_focus", "custom_theme_border_focus", "custom_theme_border_focus_tooltip"),
+    ("card_selected", "custom_theme_card_selected", "custom_theme_card_selected_tooltip"),
     ("text_main", "custom_theme_text_main", "custom_theme_text_main_tooltip"),
     ("text_muted", "custom_theme_text_muted", "custom_theme_text_muted_tooltip"),
-    ("cal_weekend_header", "custom_theme_cal_weekend_header", "custom_theme_cal_weekend_header_tooltip"),
-    ("cal_weekend_text", "custom_theme_cal_weekend_text", "custom_theme_cal_weekend_text_tooltip"),
+    ("cal_weekend_color", "custom_theme_cal_weekend", "custom_theme_cal_weekend_tooltip"),
 ]
 
 
@@ -239,7 +253,7 @@ class SettingsDialog(QDialog):
 
         # Title
         self.title_lbl = QLabel(t("settings_paths"))
-        self.title_lbl.setStyleSheet("font-size: 13px; font-weight: bold; color: #C2E7FF;")
+        self.title_lbl.setStyleSheet("font-size: 13px; font-weight: bold; color: #E3E3E3;")
         comfyui_paths_layout.addWidget(self.title_lbl)
 
         # LoRA Path Section
@@ -353,7 +367,7 @@ class SettingsDialog(QDialog):
         presets_bar = QHBoxLayout()
         presets_bar.setSpacing(6)
         self.presets_lbl = QLabel(t("custom_theme_presets") + ":")
-        self.presets_lbl.setStyleSheet("color: #C2E7FF; font-size: 11px; font-weight: bold;")
+        self.presets_lbl.setStyleSheet("color: #E3E3E3; font-size: 11px; font-weight: bold;")
         presets_bar.addWidget(self.presets_lbl)
 
         self.preset_buttons = []
@@ -401,6 +415,7 @@ class SettingsDialog(QDialog):
         self.bg_main_btn = self.color_buttons["bg_main"]
         self.bg_card_btn = self.color_buttons["bg_card"]
         self.accent_btn = self.color_buttons["accent_color"]
+        self.highlight_btn = self.color_buttons.get("highlight_color")
 
         custom_colors_layout.addLayout(colors_grid)
         general_layout.addWidget(self.custom_colors_widget)
@@ -427,6 +442,45 @@ class SettingsDialog(QDialog):
         lang_row.addWidget(self.lang_combo)
         lang_row.addStretch()
         general_layout.addLayout(lang_row)
+
+        # Sidebar Notebooks Limit
+        nb_limit_row = QHBoxLayout()
+        self.sidebar_nb_lbl = QLabel(t("settings_sidebar_notebooks_limit"))
+        self.sidebar_nb_lbl.setStyleSheet("color: #9AA0A6; font-size: 12px;")
+        self.sidebar_nb_combo = QComboBox()
+        self.sidebar_nb_combo.setStyleSheet("""
+            QComboBox {
+                background-color: #2D2F31;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                color: #E3E3E3;
+                padding: 4px 10px;
+                min-width: 90px;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left-width: 0px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #2D2F31;
+                color: #E3E3E3;
+                selection-background-color: #3C4043;
+                selection-color: #FFFFFF;
+                border: 1px solid #444746;
+            }
+        """)
+        self.populate_sidebar_nb_combo(5)
+        # Compatibility aliases
+        self.sidebar_nb_spin = self.sidebar_nb_combo
+        self.sidebar_nb_combo.value = lambda: int(self.sidebar_nb_combo.currentData() if self.sidebar_nb_combo.currentData() is not None else 5)
+        self.sidebar_nb_combo.setValue = lambda v: self.populate_sidebar_nb_combo(v)
+        
+        nb_limit_row.addWidget(self.sidebar_nb_lbl)
+        nb_limit_row.addWidget(self.sidebar_nb_combo)
+        nb_limit_row.addStretch()
+        general_layout.addLayout(nb_limit_row)
         
         layout.addLayout(general_layout)
 
@@ -457,7 +511,7 @@ class SettingsDialog(QDialog):
         self.export_backup_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2D2F31;
-                color: #C2E7FF;
+                color: #E3E3E3;
                 border: 1px solid #444746;
                 border-radius: 6px;
                 padding: 6px 12px;
@@ -466,7 +520,7 @@ class SettingsDialog(QDialog):
             }
             QPushButton:hover {
                 background-color: #3C4043;
-                border-color: #8AB4F8;
+                border-color: #C4C7C5;
             }
         """)
         self.export_backup_btn.clicked.connect(self.on_export_backup)
@@ -609,6 +663,53 @@ class SettingsDialog(QDialog):
         except Exception:
             return False
 
+    def populate_sidebar_nb_combo(self, selected_val=5):
+        if not hasattr(self, 'sidebar_nb_combo'):
+            return
+        self.sidebar_nb_combo.blockSignals(True)
+        self.sidebar_nb_combo.clear()
+
+        options = [
+            (0, f"0 ({t('settings_sidebar_notebooks_none')})"),
+            (1, "1"),
+            (2, "2"),
+            (3, "3"),
+            (4, "4"),
+            (5, "5"),
+            (6, "6"),
+            (7, "7"),
+            (8, "8"),
+            (9, "9"),
+            (10, "10"),
+            (15, "15"),
+            (20, "20"),
+            (25, "25"),
+            (30, "30"),
+            (50, "50"),
+            (999, t("settings_sidebar_notebooks_all"))
+        ]
+
+        found = False
+        try:
+            target_val = int(selected_val) if selected_val is not None else 5
+        except (ValueError, TypeError):
+            target_val = 5
+
+        for val, label in options:
+            self.sidebar_nb_combo.addItem(label, val)
+            if target_val == val:
+                found = True
+
+        if not found and selected_val is not None:
+            self.sidebar_nb_combo.addItem(str(selected_val), target_val)
+
+        idx = self.sidebar_nb_combo.findData(target_val)
+        if idx >= 0:
+            self.sidebar_nb_combo.setCurrentIndex(idx)
+        else:
+            self.sidebar_nb_combo.setCurrentIndex(5)
+        self.sidebar_nb_combo.blockSignals(False)
+
     def get_storage_sizes(self):
         try:
             import database
@@ -625,16 +726,19 @@ class SettingsDialog(QDialog):
             'auto_save_interval': self.interval_spin.value(),
             'theme': self.theme_combo.currentData(),
             'lang': self.lang_combo.currentData(),
-            'custom_theme_colors': self.custom_colors
+            'custom_theme_colors': self.custom_colors,
+            'sidebar_notebooks_limit': int(self.sidebar_nb_combo.currentData() if (hasattr(self, 'sidebar_nb_combo') and self.sidebar_nb_combo.currentData() is not None) else 5)
         }
 
-    def set_settings(self, lora_path, ckpt_path, auto_save_enabled, auto_save_interval, theme, lang, custom_colors_data=None, comfyui_enabled=1):
+    def set_settings(self, lora_path, ckpt_path, auto_save_enabled, auto_save_interval, theme, lang, custom_colors_data=None, comfyui_enabled=1, sidebar_notebooks_limit=5):
         self.comfyui_enable_check.setChecked(bool(comfyui_enabled))
         self.comfyui_paths_widget.setVisible(bool(comfyui_enabled))
         self.lora_path_edit.setText(lora_path)
         self.ckpt_path_edit.setText(ckpt_path)
         self.autosave_check.setChecked(bool(auto_save_enabled))
         self.interval_spin.setValue(float(auto_save_interval))
+        if hasattr(self, 'sidebar_nb_combo'):
+            self.populate_sidebar_nb_combo(sidebar_notebooks_limit if sidebar_notebooks_limit is not None else 5)
         
         # Load custom theme colors
         if custom_colors_data:
@@ -675,6 +779,11 @@ class SettingsDialog(QDialog):
         self.general_lbl.setText(t("settings"))
         self.theme_lbl.setText(t("settings_theme"))
         self.lang_lbl.setText(t("settings_lang"))
+        if hasattr(self, 'sidebar_nb_lbl'):
+            self.sidebar_nb_lbl.setText(t("settings_sidebar_notebooks_limit"))
+        if hasattr(self, 'sidebar_nb_combo'):
+            curr_val = self.sidebar_nb_combo.currentData()
+            self.populate_sidebar_nb_combo(curr_val)
         
         if hasattr(self, 'presets_lbl'):
             self.presets_lbl.setText(t("custom_theme_presets") + ":")

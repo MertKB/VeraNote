@@ -11,7 +11,8 @@ from PySide6.QtCore import Signal, Qt, QTimer
 from PySide6.QtGui import QPixmap, QTextCursor, QGuiApplication
 from utils.i18n import t
 from utils.cache import resolve_image_path
-from .common import ZoomableTextEdit, FlowLayout
+from utils.icon_manager import get_icon
+from .common import ZoomableTextEdit, FlowLayout, TagPillWidget
 
 
 class NoteSection(QWidget):
@@ -22,6 +23,10 @@ class NoteSection(QWidget):
     delete_note_requested = Signal(int)
     associate_model_requested = Signal(int, int) # note_id, model_id
     dissociate_model_requested = Signal(int, int) # note_id, model_id
+    add_note_tag_requested = Signal(int, str) # note_id, tag
+    delete_note_tag_requested = Signal(int, str) # note_id, tag
+    clear_note_tags_requested = Signal(int) # note_id
+    set_note_notebook_requested = Signal(int, object) # note_id, notebook_id
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -39,6 +44,9 @@ class NoteSection(QWidget):
         
         self.auto_save_enabled = 1
         self.auto_save_interval = 1.5
+        self.highlight_color = "#8AB4F8"
+        self.accent_color = "#1A73E8"
+        self.palette = {}
 
         self.init_ui()
 
@@ -55,21 +63,8 @@ class NoteSection(QWidget):
 
         # Row 1: Note Title
         self.note_title_edit = QLineEdit()
+        self.note_title_edit.setObjectName("NoteTitleEdit")
         self.note_title_edit.setPlaceholderText(t("detail_card_title_placeholder"))
-        self.note_title_edit.setStyleSheet("""
-            QLineEdit {
-                font-size: 18px;
-                font-weight: bold;
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                color: #E3E3E3;
-                padding: 8px 10px;
-            }
-            QLineEdit:focus {
-                border-color: #8AB4F8;
-            }
-        """)
         self.note_title_edit.textChanged.connect(self.check_changes)
         note_hdr_layout.addWidget(self.note_title_edit)
 
@@ -82,18 +77,18 @@ class NoteSection(QWidget):
         self.note_thumb_preview = QLabel()
         self.note_thumb_preview.setFixedSize(60, 36)
         self.note_thumb_preview.setAlignment(Qt.AlignCenter)
-        self.note_thumb_preview.setStyleSheet("background-color: #131314; border-radius: 6px; border: 1px solid #444746;")
+        self.note_thumb_preview.setStyleSheet("background-color: transparent; border-radius: 6px; border: 1px solid transparent;")
         self.note_thumb_preview.setCursor(Qt.PointingHandCursor)
         self.note_thumb_preview.mousePressEvent = lambda e: self.on_select_note_image()
         note_row2_layout.addWidget(self.note_thumb_preview)
 
         self.select_note_img_btn = QPushButton(t("detail_select_image"))
-        self.select_note_img_btn.setStyleSheet("padding: 4px 8px; font-size: 11px; font-weight: 500;")
+        self.select_note_img_btn.setObjectName("DetailSubBtn")
         self.select_note_img_btn.clicked.connect(self.on_select_note_image)
         note_row2_layout.addWidget(self.select_note_img_btn)
 
         self.remove_note_img_btn = QPushButton(t("detail_remove_image"))
-        self.remove_note_img_btn.setStyleSheet("padding: 4px 8px; font-size: 11px; font-weight: 500; color: #F28B82;")
+        self.remove_note_img_btn.setObjectName("DetailSubBtnNeg")
         self.remove_note_img_btn.clicked.connect(self.on_remove_note_image)
         note_row2_layout.addWidget(self.remove_note_img_btn)
 
@@ -101,22 +96,24 @@ class NoteSection(QWidget):
 
         self.display_mode_combo = QComboBox()
         self.display_mode_combo.addItems([t("detail_display_with_image"), t("detail_display_text_only")])
-        self.display_mode_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                color: #E3E3E3;
-                padding: 4px 8px;
-                font-size: 11px;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
         self.display_mode_combo.currentTextChanged.connect(self.on_display_mode_changed)
         note_row2_layout.addWidget(self.display_mode_combo)
         note_hdr_layout.addWidget(note_row2)
+
+        # Row 2.5: Notebook Selector
+        note_row_nb = QWidget()
+        note_row_nb_layout = QHBoxLayout(note_row_nb)
+        note_row_nb_layout.setContentsMargins(0, 0, 0, 0)
+        note_row_nb_layout.setSpacing(6)
+
+        self.notebook_lbl = QLabel(t("notebook") + ":")
+        self.notebook_lbl.setStyleSheet("color: #9AA0A6; font-size: 11px; font-weight: bold;")
+        note_row_nb_layout.addWidget(self.notebook_lbl)
+
+        self.notebook_combo = QComboBox()
+        self.notebook_combo.currentIndexChanged.connect(self.on_notebook_combo_changed)
+        note_row_nb_layout.addWidget(self.notebook_combo, 1)
+        note_hdr_layout.addWidget(note_row_nb)
 
         # Row 3: Metadata Timestamps & Pin Button
         note_row3 = QWidget()
@@ -162,6 +159,49 @@ class NoteSection(QWidget):
         char_layout.addWidget(self.char_count_label)
         layout.addWidget(self.char_count_container)
 
+        # --- NOTE TAGS SECTION ---
+        tags_header_layout = QHBoxLayout()
+        self.tags_title = QLabel(t("detail_notes_tags_title"))
+        self.tags_title.setObjectName("DetailWordLabel")
+        tags_header_layout.addWidget(self.tags_title)
+        tags_header_layout.addStretch()
+
+        # Clear all tags button ("Temizle")
+        self.clear_tags_btn = QPushButton(t("detail_tags_clear"))
+        self.clear_tags_btn.setIcon(get_icon("trash", "#F28B82", 12))
+        self.clear_tags_btn.setToolTip(t("detail_tags_clear_tooltip"))
+        self.clear_tags_btn.setCursor(Qt.PointingHandCursor)
+        self.clear_tags_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #F28B82;
+                border: 1px solid #444746;
+                border-radius: 6px;
+                padding: 3px 8px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #F28B82;
+            }
+        """)
+        self.clear_tags_btn.clicked.connect(self.run_clear_tags)
+        tags_header_layout.addWidget(self.clear_tags_btn)
+
+        layout.addLayout(tags_header_layout)
+
+        self.tags_container = QWidget()
+        self.tags_layout = FlowLayout(self.tags_container, spacing=6)
+        layout.addWidget(self.tags_container)
+
+        self.new_tag_edit = QLineEdit()
+        self.new_tag_edit.setMinimumWidth(0)
+        self.new_tag_edit.setPlaceholderText(t("detail_new_tag_placeholder"))
+        self.new_tag_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 6px;")
+        self.new_tag_edit.returnPressed.connect(self.on_add_tag)
+        layout.addWidget(self.new_tag_edit)
+
         # Save & Delete Buttons Container
         self.buttons_container = QWidget()
         buttons_layout = QHBoxLayout(self.buttons_container)
@@ -181,7 +221,7 @@ class NoteSection(QWidget):
 
         layout.addWidget(self.buttons_container)
 
-    def set_note(self, note_data, all_models=None, auto_save_settings=None):
+    def set_note(self, note_data, all_models=None, auto_save_settings=None, all_notebooks=None):
         self.note_data = note_data
         self.all_models_list = all_models or []
 
@@ -237,11 +277,103 @@ class NoteSection(QWidget):
             self.display_mode_combo.setCurrentText(t("detail_display_with_image"))
         self.display_mode_combo.blockSignals(False)
 
+        # Notebook combo
+        self.notebook_combo.blockSignals(True)
+        self.notebook_combo.clear()
+        self.notebook_combo.addItem(t("notes_scope_unassigned"), None)
+        if all_notebooks:
+            for nb in all_notebooks:
+                self.notebook_combo.addItem(f"📁 {nb['name']}", nb['id'])
+        curr_nb_id = note_data.get('notebook_id')
+        idx = self.notebook_combo.findData(curr_nb_id)
+        if idx >= 0:
+            self.notebook_combo.setCurrentIndex(idx)
+        else:
+            self.notebook_combo.setCurrentIndex(0)
+        self.notebook_combo.blockSignals(False)
+
         self.save_btn.setEnabled(False)
         self.update_char_count()
         self.update_pin_corkboard_btn_text()
         self.update_image()
         self.update_timestamp_display()
+        self.reload_tags()
+
+    def on_notebook_combo_changed(self, index):
+        if not self.note_data:
+            return
+        new_nb_id = self.notebook_combo.currentData()
+        if self.note_data.get('notebook_id') != new_nb_id:
+            self.note_data['notebook_id'] = new_nb_id
+            note_id = self.note_data.get('id')
+            if note_id:
+                self.set_note_notebook_requested.emit(note_id, new_nb_id)
+
+    def reload_tags(self):
+        while self.tags_layout.count():
+            item = self.tags_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        tags = self.note_data.get('tags', []) if self.note_data else []
+        for tag in tags:
+            tag_pill = TagPillWidget(tag, parent=self)
+            tag_pill.delete_requested.connect(self.on_delete_tag)
+            self.tags_layout.addWidget(tag_pill)
+
+        if not tags:
+            no_tags = QLabel(t("detail_no_tags"))
+            no_tags.setStyleSheet("color: #9AA0A6; font-style: italic; font-size: 11px;")
+            self.tags_layout.addWidget(no_tags)
+
+    def on_add_tag(self):
+        if not self.note_data:
+            return
+        tag = self.new_tag_edit.text().strip()
+        if tag:
+            tags = list(self.note_data.get('tags', []))
+            if tag in tags:
+                QMessageBox.warning(self, t("msg_copy_error_title"), t("msg_tag_exists"), QMessageBox.Ok)
+                return
+            note_id = self.note_data.get('id')
+            if note_id:
+                tags.append(tag)
+                self.note_data['tags'] = tags
+                self.add_note_tag_requested.emit(note_id, tag)
+                self.reload_tags()
+                self.new_tag_edit.clear()
+
+    def on_delete_tag(self, tag):
+        if not self.note_data:
+            return
+        reply = QMessageBox.question(
+            self, t("msg_confirm_remove_tag_title"), t("msg_confirm_remove_tag_text").format(tag=tag),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            note_id = self.note_data.get('id')
+            if note_id:
+                tags = list(self.note_data.get('tags', []))
+                if tag in tags:
+                    tags.remove(tag)
+                self.note_data['tags'] = tags
+                self.delete_note_tag_requested.emit(note_id, tag)
+                self.reload_tags()
+
+    def run_clear_tags(self):
+        if not self.note_data:
+            return
+        tags = self.note_data.get('tags', [])
+        if not tags:
+            return
+        note_id = self.note_data.get('id')
+        if note_id:
+            self.note_data['tags'] = []
+            self.clear_note_tags_requested.emit(note_id)
+            self.reload_tags()
+            win = self.window()
+            if win and hasattr(win, 'show_toast'):
+                win.show_toast(t("toast_tags_cleared"), "info")
 
     def update_timestamp_display(self, created_at=None, updated_at=None):
         if not hasattr(self, 'note_timestamps_label'):
@@ -405,10 +537,15 @@ class NoteSection(QWidget):
             self.current_image_path = image_path
 
         path = resolve_image_path(self.current_image_path)
+        border_c = self.palette.get("border_color", "#444746") if hasattr(self, 'palette') and self.palette else "#444746"
+        bg_input = self.palette.get("bg_input", "#1E1F20") if hasattr(self, 'palette') and self.palette else "#1E1F20"
+        bg_card_img = self.palette.get("card_img_bg", "#131314") if hasattr(self, 'palette') and self.palette else "#131314"
+        fg_muted = self.palette.get("text_muted", "#9AA0A6") if hasattr(self, 'palette') and self.palette else "#9AA0A6"
+
         if self.display_mode_combo.currentText() in ("Sadece Metin", t("detail_display_text_only"), "Text Only"):
             self.note_thumb_preview.setText(t("detail_thumb_text_only"))
             self.note_thumb_preview.setPixmap(QPixmap())
-            self.note_thumb_preview.setStyleSheet("color: #9AA0A6; font-size: 10px; background-color: #1E1F20; border-radius: 6px; border: 1px solid #2F2F2F; qproperty-alignment: AlignCenter;")
+            self.note_thumb_preview.setStyleSheet(f"color: {fg_muted}; font-size: 10px; background-color: {bg_input}; border-radius: 6px; border: 1px solid {border_c}; qproperty-alignment: AlignCenter;")
             return
 
         if path and os.path.exists(path):
@@ -417,12 +554,12 @@ class NoteSection(QWidget):
                 scaled = pixmap.scaled(60, 36, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
                 cropped = scaled.copy(0, 0, 60, 36)
                 self.note_thumb_preview.setPixmap(cropped)
-                self.note_thumb_preview.setStyleSheet("border-radius: 6px; background-color: transparent; border: 1px solid #444746; qproperty-alignment: AlignCenter;")
+                self.note_thumb_preview.setStyleSheet(f"border-radius: 6px; background-color: transparent; border: 1px solid {border_c}; qproperty-alignment: AlignCenter;")
                 return
 
         self.note_thumb_preview.setText(t("detail_thumb_add_image"))
         self.note_thumb_preview.setPixmap(QPixmap())
-        self.note_thumb_preview.setStyleSheet("color: #8AB4F8; font-size: 10px; font-weight: bold; background-color: #131314; border-radius: 6px; border: 1px dashed #444746; qproperty-alignment: AlignCenter;")
+        self.note_thumb_preview.setStyleSheet(f"color: {fg_muted}; font-size: 10px; font-weight: bold; background-color: {bg_card_img}; border-radius: 6px; border: 1px dashed {border_c}; qproperty-alignment: AlignCenter;")
 
     def on_select_note_image(self):
         if not self.note_data:
@@ -506,3 +643,27 @@ class NoteSection(QWidget):
         self.update_pin_corkboard_btn_text()
         self.update_char_count()
         self.update_timestamp_display()
+
+        if hasattr(self, 'tags_title'):
+            self.tags_title.setText(t("detail_notes_tags_title"))
+        if hasattr(self, 'clear_tags_btn'):
+            self.clear_tags_btn.setText(t("detail_tags_clear"))
+            self.clear_tags_btn.setToolTip(t("detail_tags_clear_tooltip"))
+        if hasattr(self, 'new_tag_edit'):
+            self.new_tag_edit.setPlaceholderText(t("detail_new_tag_placeholder"))
+        if hasattr(self, 'notebook_lbl'):
+            self.notebook_lbl.setText(t("notebook") + ":")
+        if hasattr(self, 'notebook_combo'):
+            self.notebook_combo.blockSignals(True)
+            if self.notebook_combo.count() > 0:
+                self.notebook_combo.setItemText(0, t("notes_scope_unassigned"))
+            self.notebook_combo.blockSignals(False)
+        self.reload_tags()
+
+    def apply_theme(self, palette: dict):
+        if not palette:
+            return
+        self.palette = palette
+        self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
+        self.accent_color = palette.get("accent_color", "#1A73E8")
+        self.update_image()

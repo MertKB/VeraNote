@@ -9,6 +9,7 @@ PALETTES = {
         "bg_input": "#282A2E",
         "border_color": "#2F3136",
         "border_focus": "#8AB4F8",
+        "highlight_color": "#8AB4F8",
         "accent_color": "#1A73E8",
         "accent_hover": "#1557B0",
         "accent_light": "#004A77",
@@ -27,6 +28,7 @@ PALETTES = {
         "bg_input": "#2A2033",
         "border_color": "#33253E",
         "border_focus": "#D7AEF5",
+        "highlight_color": "#D7AEF5",
         "accent_color": "#A061D8",
         "accent_hover": "#8049B6",
         "accent_light": "#432B5B",
@@ -45,6 +47,7 @@ PALETTES = {
         "bg_input": "#14293A",
         "border_color": "#1B3449",
         "border_focus": "#00E5FF",
+        "highlight_color": "#00E5FF",
         "accent_color": "#00B0FF",
         "accent_hover": "#0091EA",
         "accent_light": "#00365C",
@@ -180,7 +183,15 @@ def get_palette(theme_name="Koyu Gece", custom_colors=None):
             text_main = custom_text_main if custom_text_main else "#1A1A1A"
             text_muted = custom_text_muted if custom_text_muted else "#5F6368"
 
-        border_focus = adjust_brightness(accent_color, 1.2)
+        custom_highlight = custom_colors.get("highlight_color")
+        custom_border_focus = custom_colors.get("border_focus")
+        custom_card_selected = custom_colors.get("card_selected")
+
+        highlight_color = custom_highlight if custom_highlight else ("#8AB4F8" if not light_theme else "#1A73E8")
+        border_focus = custom_border_focus if custom_border_focus else (highlight_color if custom_highlight else adjust_brightness(accent_color, 1.2))
+        if custom_card_selected:
+            card_selected = custom_card_selected
+
         accent_hover = adjust_brightness(accent_color, 0.85)
         accent_light = adjust_brightness(accent_color, 0.35 if not light_theme else 0.85)
         text_light = adjust_brightness(accent_color, 1.4 if not light_theme else 0.5)
@@ -192,6 +203,7 @@ def get_palette(theme_name="Koyu Gece", custom_colors=None):
             "bg_input": bg_input,
             "border_color": border_color,
             "border_focus": border_focus,
+            "highlight_color": highlight_color,
             "accent_color": accent_color,
             "accent_hover": accent_hover,
             "accent_light": accent_light,
@@ -207,6 +219,7 @@ def get_palette(theme_name="Koyu Gece", custom_colors=None):
 
 def get_stylesheet(theme_name="Koyu Gece", custom_colors=None):
     p = get_palette(theme_name, custom_colors)
+    sidebar_fg = "#1A1A1A" if is_light(p.get('bg_sidebar', p['bg_card'])) else "#FFFFFF"
     return f"""
 QMainWindow {{
     background-color: {p['bg_main']};
@@ -292,7 +305,7 @@ QMainWindow::separator:hover {{
 
 /* Sidebar elements */
 #SidebarTitle {{
-    color: {p['text_main']};
+    color: {sidebar_fg};
     font-size: 20px;
     font-weight: 800;
     letter-spacing: 0.5px;
@@ -330,7 +343,7 @@ QPushButton:pressed {{
     background-color: {p['accent_color']};
 }}
 
-#NewNoteBtn, #NewLibBtn {{
+#NewNoteBtn, #NewLibBtn, #NewNotebookBtn {{
     background-color: {p['accent_color']};
     color: white;
     border: none;
@@ -340,7 +353,7 @@ QPushButton:pressed {{
     padding: 0px;
     margin: 0px;
 }}
-#NewNoteBtn:hover, #NewLibBtn:hover {{
+#NewNoteBtn:hover, #NewLibBtn:hover, #NewNotebookBtn:hover {{
     background-color: {p['accent_hover']};
     border: none;
     border-radius: 10px;
@@ -365,48 +378,48 @@ QPushButton#EmptyTrashBtn:hover {{
     border-color: #C02E26;
 }}
 
-/* Sidebar Buttons: Home, Agenda, All Notes, Trash, Settings, Models, Workflows */
-#HomeBtn, #AgendaBtn, #AllNotesBtn, #TrashBtn, #SettingsBtn, #ModelsHeaderBtn, #LibHeaderBtn {{
+/* Sidebar Buttons: Home, Agenda, All Notes, Notebooks, Trash, Settings, Models, Workflows */
+#HomeBtn, #AgendaBtn, #AllNotesBtn, #NotebooksHeaderBtn, #TrashBtn, #SettingsBtn, #ModelsHeaderBtn, #LibHeaderBtn {{
     background-color: transparent;
     border: 1px solid transparent;
-    color: {p['text_main']};
+    color: {sidebar_fg};
     text-align: left;
     border-radius: 10px;
     padding: 0px;
     margin: 0px;
 }}
 
-#HomeBtn QLabel, #AgendaBtn QLabel, #AllNotesBtn QLabel, #TrashBtn QLabel, #SettingsBtn QLabel, #ModelsHeaderBtn QLabel, #LibHeaderBtn QLabel {{
-    color: {p['text_main']};
+#HomeBtn QLabel, #AgendaBtn QLabel, #AllNotesBtn QLabel, #NotebooksHeaderBtn QLabel, #TrashBtn QLabel, #SettingsBtn QLabel, #ModelsHeaderBtn QLabel, #LibHeaderBtn QLabel {{
+    color: {sidebar_fg};
     font-size: 13px;
     font-weight: bold;
     background: transparent;
 }}
 
-#HomeBtn:hover, #AgendaBtn:hover, #AllNotesBtn:hover, #TrashBtn:hover, #SettingsBtn:hover, #ModelsHeaderBtn:hover, #LibHeaderBtn:hover {{
+#HomeBtn:hover, #AgendaBtn:hover, #AllNotesBtn:hover, #NotebooksHeaderBtn:hover, #TrashBtn:hover, #SettingsBtn:hover, #ModelsHeaderBtn:hover, #LibHeaderBtn:hover {{
     background-color: {p['bg_input']};
     border: 1px solid transparent;
     border-radius: 10px;
-    color: white;
+    color: {sidebar_fg};
 }}
 
-#HomeBtn:hover QLabel, #AgendaBtn:hover QLabel, #AllNotesBtn:hover QLabel, #TrashBtn:hover QLabel, #SettingsBtn:hover QLabel, #ModelsHeaderBtn:hover QLabel, #LibHeaderBtn:hover QLabel {{
-    color: white;
+#HomeBtn:hover QLabel, #AgendaBtn:hover QLabel, #AllNotesBtn:hover QLabel, #NotebooksHeaderBtn:hover QLabel, #TrashBtn:hover QLabel, #SettingsBtn:hover QLabel, #ModelsHeaderBtn:hover QLabel, #LibHeaderBtn:hover QLabel {{
+    color: {sidebar_fg};
 }}
 
-#HomeBtn:pressed, #AgendaBtn:pressed, #AllNotesBtn:pressed, #TrashBtn:pressed, #SettingsBtn:pressed, #ModelsHeaderBtn:pressed, #LibHeaderBtn:pressed {{
+#HomeBtn:pressed, #AgendaBtn:pressed, #AllNotesBtn:pressed, #NotebooksHeaderBtn:pressed, #TrashBtn:pressed, #SettingsBtn:pressed, #ModelsHeaderBtn:pressed, #LibHeaderBtn:pressed {{
     background-color: {p['border_color']};
     border: 1px solid transparent;
     border-radius: 10px;
-    color: white;
+    color: {sidebar_fg};
 }}
 
-#HomeBtn:pressed QLabel, #AgendaBtn:pressed QLabel, #AllNotesBtn:pressed QLabel, #TrashBtn:pressed QLabel, #SettingsBtn:pressed QLabel, #ModelsHeaderBtn:pressed QLabel, #LibHeaderBtn:pressed QLabel {{
-    color: white;
+#HomeBtn:pressed QLabel, #AgendaBtn:pressed QLabel, #AllNotesBtn:pressed QLabel, #NotebooksHeaderBtn:pressed QLabel, #TrashBtn:pressed QLabel, #SettingsBtn:pressed QLabel, #ModelsHeaderBtn:pressed QLabel, #LibHeaderBtn:pressed QLabel {{
+    color: {sidebar_fg};
 }}
 
 /* Clean, balanced symmetrical active section indicator without overlapping borders */
-#HomeBtn[active="true"], #AgendaBtn[active="true"], #AllNotesBtn[active="true"], 
+#HomeBtn[active="true"], #AgendaBtn[active="true"], #AllNotesBtn[active="true"], #NotebooksHeaderBtn[active="true"],
 #TrashBtn[active="true"], #SettingsBtn[active="true"],
 #ModelsHeaderBtn[active="true"], #LibHeaderBtn[active="true"] {{
     background-color: {p['accent_light']};
@@ -414,10 +427,10 @@ QPushButton#EmptyTrashBtn:hover {{
     border-radius: 10px;
 }}
 
-#HomeBtn[active="true"] QLabel, #AgendaBtn[active="true"] QLabel, #AllNotesBtn[active="true"] QLabel, 
+#HomeBtn[active="true"] QLabel, #AgendaBtn[active="true"] QLabel, #AllNotesBtn[active="true"] QLabel, #NotebooksHeaderBtn[active="true"] QLabel,
 #TrashBtn[active="true"] QLabel, #SettingsBtn[active="true"] QLabel,
 #ModelsHeaderBtn[active="true"] QLabel, #LibHeaderBtn[active="true"] QLabel {{
-    color: {p['text_light']};
+    color: {p['border_focus']};
     font-weight: bold;
 }}
 
@@ -685,6 +698,164 @@ QPushButton#CardSelectBtn[selected="true"]:hover {{
     font-size: 13px;
 }}
 
+#DetailPanelWidget QLineEdit, 
+#DetailPanelWidget QTextEdit, 
+#DetailPanelWidget QPlainTextEdit,
+#DetailPanelWidget QComboBox {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    color: {p['text_main']};
+    padding: 6px;
+    font-size: 12px;
+}}
+
+#DetailPanelWidget QLineEdit:focus, 
+#DetailPanelWidget QTextEdit:focus, 
+#DetailPanelWidget QPlainTextEdit:focus,
+#DetailPanelWidget QComboBox:focus {{
+    border: 1px solid {p['border_focus']};
+}}
+
+#DetailPanelWidget QComboBox::drop-down {{
+    border: none;
+}}
+
+QLineEdit#NoteTitleEdit {{
+    font-size: 18px;
+    font-weight: bold;
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    color: {p['text_main']};
+    padding: 8px 10px;
+}}
+QLineEdit#NoteTitleEdit:focus {{
+    border: 1px solid {p['border_focus']};
+}}
+
+#WorkflowPromptEdit {{
+    background-color: {p['bg_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    color: {p['text_main']};
+    font-size: 11px;
+    padding: 6px;
+}}
+
+QLabel#WorkflowNodePill {{
+    background-color: {p['bg_input']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 10px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 500;
+}}
+
+QPushButton#WorkflowModelPill {{
+    background-color: {p['bg_input']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+}}
+QPushButton#WorkflowModelPill:hover {{
+    background-color: {p['accent_light']};
+    border-color: {p['border_focus']};
+    color: {p['text_light']};
+}}
+
+QLabel#WorkflowParamBadge {{
+    background-color: {p['bg_input']};
+    color: {p['text_muted']};
+    border: 1px solid {p['border_color']};
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 11px;
+}}
+
+QLabel#WorkflowArchBadge {{
+    background-color: {p['accent_light']};
+    color: {p['text_light']};
+    border: 1px solid {p['border_focus']};
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: bold;
+}}
+
+QWidget#WorkflowSeedCard {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+}}
+
+#SeedTitleLabel {{
+    color: {p['text_muted']};
+    font-size: 11px;
+    font-weight: bold;
+}}
+
+#SeedValueLabel {{
+    color: {p['text_main']};
+    font-size: 12px;
+    font-family: monospace;
+    font-weight: bold;
+}}
+
+QPushButton#DetailSubBtn {{
+    background-color: {p['bg_input']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+}}
+QPushButton#DetailSubBtn:hover {{
+    background-color: {p['border_color']};
+    border-color: {p['border_focus']};
+    color: {p['text_main']};
+}}
+
+QPushButton#DetailSubBtnNeg {{
+    background-color: {p['bg_input']};
+    color: #F28B82;
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+}}
+QPushButton#DetailSubBtnNeg:hover {{
+    background-color: {p['border_color']};
+    border-color: #F28B82;
+    color: #F28B82;
+}}
+
+QPushButton#CopyClipBtn {{
+    background-color: {p['bg_input']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 500;
+}}
+QPushButton#CopyClipBtn:hover {{
+    background-color: {p['border_color']};
+    border-color: {p['border_focus']};
+}}
+
+QLabel#DetailImageLabel {{
+    background-color: {p['card_img_bg']};
+    border-radius: 8px;
+    color: {p['text_muted']};
+}}
+
 /* Trigger word pill */
 #TriggerPill {{
     background-color: {p['bg_input']};
@@ -798,22 +969,44 @@ QDockWidget::title {{
     font-weight: bold;
 }}
 
-#AllNotesBadge {{
-    background-color: {p['accent_light']};
-    color: {p['text_light']};
-    font-size: 11px;
+#AllNotesBadge, #NotebooksBadge, #TrashBadge {{
+    background-color: transparent;
+    color: {sidebar_fg};
+    font-size: 13px;
     font-weight: bold;
     border-radius: 10px;
     border: none;
 }}
 
-#TrashBadge {{
-    background-color: {p['accent_color']};
-    color: white;
-    font-size: 11px;
-    font-weight: bold;
-    border-radius: 10px;
-    border: none;
+/* Notebook Overview Cards */
+#NotebookCard {{
+    background-color: {p['bg_card']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+}}
+#NotebookCard:hover {{
+    border: 1px solid {p['border_focus']};
+    background-color: {p['bg_input']};
+}}
+#NotebookCard QPushButton#CardActionBtn {{
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px;
+}}
+#NotebookCard QPushButton#CardActionBtn:hover {{
+    background-color: {p['border_color']};
+    border: 1px solid {p['border_focus']};
+}}
+#NotebookCard QPushButton#CardDeleteBtn {{
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 0px;
+}}
+#NotebookCard QPushButton#CardDeleteBtn:hover {{
+    background-color: rgba(183, 28, 28, 0.4);
+    border: 1px solid #F28B82;
 }}
 
 /* Corkboard & Welcome Screen Styles */
@@ -1112,8 +1305,7 @@ def get_calendar_theme_config(theme_name="Koyu Gece", custom_colors=None):
         custom_colors = {}
 
     # Extract customizable weekend colors
-    w_header = custom_colors.get("cal_weekend_header", "#F472B6")
-    w_text = custom_colors.get("cal_weekend_text", "#FB7185")
+    w_color = custom_colors.get("cal_weekend_color") or custom_colors.get("cal_weekend_header") or custom_colors.get("cal_weekend_text") or "#FB7185"
 
     return {
         # Cell backgrounds
@@ -1124,20 +1316,20 @@ def get_calendar_theme_config(theme_name="Koyu Gece", custom_colors=None):
         
         # Selection
         "selection_bg": p.get("accent_color", "#1A73E8"),
-        "selection_border": p.get("border_focus", "#8AB4F8"),
+        "selection_border": p.get("highlight_color", p.get("border_focus", "#8AB4F8")),
         "selection_text": "#FFFFFF",
         
         # Today
-        "today_border": p.get("border_focus", "#8AB4F8"),
+        "today_border": p.get("highlight_color", p.get("border_focus", "#8AB4F8")),
         
         # Day texts
         "text_weekday": p.get("text_main", "#E3E3E3"),
-        "text_weekend": w_text,       # User-customizable weekend day numbers!
+        "text_weekend": w_color,       # User-customizable weekend day numbers!
         "text_other_month": adjust_brightness(p.get("text_muted", "#9AA0A6"), 0.5),
         
         # Column headers
         "header_weekday": p.get("text_muted", "#9AA0A6"),
-        "header_weekend": w_header,   # User-customizable weekend headers!
+        "header_weekend": w_color,   # User-customizable weekend headers!
         
         # Status Dots
         "dot_pending_tasks": "#F59E0B",    # Amber

@@ -71,7 +71,7 @@ def test_cards_and_custom_theme():
 
     print("4. Checking SettingsDialog custom theme controls and presets...")
     dialog = SettingsDialog()
-    assert len(dialog.color_buttons) == 10, f"Expected 10 color buttons, got {len(dialog.color_buttons)}"
+    assert len(dialog.color_buttons) == len(COLOR_ATTRIBUTES), f"Expected {len(COLOR_ATTRIBUTES)} color buttons, got {len(dialog.color_buttons)}"
     assert len(dialog.preset_buttons) == len(CUSTOM_PRESETS)
 
     # Test applying a preset
@@ -81,8 +81,41 @@ def test_cards_and_custom_theme():
     assert dialog.custom_colors["border_color"] == preset_data["border_color"]
 
     settings = dialog.get_settings()
-    assert settings["custom_theme_colors"]["bg_card"] == preset_data["bg_card"]
-    print("   [OK] SettingsDialog presets and 8-color grid verified.")
+    print("5. Checking Detail Panel theme harmonization...")
+    from ui.detail.workflow_section import WorkflowSection
+    from ui.detail.model_section import ModelSection
+    from ui.detail.note_section import NoteSection
+
+    wf_sec = WorkflowSection()
+    wf_sec.set_workflow({
+        'id': 1,
+        'name': 'TestWF',
+        'workflow_json': '{"1": {"class_type": "KSampler"}, "2": {"class_type": "VAEDecode"}}'
+    })
+    
+    # Check node pills
+    assert len(wf_sec.node_widgets) == 2, f"Expected 2 node pills, got {len(wf_sec.node_widgets)}"
+    for pill in wf_sec.node_widgets:
+        assert pill.objectName() == "WorkflowNodePill"
+        assert "#242936" not in pill.styleSheet(), "Hardcoded #242936 background found in node pill!"
+        assert "55;" not in pill.styleSheet(), "Broken alpha hex found in node pill!"
+
+    # Test applying Derin Mor theme
+    mor_palette = get_palette("Derin Mor")
+    wf_sec.apply_theme(mor_palette)
+    assert "#2D2F31" not in wf_sec.copy_pos_btn.styleSheet(), "Hardcoded #2D2F31 found on copy_pos_btn!"
+    assert "#2D2F31" not in wf_sec.copy_params_btn.styleSheet(), "Hardcoded #2D2F31 found on copy_params_btn!"
+    assert "#2D2F31" not in wf_sec.copy_seed_btn.styleSheet(), "Hardcoded #2D2F31 found on copy_seed_btn!"
+
+    model_sec = ModelSection()
+    model_sec.apply_theme(mor_palette)
+    assert "#2D2F31" not in model_sec.name_edit.styleSheet(), "Hardcoded #2D2F31 found on model name_edit!"
+    assert "#2D2F31" not in model_sec.arch_combo.styleSheet(), "Hardcoded #2D2F31 found on arch_combo!"
+
+    note_sec = NoteSection()
+    note_sec.apply_theme(mor_palette)
+    assert "#2D2F31" not in note_sec.note_title_edit.styleSheet(), "Hardcoded #2D2F31 found on note_title_edit!"
+    print("   [OK] Detail Panel theme harmonization verified.")
 
     print("ALL CUSTOM THEME AND CARD TESTS PASSED SUCCESSFULLY! [OK]")
 

@@ -29,6 +29,9 @@ class AppController:
         self.active_library = ""
         self.active_workflow_library = ""
         self.active_note_id = None
+        self.active_notebook_id = None
+        self.active_notebook_name = None
+        self.notes_scope = "unassigned"
         self.scan_thread = None
         self.running_scanners = []
         self.showing_trash = False
@@ -38,6 +41,19 @@ class AppController:
         from PySide6.QtGui import QKeySequence, QShortcut
         self.incognito_shortcut = QShortcut(QKeySequence("Ctrl+Shift+N"), self.win)
         self.incognito_shortcut.activated.connect(self.toggle_incognito_mode)
+
+        # Connect Notebook & Tag Signals
+        self.win.notebook_selected_signal.connect(self.on_notebook_selected)
+        self.win.all_notebooks_requested_signal.connect(self.on_all_notebooks_requested)
+        self.win.new_notebook_signal.connect(self.on_new_notebook)
+        self.win.rename_notebook_signal.connect(self.on_rename_notebook)
+        self.win.delete_notebook_signal.connect(self.on_delete_notebook)
+        self.win.bulk_delete_notebooks_signal.connect(self.on_bulk_delete_notebooks)
+        self.win.notes_scope_changed_signal.connect(self.on_notes_scope_changed)
+        self.win.add_note_tag_signal.connect(self.on_add_note_tag)
+        self.win.delete_note_tag_signal.connect(self.on_delete_note_tag)
+        self.win.clear_note_tags_signal.connect(self.on_clear_note_tags)
+        self.win.set_note_notebook_signal.connect(self.on_set_note_notebook)
 
         # Connect MainWindow signals
         self.win.save_note_signal.connect(self.on_save_note)
@@ -172,13 +188,23 @@ class AppController:
 
         # Initial UI populate
         self.refresh_notes()
+        self.refresh_notebooks()
         if self.comfyui_enabled:
             self.refresh_libraries()
         self.win.show_welcome()
 
+    def refresh_notebooks(self):
+        try:
+            limit = int(database.get_setting("sidebar_notebooks_limit", 5))
+        except (ValueError, TypeError):
+            limit = 5
+        notebooks = database.get_notebooks(order_by_recent=True)
+        self.win.sidebar.update_notebooks_list(notebooks, active_id=self.active_notebook_id, limit=limit)
+        if self.win.center_stack.currentIndex() == 6:
+            all_nbs = database.get_notebooks(order_by_recent=False)
+            self.win.notebooks_view.set_notebooks(all_nbs)
+
     def refresh_notes(self, search_query=None):
-        notes = database.get_notes(search_query, show_hidden=self.incognito_active)
-        
         # Update dynamic badge count
         total_count = database.get_note_count(show_hidden=self.incognito_active)
         self.win.sidebar.update_notes_count(total_count)
@@ -187,17 +213,28 @@ class AppController:
         trash_count = database.get_deleted_note_count(show_hidden=self.incognito_active)
         self.win.sidebar.update_trash_count(trash_count)
 
-        # Refresh Corkboard (Mantar Pano) on Welcome Screen
-        cork_notes = database.get_corkboard_notes(show_hidden=self.incognito_active)
-        self.win.welcome_screen.set_corkboard_notes(cork_notes)
+        # Refresh Corkboard (Mantar Pano) on Welcome Screen only if welcome screen is active/visible
+        if self.win.center_stack.currentIndex() == 0 or self.win.welcome_screen.isVisible():
+            cork_notes = database.get_corkboard_notes(show_hidden=self.incognito_active)
+            self.win.welcome_screen.set_corkboard_notes(cork_notes)
+            self.win.welcome_screen._corkboard_dirty = False
+        else:
+            self.win.welcome_screen._corkboard_dirty = True
         
-        # Keep NotesView grid updated based on whether we are showing trash or normal notes
+        # Keep NotesView grid updated based on whether we are showing trash, a custom notebook, or scope (unassigned vs all)
         if getattr(self, 'showing_trash', False):
             deleted_notes = database.get_notes(only_deleted=True, show_hidden=self.incognito_active)
+            self.win.notes_view.set_notebook_context(None, None)
             self.win.notes_view.set_notes(deleted_notes, is_trash=True)
+        elif getattr(self, 'active_notebook_id', None) is not None:
+            nb_notes = database.get_notes(notebook_id=self.active_notebook_id, show_hidden=self.incognito_active)
+            self.win.notes_view.set_notebook_context(self.active_notebook_id, self.active_notebook_name)
+            self.win.notes_view.set_notes(nb_notes, is_trash=False)
         else:
-            all_notes = database.get_notes(show_hidden=self.incognito_active)
-            self.win.notes_view.set_notes(all_notes, is_trash=False)
+            scope = getattr(self, 'notes_scope', 'unassigned')
+            notes = database.get_notes(scope=scope, show_hidden=self.incognito_active)
+            self.win.notes_view.set_notebook_context(None, None)
+            self.win.notes_view.set_notes(notes, is_trash=False)
 
     def refresh_libraries(self):
         # 1. Models
@@ -232,12 +269,17 @@ class AppController:
         if note:
             self.active_note_id = note_id
             all_models = database.get_all_models_for_association()
-            self.win.detail_panel.set_note(note, all_models)
+            all_notebooks = database.get_notebooks(order_by_recent=False)
+            self.win.detail_panel.set_note(note, all_models, all_notebooks=all_notebooks)
             self.win.show_detail_panel(note)
 
     @Slot()
     def on_create_new_note(self):
-        new_id = database.save_note(None, i18n.t("notes_new_title"), "<p></p>", None, "WITH_IMAGE", 0)
+        nb_id = getattr(self, 'active_notebook_id', None)
+        new_id = database.save_note(None, i18n.t("notes_new_title"), "<p></p>", None, "WITH_IMAGE", 0, notebook_id=nb_id)
+        if nb_id:
+            database.touch_notebook(nb_id)
+            self.refresh_notebooks()
         self.refresh_notes()
         self.open_note_in_drawer(new_id)
         self.win.statusBar().showMessage(i18n.t("status_new_note"), 2000)
@@ -249,18 +291,149 @@ class AppController:
     @Slot()
     def on_all_notes_requested(self):
         self.showing_trash = False
+        self.active_notebook_id = None
+        self.active_notebook_name = None
         self.active_library = ""
-        self.win.sidebar.libraries_list.clearSelection()
-        all_notes = database.get_notes(show_hidden=self.incognito_active)
-        self.win.show_notes_panel(all_notes, is_trash=False)
+        self.win.sidebar.clear_list_selections()
+        self.refresh_notes()
+        self.win.show_notes_panel(None, is_trash=False)
 
     @Slot()
     def on_trash_requested(self):
         self.showing_trash = True
+        self.active_notebook_id = None
+        self.active_notebook_name = None
         self.active_library = ""
-        self.win.sidebar.libraries_list.clearSelection()
+        self.win.sidebar.clear_list_selections()
         deleted_notes = database.get_notes(only_deleted=True, show_hidden=self.incognito_active)
         self.win.show_notes_panel(deleted_notes, is_trash=True)
+
+    @Slot()
+    def on_all_notebooks_requested(self):
+        self.showing_trash = False
+        self.active_notebook_id = None
+        self.active_notebook_name = None
+        self.active_library = ""
+        notebooks = database.get_notebooks(order_by_recent=False)
+        self.win.show_notebooks_overview(notebooks)
+
+    @Slot(int, str)
+    def on_notebook_selected(self, notebook_id: int, notebook_name: str):
+        self.showing_trash = False
+        self.active_notebook_id = notebook_id
+        self.active_notebook_name = notebook_name
+        self.active_library = ""
+        database.touch_notebook(notebook_id)
+        self.refresh_notebooks()
+        self.refresh_notes()
+        self.win.show_notebook_panel(notebook_id, notebook_name, None)
+
+    @Slot()
+    def on_new_notebook(self):
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self.win, i18n.t("new_notebook"), i18n.t("notebook_name_prompt")
+        )
+        if ok and name.strip():
+            nb_name = name.strip()
+            nb_id = database.create_notebook(nb_name)
+            self.refresh_notebooks()
+            self.on_notebook_selected(nb_id, nb_name)
+            self.win.show_toast(f"{i18n.t('new_notebook')}: {nb_name}", "success")
+
+    @Slot(int, str)
+    def on_rename_notebook(self, notebook_id: int, current_name: str):
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(
+            self.win, i18n.t("notebook_rename"), i18n.t("notebook_name_prompt"),
+            text=current_name
+        )
+        if ok and name.strip():
+            new_name = name.strip()
+            database.update_notebook_name(notebook_id, new_name)
+            if self.active_notebook_id == notebook_id:
+                self.active_notebook_name = new_name
+            self.refresh_notebooks()
+            self.refresh_notes()
+            self.win.show_toast(f"{i18n.t('notebook_rename')}: {new_name}", "info")
+
+    @Slot(int, str)
+    def on_delete_notebook(self, notebook_id: int, name: str):
+        reply = QMessageBox.question(
+            self.win, i18n.t("notebook_delete"),
+            i18n.t("notebook_delete_confirm").format(name=name),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            database.delete_notebook(notebook_id)
+            if self.active_notebook_id == notebook_id:
+                self.active_notebook_id = None
+                self.active_notebook_name = None
+                self.win.sidebar.set_active_item('all_notes')
+            self.refresh_notebooks()
+            self.refresh_notes()
+            self.win.show_toast(i18n.t("notebook_delete"), "info")
+
+    @Slot(list)
+    def on_bulk_delete_notebooks(self, notebook_ids: list):
+        if not notebook_ids:
+            return
+        count = len(notebook_ids)
+        for nb_id in notebook_ids:
+            database.delete_notebook(nb_id)
+        if self.active_notebook_id in notebook_ids:
+            self.active_notebook_id = None
+            self.active_notebook_name = None
+            self.win.sidebar.set_active_item('all_notes')
+        self.refresh_notebooks()
+        self.refresh_notes()
+        if self.win.center_stack.currentIndex() == 6:
+            all_nbs = database.get_notebooks(order_by_recent=False)
+            self.win.notebooks_view.set_notebooks(all_nbs)
+        self.win.show_toast(f"{count} {i18n.t('notebook_delete')}", "info")
+
+    @Slot(str)
+    def on_notes_scope_changed(self, scope_str: str):
+        self.notes_scope = scope_str
+        self.refresh_notes()
+
+    @Slot(int, str)
+    def on_add_note_tag(self, note_id: int, tag: str):
+        database.add_note_tag(note_id, tag)
+        self.refresh_notes()
+        note = database.get_note_by_id(note_id)
+        if note and getattr(self, 'active_note_id', None) == note_id:
+            all_models = database.get_all_models_for_association()
+            all_notebooks = database.get_notebooks(order_by_recent=False)
+            self.win.detail_panel.set_note(note, all_models, all_notebooks=all_notebooks)
+
+    @Slot(int, str)
+    def on_delete_note_tag(self, note_id: int, tag: str):
+        database.delete_note_tag(note_id, tag)
+        self.refresh_notes()
+        note = database.get_note_by_id(note_id)
+        if note and getattr(self, 'active_note_id', None) == note_id:
+            all_models = database.get_all_models_for_association()
+            all_notebooks = database.get_notebooks(order_by_recent=False)
+            self.win.detail_panel.set_note(note, all_models, all_notebooks=all_notebooks)
+
+    @Slot(int)
+    def on_clear_note_tags(self, note_id: int):
+        database.clear_note_tags(note_id)
+        self.refresh_notes()
+        note = database.get_note_by_id(note_id)
+        if note and getattr(self, 'active_note_id', None) == note_id:
+            all_models = database.get_all_models_for_association()
+            all_notebooks = database.get_notebooks(order_by_recent=False)
+            self.win.detail_panel.set_note(note, all_models, all_notebooks=all_notebooks)
+
+    @Slot(int, object)
+    def on_set_note_notebook(self, note_id: int, notebook_id: object):
+        database.set_note_notebook(note_id, notebook_id)
+        if notebook_id:
+            database.touch_notebook(notebook_id)
+        self.refresh_notebooks()
+        self.refresh_notes()
 
     @Slot()
     def on_agenda_requested(self):
@@ -304,6 +477,7 @@ class AppController:
     def on_agenda_routines_dialog_requested(self):
         from ui.agenda.routine_manager_dialog import RoutineManagerDialog
         dialog = RoutineManagerDialog(self.win)
+        dialog.setStyleSheet(self.win.styleSheet())
 
         def refresh_dialog_routines():
             routines = database.get_all_routines()
@@ -854,6 +1028,7 @@ class AppController:
     @Slot()
     def on_settings_requested(self):
         dialog = SettingsDialog(self.win)
+        dialog.setStyleSheet(self.win.styleSheet())
         comfyui_enabled = int(database.get_setting("comfyui_enabled", "1"))
         lora_path = database.get_setting("lora_path", "")
         ckpt_path = database.get_setting("ckpt_path", "")
@@ -862,13 +1037,15 @@ class AppController:
         theme = database.get_setting("theme", "Koyu Gece")
         lang = database.get_setting("lang", "en")
         custom_colors = database.get_setting("custom_theme_colors", "{}")
+        sidebar_notebooks_limit = int(database.get_setting("sidebar_notebooks_limit", "5"))
         
-        dialog.set_settings(lora_path, ckpt_path, int(auto_save_enabled), float(auto_save_interval), theme, lang, custom_colors, comfyui_enabled=comfyui_enabled)
+        dialog.set_settings(lora_path, ckpt_path, int(auto_save_enabled), float(auto_save_interval), theme, lang, custom_colors, comfyui_enabled=comfyui_enabled, sidebar_notebooks_limit=sidebar_notebooks_limit)
 
         def on_backup_restored(path):
             self.refresh_libraries()
             self.refresh_workflow_libraries()
             self.refresh_notes()
+            self.refresh_notebooks()
             self.load_corkboard_notes()
             self.win.statusBar().showMessage(i18n.t("settings_restore_success"), 3000)
 
@@ -883,6 +1060,7 @@ class AppController:
             new_asi = settings['auto_save_interval']
             new_theme = settings['theme']
             new_lang = settings['lang']
+            new_limit = int(settings.get('sidebar_notebooks_limit', 5))
             new_custom_colors = settings.get('custom_theme_colors', {})
             new_custom_colors_str = json.dumps(new_custom_colors)
 
@@ -895,11 +1073,12 @@ class AppController:
             theme_changed = (new_theme != theme)
             colors_changed = (new_custom_colors_str != custom_colors)
             lang_changed = (new_lang != lang)
+            limit_changed = (new_limit != sidebar_notebooks_limit)
 
             any_changed = any([
                 comfyui_changed, lora_changed, ckpt_changed,
                 ase_changed, asi_changed, theme_changed,
-                colors_changed, lang_changed
+                colors_changed, lang_changed, limit_changed
             ])
 
             if not any_changed:
@@ -912,7 +1091,11 @@ class AppController:
             database.set_setting("auto_save_interval", str(new_asi))
             database.set_setting("theme", new_theme)
             database.set_setting("lang", new_lang)
+            database.set_setting("sidebar_notebooks_limit", str(new_limit))
             database.set_setting("custom_theme_colors", new_custom_colors_str)
+
+            if limit_changed:
+                self.refresh_notebooks()
 
             if comfyui_changed:
                 self.comfyui_enabled = bool(new_comfyui)
@@ -1224,6 +1407,8 @@ class AppController:
                 self.on_trash_requested()
             else:
                 self.on_all_notes_requested()
+        elif current_index == 6:
+            self.on_all_notebooks_requested()
 
         self.win.statusBar().showMessage(i18n.t("status_incognito_on") if self.incognito_active else i18n.t("status_incognito_off"), 2000)
 
