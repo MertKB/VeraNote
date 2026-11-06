@@ -88,14 +88,7 @@ class NotebookCardWidget(QFrame):
 
         self.count_badge = QLabel(f" {t('notebook_card_notes_count').format(count=self.note_count)}")
         self.count_badge.setObjectName("NotebookCardBadge")
-        self.count_badge.setStyleSheet("""
-            background-color: #2F3336;
-            color: #C4C7C5;
-            font-size: 11px;
-            font-weight: 600;
-            border-radius: 6px;
-            padding: 3px 8px;
-        """)
+
         self.count_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
         bottom_layout.addWidget(self.count_badge)
 
@@ -117,16 +110,10 @@ class NotebookCardWidget(QFrame):
         self.selection_toggled.emit(self.notebook_data, self.is_selected)
 
     def update_card_style(self):
-        if self.is_selected:
-            self.setStyleSheet(f"""
-                QFrame#NotebookCard {{
-                    background-color: #263238;
-                    border: 2px solid {self.highlight_color};
-                    border-radius: 12px;
-                }}
-            """)
-        else:
-            self.setStyleSheet("")
+        self.setProperty("selected", "true" if self.is_selected else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
 
     def update_theme(self, highlight_color: str):
         self.highlight_color = highlight_color
@@ -212,20 +199,7 @@ class NotebooksView(QWidget):
         # Sort combo
         self.sort_combo = QComboBox()
         self.populate_sort_combo()
-        self.sort_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                color: #E3E3E3;
-                padding: 6px 12px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
+
         self.sort_combo.currentIndexChanged.connect(self.on_filter_changed)
         header_layout.addWidget(self.sort_combo)
 
@@ -237,6 +211,7 @@ class NotebooksView(QWidget):
         self.new_notebook_btn.setIcon(get_icon("add", "#FFFFFF", 16))
         self.new_notebook_btn.setIconSize(QSize(16, 16))
         self.new_notebook_btn.setFixedHeight(36)
+        self.new_notebook_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 16px !important; font-weight: bold !important; }")
         self.new_notebook_btn.setCursor(Qt.PointingHandCursor)
         self.new_notebook_btn.clicked.connect(self.create_notebook_requested.emit)
         header_layout.addWidget(self.new_notebook_btn)
@@ -331,7 +306,8 @@ class NotebooksView(QWidget):
         self.empty_btn.setObjectName("HeaderAddBtn")
         self.empty_btn.setIcon(get_icon("add", "#FFFFFF", 16))
         self.empty_btn.setIconSize(QSize(16, 16))
-        self.empty_btn.setFixedHeight(38)
+        self.empty_btn.setFixedHeight(36)
+        self.empty_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 16px !important; font-weight: bold !important; }")
         self.empty_btn.setCursor(Qt.PointingHandCursor)
         self.empty_btn.clicked.connect(self.create_notebook_requested.emit)
         empty_layout.addWidget(self.empty_btn, 0, Qt.AlignCenter)
@@ -476,6 +452,10 @@ class NotebooksView(QWidget):
         self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
         self.title_icon.setPixmap(get_pixmap("notebooks", self.highlight_color, 28))
         self.bulk_count_label.setStyleSheet(f"color: {self.highlight_color}; font-weight: bold; font-size: 14px;")
+        if hasattr(self, 'sort_combo') and self.sort_combo:
+            self.sort_combo.style().unpolish(self.sort_combo)
+            self.sort_combo.style().polish(self.sort_combo)
+            self.sort_combo.update()
         for card in self.cards:
             card.update_theme(self.highlight_color)
 

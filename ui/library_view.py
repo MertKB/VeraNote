@@ -4,11 +4,13 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QScrollArea, QGridLayout, QFrame, 
                              QSizePolicy, QLineEdit, QComboBox)
 from PySide6.QtCore import Signal, Qt, QSize, QTimer, QRunnable, QThreadPool, QObject, Slot, QPoint, QRect, QMimeData, QUrl
-from PySide6.QtGui import QPixmap, QFontMetrics, QPainter, QPainterPath, QImage, QDrag, QGuiApplication
+from PySide6.QtGui import QPixmap, QFontMetrics, QPainter, QPainterPath, QImage, QImageReader, QDrag, QGuiApplication
 from utils.i18n import t, get_lang
 from utils.icon_manager import get_icon, get_pixmap
 
-from utils.cache import THUMBNAIL_CACHE
+from utils.cache import THUMBNAIL_CACHE, THUMB_THREAD_POOL, load_or_create_thumbnail_qimage
+
+_FILE_EXISTS_CACHE = {}
 
 def cache_thumbnail(path, pixmap, max_size=150):
     if not path or not pixmap or pixmap.isNull():
@@ -30,6 +32,8 @@ class FileCheckWorker(QRunnable):
             exists = bool(self.file_path and os.path.exists(self.file_path))
         except Exception:
             exists = False
+        if self.file_path:
+            _FILE_EXISTS_CACHE[self.file_path] = exists
         try:
             self.signals.checked.emit(self.file_path, exists)
         except RuntimeError:
@@ -48,14 +52,8 @@ class ImageLoadWorker(QRunnable):
 
     def run(self):
         try:
-            image = QImage(self.image_path)
-            if not image.isNull():
-                scaled = image.scaled(
-                    self.target_w, self.target_h,
-                    Qt.KeepAspectRatioByExpanding,
-                    Qt.SmoothTransformation
-                )
-                cropped = scaled.copy(0, 0, self.target_w, self.target_h)
+            cropped = load_or_create_thumbnail_qimage(self.image_path, self.target_w, self.target_h)
+            if cropped is not None and not cropped.isNull():
                 try:
                     self.signals.image_loaded.emit(self.image_path, cropped, self.target_w, self.target_h)
                 except RuntimeError:
@@ -158,13 +156,7 @@ class ModelCardWidget(QFrame):
         self.hidden_badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         from utils.icon_manager import get_pixmap
         self.hidden_badge.setPixmap(get_pixmap("lock", "#D7AEF5", 16))
-        self.hidden_badge.setStyleSheet("""
-            QLabel#CardHiddenBadge {
-                background-color: rgba(30, 31, 34, 0.75);
-                border: 1px solid rgba(215, 174, 245, 0.5);
-                border-radius: 14px;
-            }
-        """)
+
         self.hidden_badge.setVisible(self.model_data.get('is_hidden', 0) == 1)
 
         # Multi-select Checkbox Button Overlay on top-right of image (hidden by default)
@@ -186,21 +178,7 @@ class ModelCardWidget(QFrame):
         self.copy_triggers_btn.setGeometry(166, 142, 26, 26)
         self.copy_triggers_btn.setCursor(Qt.PointingHandCursor)
         self.copy_triggers_btn.setToolTip(t("lib_copy_triggers"))
-        self.copy_triggers_btn.setStyleSheet("""
-            QPushButton#CardCopyTriggersBtn {
-                background-color: rgba(30, 31, 34, 0.75);
-                border: 1px solid rgba(68, 71, 70, 0.8);
-                border-radius: 13px;
-                color: #C2E7FF;
-                font-size: 11px;
-                padding: 0px;
-            }
-            QPushButton#CardCopyTriggersBtn:hover {
-                background-color: rgba(26, 115, 232, 0.9);
-                border-color: #8AB4F8;
-                color: #FFFFFF;
-            }
-        """)
+
         self.copy_triggers_btn.clicked.connect(self.on_copy_triggers_clicked)
 
         # Architecture Badge Overlay on bottom-left of image
@@ -242,6 +220,9 @@ class ModelCardWidget(QFrame):
         filepath = self.model_data.get('file_path', '')
         if not filepath:
             self.set_file_exists(False)
+            return
+        if filepath in _FILE_EXISTS_CACHE:
+            self.set_file_exists(_FILE_EXISTS_CACHE[filepath])
             return
         worker = FileCheckWorker(filepath)
         worker.signals.checked.connect(self._on_file_check_result)
@@ -294,10 +275,11 @@ class ModelCardWidget(QFrame):
 
         # Base architecture badge
         if hasattr(self, 'arch_badge'):
-            arch = self.model_data.get('base_architecture') or ""
-            if not arch:
+            arch = self.model_data.get('base_architecture') or self.model_data.get('_detected_arch') or ""
+            if not arch and '_detected_arch' not in self.model_data:
                 from utils.png_parser import detect_base_architecture
-                arch = detect_base_architecture([self.model_data.get('name', ''), self.model_data.get('file_path', '')])
+                arch = detect_base_architecture([self.model_data.get('name', ''), self.model_data.get('file_path', '')]) or ""
+                self.model_data['_detected_arch'] = arch
             if arch:
                 self.arch_badge.setText(arch)
                 self.arch_badge.adjustSize()
@@ -384,10 +366,11 @@ class ModelCardWidget(QFrame):
                 self.image_loaded = True
                 return
             
-            # Placeholder while background thread loads
+            # Placeholder while background thread loads (lazy loaded for visible cards)
             self.image_label.setText("")
             self.image_label.setPixmap(QPixmap())
-            self.ensure_image_loaded()
+            if self.isVisible():
+                self.ensure_image_loaded()
             return
         
         self.image_label.setText("")
@@ -410,7 +393,7 @@ class ModelCardWidget(QFrame):
         self.image_loading = True
         worker = ImageLoadWorker(image_path, target_w=200, target_h=176)
         worker.signals.image_loaded.connect(self._on_async_image_loaded)
-        QThreadPool.globalInstance().start(worker)
+        THUMB_THREAD_POOL.start(worker)
 
     @Slot(str, object, int, int)
     def _on_async_image_loaded(self, path, qimage, w, h):
@@ -599,20 +582,7 @@ class LibraryView(QWidget):
         self.tag_combo = QComboBox()
         self.tag_combo.setObjectName("TagFilterCombo")
         self.tag_combo.addItem(get_icon("tag", "#E3E3E3", 14), t("lib_tag_all"), userData=None)
-        self.tag_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                color: #E3E3E3;
-                padding: 6px 12px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
+
         self.tag_combo.currentIndexChanged.connect(self.on_tag_combo_changed)
         header_layout.addWidget(self.tag_combo)
         self.tag_combo.setVisible(False)
@@ -623,20 +593,7 @@ class LibraryView(QWidget):
         self.arch_combo.addItem(get_icon("lightning", "#E3E3E3", 14), t("lib_arch_all"), userData=None)
         for arch in ["Flux", "SDXL", "SD 1.5", "Pony", "SD3", "Illustrious", "SD 2.1"]:
             self.arch_combo.addItem(get_icon("lightning", "#E3E3E3", 14), arch, userData=arch)
-        self.arch_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                color: #E3E3E3;
-                padding: 6px 12px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
+
         self.arch_combo.currentIndexChanged.connect(self.on_arch_combo_changed)
         header_layout.addWidget(self.arch_combo)
 
@@ -646,20 +603,7 @@ class LibraryView(QWidget):
         self.sort_combo.addItem(t("lib_sort_az"))
         self.sort_combo.addItem(t("lib_sort_za"))
         self.sort_combo.addItem(get_icon("star", "#E3E3E3", 14), t("lib_sort_fav_first"))
-        self.sort_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 8px;
-                color: #E3E3E3;
-                padding: 6px 12px;
-                font-size: 13px;
-                font-weight: 500;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
+
         self.sort_combo.currentTextChanged.connect(self.on_sort_changed)
         header_layout.addWidget(self.sort_combo)
 
@@ -823,17 +767,19 @@ class LibraryView(QWidget):
         self.grid_layout.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         self.scroll_area.setWidget(self.grid_container)
+        self.scroll_area.verticalScrollBar().valueChanged.connect(lambda: self.scroll_check_timer.start(25))
         self.main_layout.addWidget(self.scroll_area)
 
     def set_library(self, name, models):
         models = models or []
-        existing_card_ids = [c.model_data['id'] for c in self.cards if isinstance(c, ModelCardWidget)]
         new_model_ids = [m['id'] for m in models]
+        prev_model_ids = getattr(self, '_last_model_ids', None)
 
         same_library = (self.library_name == name)
-        same_models = (existing_card_ids == new_model_ids and len(new_model_ids) > 0)
+        same_models = (prev_model_ids == new_model_ids and len(new_model_ids) > 0 and len(self.cards) > 0)
 
         self.library_name = name
+        self._last_model_ids = new_model_ids
         self.models_data = models
         self.filtered_models_data = self.models_data
 
@@ -862,7 +808,7 @@ class LibraryView(QWidget):
         self.selected_tag = None
         self.update_tag_bar(models)
 
-        self.retranslate_ui()
+        self.apply_filters()
 
     def _create_card(self, model):
         card = ModelCardWidget(model, parent=self.grid_container)
@@ -907,10 +853,12 @@ class LibraryView(QWidget):
                 return
 
             width = self.scroll_area.viewport().width()
-            if width <= 100:
+            if width <= 100 and self.window():
+                width = max(100, self.window().width() - 280)
+            elif width <= 100:
                 width = self.scroll_area.width() - 48
             if width <= 100:
-                width = 860
+                width = 1100
 
             card_width = 200
             spacing = 16
@@ -932,6 +880,8 @@ class LibraryView(QWidget):
                 card = self._create_card(display_data[i])
                 self.grid_layout.addWidget(card, i // columns, i % columns)
                 self.cards.append(card)
+                if i < columns * 3:
+                    card.ensure_image_loaded()
         finally:
             self.grid_container.setUpdatesEnabled(True)
             self.scroll_area.setUpdatesEnabled(True)
@@ -945,6 +895,8 @@ class LibraryView(QWidget):
                 self._chunk_timer.setSingleShot(True)
                 self._chunk_timer.timeout.connect(self._load_remaining_cards)
             self._chunk_timer.start(0)
+
+        self.scroll_check_timer.start(20)
 
     def _load_remaining_cards(self):
         if not hasattr(self, '_pending_display_data') or self._pending_load_index >= len(self._pending_display_data):
@@ -969,12 +921,20 @@ class LibraryView(QWidget):
         self._pending_load_index = end_idx
         if self._pending_load_index < len(display_data):
             self._chunk_timer.start(0)
+        else:
+            self.scroll_check_timer.start(20)
 
     def update_grid_layout(self, display_data=None):
         if not self.cards or isinstance(self.cards[0], QLabel):
             return
 
         width = self.scroll_area.viewport().width()
+        if width <= 100 and self.window():
+            width = max(100, self.window().width() - 280)
+        elif width <= 100:
+            width = self.scroll_area.width() - 48
+        if width <= 100:
+            width = 1100
         card_width = 200
         spacing = 16
         total_items = len(self.filtered_models_data) if getattr(self, 'filtered_models_data', None) else len(self.cards)
@@ -1069,10 +1029,11 @@ class LibraryView(QWidget):
                 continue
             # 3. Architecture filter condition
             if selected_arch:
-                m_arch = m.get('base_architecture') or ""
-                if not m_arch:
+                m_arch = m.get('base_architecture') or m.get('_detected_arch') or ""
+                if not m_arch and '_detected_arch' not in m:
                     from utils.png_parser import detect_base_architecture
-                    m_arch = detect_base_architecture([m.get('name', ''), m.get('file_path', '')])
+                    m_arch = detect_base_architecture([m.get('name', ''), m.get('file_path', '')]) or ""
+                    m['_detected_arch'] = m_arch
                 if m_arch != selected_arch:
                     continue
             # 4. Search query condition
@@ -1162,12 +1123,29 @@ class LibraryView(QWidget):
                     card.update_fav_btn_style()
                     break
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.update_grid_layout()
+        if hasattr(self, '_pending_display_data') and getattr(self, '_pending_load_index', 0) < len(self._pending_display_data):
+            if hasattr(self, '_chunk_timer') and not self._chunk_timer.isActive():
+                self._chunk_timer.start(16)
+        self.scroll_check_timer.start(20)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        for timer_name in ('_chunk_timer', 'resize_debounce_timer', 'scroll_check_timer', 'search_debounce_timer'):
+            timer = getattr(self, timer_name, None)
+            if timer and timer.isActive():
+                timer.stop()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if event.oldSize().width() <= 0 or event.oldSize().width() == event.size().width():
+        if event.oldSize().width() == event.size().width():
             return
 
         width = self.scroll_area.viewport().width()
+        if width <= 100 and self.window():
+            width = max(100, self.window().width() - 280)
         card_width = 200
         spacing = 16
         scrollbar_w = 16 if len(self.cards) > 16 else 0
@@ -1303,6 +1281,7 @@ class LibraryView(QWidget):
         super().keyPressEvent(event)
 
     def on_scan_clicked(self):
+        _FILE_EXISTS_CACHE.clear()
         self.scan_requested.emit(self.library_name)
 
     def tr_lib_name(self, name):
@@ -1312,7 +1291,24 @@ class LibraryView(QWidget):
             return "Checkpoint Models" if get_lang() == "en" else "Checkpoint Modelleri"
         elif name == "Favoriler":
             return "Favorites" if get_lang() == "en" else "Favoriler"
+        elif name == "Genel":
+            return "General" if get_lang() == "en" else "Genel"
         return name
+
+    def apply_theme(self, palette: dict):
+        self.theme_palette = palette or {}
+        for combo in (getattr(self, 'tag_combo', None), getattr(self, 'arch_combo', None), getattr(self, 'sort_combo', None)):
+            if combo:
+                combo.style().unpolish(combo)
+                combo.style().polish(combo)
+                combo.update()
+        if hasattr(self, 'cards_flow'):
+            for i in range(self.cards_flow.count()):
+                w = self.cards_flow.itemAt(i).widget()
+                if w:
+                    w.style().unpolish(w)
+                    w.style().polish(w)
+                    w.update()
 
     def retranslate_ui(self):
         self.title_label.setText(self.tr_lib_name(self.library_name) if self.library_name else t("app_title").split()[0])

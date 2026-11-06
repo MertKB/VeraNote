@@ -19,7 +19,8 @@ PALETTES = {
         "card_img_bg": "#18191B",
         "card_hover": "#25272C",
         "card_selected": "#192231",
-        "card_selected_hover": "#1F2B3E"
+        "card_selected_hover": "#1F2B3E",
+        "badge_bg": "#282A2E"
     },
     "Derin Mor": {
         "bg_main": "#120E16",
@@ -38,7 +39,8 @@ PALETTES = {
         "card_img_bg": "#17121C",
         "card_hover": "#251D2F",
         "card_selected": "#281838",
-        "card_selected_hover": "#331E48"
+        "card_selected_hover": "#331E48",
+        "badge_bg": "#2A2033"
     },
     "Okyanus Mavisi": {
         "bg_main": "#06131D",
@@ -57,7 +59,8 @@ PALETTES = {
         "card_img_bg": "#0B1823",
         "card_hover": "#14293A",
         "card_selected": "#10324D",
-        "card_selected_hover": "#164164"
+        "card_selected_hover": "#164164",
+        "badge_bg": "#14293A"
     }
 }
 
@@ -136,7 +139,7 @@ def get_palette(theme_name="Koyu Gece", custom_colors=None):
             hov_r = min(255, int(cr * 1.15 + 12))
             hov_g = min(255, int(cg * 1.15 + 12))
             hov_b = min(255, int(cb * 1.15 + 14))
-            card_hover = f"#{hov_r:02X}{hov_g:02X}{hov_b:02X}"
+            card_hover = custom_colors.get("card_hover") or (adjust_brightness(bg_input, 1.15) if custom_input else f"#{hov_r:02X}{hov_g:02X}{hov_b:02X}")
             
             sel_r = min(255, int(cr * 0.8 + ar * 0.2))
             sel_g = min(255, int(cg * 0.8 + ag * 0.2))
@@ -146,7 +149,7 @@ def get_palette(theme_name="Koyu Gece", custom_colors=None):
             sel_hov_r = min(255, int(cr * 0.7 + ar * 0.3))
             sel_hov_g = min(255, int(cg * 0.7 + ag * 0.3))
             sel_hov_b = min(255, int(cb * 0.7 + ab * 0.3))
-            card_selected_hover = f"#{sel_hov_r:02X}{sel_hov_g:02X}{sel_hov_b:02X}"
+            card_selected_hover = custom_colors.get("card_selected_hover") or f"#{sel_hov_r:02X}{sel_hov_g:02X}{sel_hov_b:02X}"
             
             text_main = custom_text_main if custom_text_main else "#E3E3E3"
             text_muted = custom_text_muted if custom_text_muted else "#9AA0A6"
@@ -210,16 +213,24 @@ def get_palette(theme_name="Koyu Gece", custom_colors=None):
             "text_main": text_main,
             "text_muted": text_muted,
             "text_light": text_light,
-            "card_img_bg": card_img_bg,
+            "card_img_bg": custom_colors.get("card_img_bg") or custom_colors.get("bg_input") or bg_card,
             "card_hover": card_hover,
             "card_selected": card_selected,
-            "card_selected_hover": card_selected_hover
+            "card_selected_hover": card_selected_hover,
+            "badge_bg": custom_colors.get("badge_bg") or custom_colors.get("bg_input") or bg_input
         }
     return PALETTES.get(theme_name, PALETTES["Koyu Gece"])
 
 def get_stylesheet(theme_name="Koyu Gece", custom_colors=None):
     p = get_palette(theme_name, custom_colors)
     sidebar_fg = "#1A1A1A" if is_light(p.get('bg_sidebar', p['bg_card'])) else "#FFFFFF"
+    try:
+        from utils.icon_manager import get_icons_dir
+        icons_dir = get_icons_dir().replace('\\', '/')
+    except Exception:
+        icons_dir = "assets/icons"
+    spin_up_icon = f"{icons_dir}/spin_up.png"
+    spin_down_icon = f"{icons_dir}/spin_down.png"
     return f"""
 QMainWindow {{
     background-color: {p['bg_main']};
@@ -305,11 +316,11 @@ QMainWindow::separator:hover {{
 
 /* Sidebar elements */
 #SidebarTitle {{
-    color: {sidebar_fg};
+    color: #FFFFFF;
     font-size: 20px;
     font-weight: 800;
-    letter-spacing: 0.5px;
-    padding: 8px 4px;
+    letter-spacing: 0.4px;
+    padding: 0px 4px;
 }}
 
 QLineEdit {{
@@ -323,6 +334,115 @@ QLineEdit {{
 QLineEdit:focus {{
     border: 2px solid {p['border_focus']};
     background-color: {p['bg_card']};
+}}
+
+/* Global QComboBox */
+QComboBox {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    color: {p['text_main']};
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    min-height: 20px;
+}}
+QComboBox:hover {{
+    border-color: {p['border_focus']};
+}}
+QComboBox:focus {{
+    border: 1.5px solid {p['border_focus']};
+}}
+QComboBox::drop-down {{
+    border: none;
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 22px;
+}}
+QComboBox QAbstractItemView {{
+    background-color: {p['bg_card']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 6px;
+    selection-background-color: {p['card_selected']};
+    selection-color: {p['text_main']};
+    outline: none;
+    padding: 4px;
+}}
+
+/* Global SpinBoxes (Steps, CFG, Denoise, LoRA Strength, etc.) */
+QSpinBox, QDoubleSpinBox {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 6px;
+    color: {p['text_main']};
+    min-height: 28px;
+    padding-left: 8px;
+    padding-right: 24px;
+    font-size: 13px;
+}}
+
+QSpinBox:focus, QDoubleSpinBox:focus {{
+    border: 1px solid {p['border_focus']};
+}}
+
+QSpinBox QLineEdit, QDoubleSpinBox QLineEdit {{
+    background: transparent;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+    color: {p['text_main']};
+}}
+
+QSpinBox::up-button, QDoubleSpinBox::up-button {{
+    subcontrol-origin: border;
+    subcontrol-position: top right;
+    right: 0px;
+    width: 20px;
+    height: 14px;
+    background-color: {p['bg_card']};
+    border-left: 1px solid {p['border_color']};
+    border-bottom: 1px solid {p['border_color']};
+    border-top-right-radius: 5px;
+}}
+
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover {{
+    background-color: {p['border_color']};
+}}
+
+QSpinBox::up-button:pressed, QDoubleSpinBox::up-button:pressed {{
+    background-color: {p['accent_light']};
+}}
+
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
+    image: url({spin_up_icon});
+    width: 8px;
+    height: 8px;
+}}
+
+QSpinBox::down-button, QDoubleSpinBox::down-button {{
+    subcontrol-origin: border;
+    subcontrol-position: bottom right;
+    right: 0px;
+    width: 20px;
+    height: 14px;
+    background-color: {p['bg_card']};
+    border-left: 1px solid {p['border_color']};
+    border-bottom-right-radius: 5px;
+}}
+
+QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
+    background-color: {p['border_color']};
+}}
+
+QSpinBox::down-button:pressed, QDoubleSpinBox::down-button:pressed {{
+    background-color: {p['accent_light']};
+}}
+
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
+    image: url({spin_down_icon});
+    width: 8px;
+    height: 8px;
 }}
 
 /* General Buttons */
@@ -363,8 +483,8 @@ QPushButton#HeaderAddBtn, QPushButton#EmptyTrashBtn {{
     background-color: {p['accent_color']};
     color: white;
     border: 1px solid {p['accent_color']};
-    border-radius: 20px !important;
-    padding: 8px 18px;
+    border-radius: 18px !important;
+    padding: 6px 16px;
     font-weight: bold;
     font-size: 13px;
     text-align: center;
@@ -378,60 +498,139 @@ QPushButton#EmptyTrashBtn:hover {{
     border-color: #C02E26;
 }}
 
-/* Sidebar Buttons: Home, Agenda, All Notes, Notebooks, Trash, Settings, Models, Workflows */
+/* Section Headers & Dividers */
+QLabel.SidebarSectionHeader {{
+    color: #71717A;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    background: transparent;
+    padding: 10px 12px 2px 12px;
+}}
+
+QFrame.SidebarDivider {{
+    background-color: #27272A;
+    border: none;
+    min-height: 1px;
+    max-height: 1px;
+    margin: 4px 0px;
+}}
+
+/* Mini Add Buttons inside rows (+ buttons, 32x32 rounded squares) */
+QPushButton.SidebarMiniAddBtn {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    color: {p['text_muted']};
+    font-size: 18px;
+    font-weight: 500;
+    padding: 0px 0px 2px 0px;
+    margin: 0px;
+}}
+QPushButton.SidebarMiniAddBtn:hover {{
+    background-color: {p['card_hover']};
+    border-color: {p['border_focus']};
+    color: {p['text_main']};
+}}
+QPushButton.SidebarMiniAddBtn[parent_active="true"] {{
+    background-color: {p['card_selected']};
+    border-color: {p['border_focus']};
+    color: {p['text_main']};
+}}
+QPushButton.SidebarMiniAddBtn[parent_active="true"]:hover {{
+    background-color: {p.get('card_selected_hover', p['accent_hover'])};
+    border-color: {p['border_focus']};
+    color: {p['text_main']};
+}}
+
+/* Sidebar Standard Buttons: Home, Agenda, All Notes, Notebooks, Trash, Settings, Models, Workflows */
 #HomeBtn, #AgendaBtn, #AllNotesBtn, #NotebooksHeaderBtn, #TrashBtn, #SettingsBtn, #ModelsHeaderBtn, #LibHeaderBtn {{
     background-color: transparent;
     border: 1px solid transparent;
-    color: {sidebar_fg};
+    color: {p['text_main']};
     text-align: left;
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 0px;
     margin: 0px;
 }}
 
 #HomeBtn QLabel, #AgendaBtn QLabel, #AllNotesBtn QLabel, #NotebooksHeaderBtn QLabel, #TrashBtn QLabel, #SettingsBtn QLabel, #ModelsHeaderBtn QLabel, #LibHeaderBtn QLabel {{
-    color: {sidebar_fg};
-    font-size: 13px;
-    font-weight: bold;
+    color: {p['text_main']};
+    font-size: 14px;
+    font-weight: 600;
     background: transparent;
 }}
 
 #HomeBtn:hover, #AgendaBtn:hover, #AllNotesBtn:hover, #NotebooksHeaderBtn:hover, #TrashBtn:hover, #SettingsBtn:hover, #ModelsHeaderBtn:hover, #LibHeaderBtn:hover {{
-    background-color: {p['bg_input']};
-    border: 1px solid transparent;
-    border-radius: 10px;
-    color: {sidebar_fg};
+    background-color: {p['card_hover']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
 }}
 
 #HomeBtn:hover QLabel, #AgendaBtn:hover QLabel, #AllNotesBtn:hover QLabel, #NotebooksHeaderBtn:hover QLabel, #TrashBtn:hover QLabel, #SettingsBtn:hover QLabel, #ModelsHeaderBtn:hover QLabel, #LibHeaderBtn:hover QLabel {{
-    color: {sidebar_fg};
+    color: {p['text_main']};
 }}
 
 #HomeBtn:pressed, #AgendaBtn:pressed, #AllNotesBtn:pressed, #NotebooksHeaderBtn:pressed, #TrashBtn:pressed, #SettingsBtn:pressed, #ModelsHeaderBtn:pressed, #LibHeaderBtn:pressed {{
     background-color: {p['border_color']};
-    border: 1px solid transparent;
-    border-radius: 10px;
-    color: {sidebar_fg};
+    border: 1px solid {p['border_focus']};
+    border-radius: 8px;
 }}
 
 #HomeBtn:pressed QLabel, #AgendaBtn:pressed QLabel, #AllNotesBtn:pressed QLabel, #NotebooksHeaderBtn:pressed QLabel, #TrashBtn:pressed QLabel, #SettingsBtn:pressed QLabel, #ModelsHeaderBtn:pressed QLabel, #LibHeaderBtn:pressed QLabel {{
-    color: {sidebar_fg};
+    color: {p['text_main']};
 }}
 
-/* Clean, balanced symmetrical active section indicator without overlapping borders */
+/* Clean rounded pill active indicator */
 #HomeBtn[active="true"], #AgendaBtn[active="true"], #AllNotesBtn[active="true"], #NotebooksHeaderBtn[active="true"],
 #TrashBtn[active="true"], #SettingsBtn[active="true"],
 #ModelsHeaderBtn[active="true"], #LibHeaderBtn[active="true"] {{
-    background-color: {p['accent_light']};
+    background-color: {p['card_selected']};
     border: 1px solid {p['border_focus']};
-    border-radius: 10px;
+    border-radius: 8px;
 }}
 
 #HomeBtn[active="true"] QLabel, #AgendaBtn[active="true"] QLabel, #AllNotesBtn[active="true"] QLabel, #NotebooksHeaderBtn[active="true"] QLabel,
 #TrashBtn[active="true"] QLabel, #SettingsBtn[active="true"] QLabel,
 #ModelsHeaderBtn[active="true"] QLabel, #LibHeaderBtn[active="true"] QLabel {{
-    color: {p['border_focus']};
-    font-weight: bold;
+    color: {p['text_main']};
+    font-weight: 600;
+}}
+
+/* Special Outlined Button for İş Akışı Oluşturucu (Workflow Builder) */
+#WorkflowBuilderBtn {{
+    background-color: transparent;
+    border: 1.5px solid #48484E;
+    border-radius: 10px;
+    color: #FFFFFF;
+    text-align: left;
+    padding: 0px;
+    margin: 0px;
+}}
+#WorkflowBuilderBtn QLabel {{
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 600;
+    background: transparent;
+}}
+#WorkflowBuilderBtn:hover {{
+    background-color: #222226;
+    border: 1.5px solid #606066;
+}}
+#WorkflowBuilderBtn:hover QLabel {{
+    color: #FFFFFF;
+}}
+#WorkflowBuilderBtn:pressed {{
+    background-color: #2A2A2E;
+    border: 1.5px solid #71717A;
+}}
+#WorkflowBuilderBtn[active="true"] {{
+    background-color: #28282A;
+    border: 1.5px solid #71717A;
+}}
+#WorkflowBuilderBtn[active="true"] QLabel {{
+    color: #FFFFFF;
+    font-weight: 600;
 }}
 
 /* Sidebar Collapse Toggle Button */
@@ -501,28 +700,28 @@ QPushButton#EmptyTrashBtn:hover {{
     border: 1px solid {p['border_color']};
 }}
 
-/* List Widgets for Sidebar list items */
-QListWidget {{
+/* List Widgets for Sidebar list items (Models, Notebooks, Workflow Libs) */
+#ModelsList, #NotebooksList, #LibrariesList, QListWidget {{
     background-color: transparent;
     border: none;
     outline: none;
 }}
-QListWidget::item {{
+#ModelsList::item, #NotebooksList::item, #LibrariesList::item, QListWidget::item {{
     background-color: transparent;
-    color: {p['text_muted']};
-    padding: 6px 12px;
-    min-height: 28px;
-    border-radius: 8px;
+    color: #8E8E93;
+    padding: 4px 8px;
+    min-height: 24px;
+    border-radius: 6px;
     margin-bottom: 2px;
 }}
-QListWidget::item:hover {{
-    background-color: {p['bg_input']};
-    color: {p['text_main']};
+#ModelsList::item:hover, #NotebooksList::item:hover, #LibrariesList::item:hover, QListWidget::item:hover {{
+    background-color: #222224;
+    color: #FFFFFF;
 }}
-QListWidget::item:selected {{
-    background-color: {p['accent_light']};
-    color: {p['text_light']};
-    font-weight: 600;
+#ModelsList::item:selected, #NotebooksList::item:selected, #LibrariesList::item:selected, QListWidget::item:selected {{
+    background-color: #28282A;
+    color: #FFFFFF;
+    font-weight: 500;
 }}
 
 /* Welcome Screen */
@@ -621,10 +820,10 @@ QListWidget::item:selected {{
 }}
 
 #CardArchBadge {{
-    background-color: rgba(20, 21, 24, 0.85);
-    border: 1px solid {p['accent_color']};
+    background-color: {p.get('badge_bg', p['bg_input'])};
+    border: 1px solid {p['border_color']};
     border-radius: 4px;
-    color: {p['text_light']};
+    color: {p['text_main']};
     font-size: 10px;
     font-weight: bold;
     padding: 1px 5px;
@@ -642,17 +841,17 @@ QListWidget::item:selected {{
 QPushButton#CardFavBtn {{
     background-color: transparent;
     border: none;
-    color: #6B7280;
+    color: {p['text_muted']};
     font-size: 18px;
     font-weight: bold;
     padding: 0px;
     margin: 0px;
 }}
 QPushButton#CardFavBtn:hover {{
-    color: #F59E0B;
+    color: {p['highlight_color']};
 }}
 QPushButton#CardFavBtn[favorite="true"] {{
-    color: #F59E0B;
+    color: {p['highlight_color']};
 }}
 
 QPushButton#CardSelectBtn {{
@@ -875,6 +1074,72 @@ QLabel#DetailImageLabel {{
     color: {p['text_light']};
 }}
 
+
+/* Global Context Menus */
+QMenu {{
+    background-color: {p['bg_card']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    padding: 4px;
+}}
+QMenu::item {{
+    background-color: transparent;
+    color: {p['text_main']};
+    padding: 6px 14px;
+    border-radius: 4px;
+}}
+QMenu::item:selected {{
+    background-color: {p['card_hover']};
+    color: {p['text_main']};
+}}
+QMenu::separator {{
+    height: 1px;
+    background-color: {p['border_color']};
+    margin: 4px 8px;
+}}
+
+/* Global ToolTip */
+QToolTip {{
+    background-color: {p['bg_input']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+}}
+
+/* Notebook Badges */
+#NotebookCardBadge, #NotebooksBadge {{
+    background-color: {p.get('badge_bg', p.get('bg_input', '#282A2E'))};
+    color: {p.get('text_main', '#C2E7FF')};
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 500;
+}}
+
+/* Card Action Overlay Buttons */
+QPushButton#CardCopyTriggersBtn {{
+    background-color: {p.get('bg_input', '#282A2E')};
+    border: 1px solid {p.get('border_color', '#3A3A3C')};
+    border-radius: 13px;
+    color: {p.get('highlight_color', '#C2E7FF')};
+    font-size: 11px;
+    padding: 0px;
+}}
+QPushButton#CardCopyTriggersBtn:hover {{
+    background-color: {p.get('card_hover', '#38383D')};
+    border-color: {p.get('border_focus', '#8AB4F8')};
+    color: {p.get('text_main', '#FFFFFF')};
+}}
+
+QLabel#CardHiddenBadge {{
+    background-color: {p.get('bg_input', '#282A2E')};
+    border: 1px solid {p.get('border_color', '#3A3A3C')};
+    border-radius: 14px;
+}}
+
 /* Settings Dialog */
 QDialog {{
     background-color: {p['bg_card']};
@@ -893,6 +1158,440 @@ QDialog {{
 #SettingsBottomBar {{
     background-color: {p.get('bg_sidebar', p['bg_card'])};
     border-top: 1px solid {p['border_color']};
+}}
+
+/* Workflow Builder Comprehensive Styling */
+#WorkflowBuilderDialog, #WorkflowBuilderViewWidget {{
+    background-color: {p['bg_main']};
+}}
+
+.WorkflowBuilderCard, #WorkflowBuilderCard {{
+    background-color: {p['bg_card']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+}}
+
+#SectionHeaderLabel {{
+    color: {p['text_main']};
+    font-size: 15px;
+    font-weight: bold;
+    letter-spacing: 0.2px;
+}}
+
+#SubSectionLabel {{
+    color: {p['text_main']};
+    font-size: 12px;
+    font-weight: 600;
+}}
+
+#FieldLabel {{
+    color: {p['text_muted']};
+    font-size: 11px;
+    font-weight: 500;
+}}
+
+/* Modern SpinBox & ComfyUI Stepper */
+#ModernSpinBox, #ComfySpinBox {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 5px;
+    min-height: 26px;
+    max-height: 30px;
+}}
+
+#ModernSpinBox:focus-within, #ComfySpinBox:focus-within {{
+    border-color: {p['border_focus']};
+}}
+
+#ModernSpinEdit, #ComfySpinEdit {{
+    background: transparent;
+    border: none;
+    color: {p['text_main']};
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 4px;
+}}
+
+QPushButton.ModernSpinBtn {{
+    background-color: transparent;
+    border: none;
+    color: {p['text_muted']};
+    font-size: 8px;
+    font-weight: bold;
+    min-width: 16px;
+    max-width: 16px;
+    min-height: 12px;
+    max-height: 12px;
+    padding: 0px;
+}}
+
+QPushButton.ModernSpinBtn:hover {{
+    background-color: rgba(255, 255, 255, 0.1);
+    color: {p['text_main']};
+    border-radius: 2px;
+}}
+
+/* Dashed Input Drop Area */
+#ModernDropArea {{
+    background-color: {p['bg_input']};
+    border: 1px dashed {p['border_color']};
+    border-radius: 8px;
+    min-height: 72px;
+    max-height: 78px;
+    padding: 6px;
+}}
+
+#ModernDropArea:hover, #ModernDropArea[active="true"] {{
+    border-color: {p['border_focus']};
+    background-color: {p['accent_light']};
+}}
+
+/* Canli Onizleme Semasi Card */
+#SchemaCard {{
+    background-color: {p['bg_card']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+    min-height: 64px;
+}}
+
+.SchemaPill {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 6px;
+    padding: 4px 10px;
+    color: {p['text_main']};
+    font-size: 11px;
+    font-weight: 600;
+}}
+
+.SchemaPill[active="true"] {{
+    border-color: {p['border_focus']};
+    color: {p['border_focus']};
+}}
+
+#SchemaArrow {{
+    color: {p['text_muted']};
+    font-size: 11px;
+    font-weight: bold;
+}}
+
+.BuilderCard, #BuilderCard, #ModelCard, #PromptCard, #KSamplerCard, #ResolutionCard, .ComfyNodeCard, #ComfyNodeCard {{
+    background-color: {p['bg_card']};
+    border: 1px solid {p['border_color']};
+    border-radius: 12px;
+}}
+
+.BuilderCard:hover, .ComfyNodeCard:hover {{
+    border-color: {p['border_focus']};
+}}
+
+.ComfyNodeHeader {{
+    border-bottom: 1px solid {p['border_color']};
+    padding: 6px 12px;
+    background-color: {p['bg_input']};
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+}}
+
+.ComfyDot {{
+    min-width: 8px;
+    max-width: 8px;
+    min-height: 8px;
+    max-height: 8px;
+    border-radius: 4px;
+    background-color: {p['border_focus']};
+}}
+
+.ComfyDot[color="green"] {{
+    background-color: #10B981;
+}}
+
+.ComfyDot[color="red"] {{
+    background-color: #EF4444;
+}}
+
+.ComfyDot[color="orange"] {{
+    background-color: #F59E0B;
+}}
+
+.ComfyDot[color="purple"] {{
+    background-color: #8B5CF6;
+}}
+
+.ComfyDot[color="blue"] {{
+    background-color: #0EA5E9;
+}}
+
+#BuilderCardHeader {{
+    color: {p['text_main']};
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}}
+
+#BuilderBadge {{
+    background-color: {p['accent_light']};
+    color: {p['border_focus']};
+    border: 1px solid {p['border_focus']};
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 9px;
+    font-weight: 700;
+}}
+
+#ComfyStepperLabel {{
+    color: {p['text_muted']};
+    font-size: 11px;
+    font-weight: 600;
+}}
+
+/* ComfyUI Stepper Capsules [ < label ... value > ] */
+.ComfyStepper {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 6px;
+    min-height: 28px;
+}}
+
+.ComfyStepper:hover {{
+    border-color: {p['border_focus']};
+}}
+
+QPushButton.ComfyStepBtn {{
+    background-color: transparent;
+    border: none;
+    color: {p['text_muted']};
+    font-weight: bold;
+    font-size: 11px;
+    min-width: 20px;
+    max-width: 20px;
+    min-height: 24px;
+    padding: 0px;
+}}
+
+QPushButton.ComfyStepBtn:hover {{
+    background-color: rgba(255, 255, 255, 0.08);
+    color: {p['text_main']};
+    border-radius: 4px;
+}}
+
+QPushButton.ComfyStepBtn:pressed {{
+    background-color: {p['accent_color']};
+    color: #FFFFFF;
+}}
+
+QLineEdit.ComfyValEdit {{
+    background: transparent;
+    border: none;
+    color: {p['text_main']};
+    font-size: 12px;
+    font-weight: bold;
+    padding: 2px 4px;
+}}
+
+/* Compact Image Slot */
+#CompactDropArea {{
+    background-color: {p['bg_input']};
+    border: 1px dashed {p['border_color']};
+    border-radius: 8px;
+    min-height: 52px;
+    max-height: 58px;
+    padding: 4px 8px;
+}}
+
+#CompactDropArea:hover, #CompactDropArea[active="true"] {{
+    border-color: {p['border_focus']};
+    background-color: {p['accent_light']};
+}}
+
+/* Mode Segmented Toggle Buttons */
+#ModeToggleContainer {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 10px;
+    padding: 3px;
+}}
+
+QPushButton.ModeToggleBtn, QPushButton#ModeTxtBtn, QPushButton#ModeImgBtn {{
+    background-color: transparent;
+    color: {p['text_muted']};
+    border: none;
+    border-radius: 7px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+
+QPushButton.ModeToggleBtn:hover, QPushButton#ModeTxtBtn:hover, QPushButton#ModeImgBtn:hover {{
+    color: {p['text_main']};
+    background-color: {p['bg_card']};
+}}
+
+QPushButton.ModeToggleBtn[active="true"], QPushButton#ModeTxtBtn[active="true"], QPushButton#ModeImgBtn[active="true"] {{
+    background-color: {p['accent_color']};
+    color: #FFFFFF;
+}}
+
+/* Image Drop Area */
+#ImageDropArea {{
+    background-color: {p['bg_input']};
+    border: 2px dashed {p['border_color']};
+    border-radius: 12px;
+}}
+
+#ImageDropArea:hover, #ImageDropArea[active="true"] {{
+    border-color: {p['border_focus']};
+    background-color: {p['accent_light']};
+}}
+
+/* Form Input Styling & Row Containers */
+.BuilderLabel {{
+    color: {p['text_main']};
+    font-size: 12px;
+    font-weight: 600;
+}}
+
+.BuilderMutedLabel {{
+    color: {p['text_muted']};
+    font-size: 11px;
+}}
+
+/* Seed Box Container */
+#SeedContainer {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    padding: 2px 6px;
+}}
+
+#SeedContainer:focus-within {{
+    border: 1px solid {p['border_focus']};
+}}
+
+#SeedEdit {{
+    background: transparent;
+    border: none;
+    color: {p['text_main']};
+    font-family: 'Consolas', 'Cascadia Code', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 6px;
+}}
+
+#SeedRandomBtn {{
+    background-color: {p['bg_card']};
+    color: {p['text_main']};
+    border: 1px solid {p['border_color']};
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 500;
+}}
+
+#SeedRandomBtn:hover {{
+    background-color: {p['border_color']};
+    border-color: {p['border_focus']};
+}}
+
+/* LoRA Item Row */
+.LoraRow {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    padding: 6px 10px;
+}}
+
+.LoraRow:hover {{
+    border-color: {p['border_focus']};
+}}
+
+#AddLoraBtn {{
+    background-color: {p['bg_input']};
+    color: {p['border_focus']};
+    border: 1px dashed {p['border_focus']};
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+
+#AddLoraBtn:hover {{
+    background-color: {p['accent_light']};
+    border-style: solid;
+}}
+
+#RemoveLoraBtn {{
+    background-color: transparent;
+    color: {p['text_muted']};
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 4px 8px;
+}}
+
+#RemoveLoraBtn:hover {{
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #EF4444;
+    border-color: #EF4444;
+}}
+
+/* Prompt Editors */
+#PositivePromptEdit, #NegativePromptEdit {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    border-radius: 8px;
+    color: {p['text_main']};
+    padding: 8px;
+    font-size: 12px;
+}}
+
+#PositivePromptEdit:focus {{
+    border: 1px solid {p['border_focus']};
+}}
+
+#NegativePromptEdit:focus {{
+    border: 1px solid #F87171;
+}}
+
+/* Bottom Action Bar */
+#BuilderFooterBar {{
+    background-color: {p['bg_card']};
+    border-top: 1px solid {p['border_color']};
+    padding: 6px 18px;
+}}
+
+#BuilderStatusLabel {{
+    color: {p.get('highlight_color', p.get('border_focus', '#8AB4F8'))};
+    font-size: 12px;
+    font-weight: 500;
+}}
+
+#ExportJsonBtn {{
+    background-color: {p['bg_input']};
+    border: 1px solid {p['border_color']};
+    color: {p['text_main']};
+    border-radius: 6px;
+    padding: 0px 14px;
+    font-weight: 600;
+    font-size: 12px;
+}}
+
+#ExportJsonBtn:hover {{
+    background-color: {p['border_color']};
+    border-color: {p['border_focus']};
+}}
+
+#ExportPngBtn {{
+    background-color: {p['accent_color']};
+    border: none;
+    color: {'#000000' if is_light(p['accent_color']) else '#FFFFFF'};
+    border-radius: 6px;
+    padding: 0px 14px;
+    font-weight: bold;
+    font-size: 12px;
+}}
+
+#ExportPngBtn:hover {{
+    background-color: {p['accent_hover']};
 }}
 
 /* Favorites Header Toggle Button */
@@ -969,13 +1668,16 @@ QDockWidget::title {{
     font-weight: bold;
 }}
 
-#AllNotesBadge, #NotebooksBadge, #TrashBadge {{
-    background-color: transparent;
-    color: {sidebar_fg};
+#AllNotesBadge, #NotebooksBadge, #TrashBadge, #WorkflowsBadge {{
+    background-color: #232326;
+    color: #A1A1AA;
     font-size: 13px;
-    font-weight: bold;
-    border-radius: 10px;
+    font-weight: 600;
+    border-radius: 6px;
     border: none;
+    padding: 2px 8px;
+    min-width: 18px;
+    text-align: center;
 }}
 
 /* Notebook Overview Cards */
@@ -987,6 +1689,11 @@ QDockWidget::title {{
 #NotebookCard:hover {{
     border: 1px solid {p['border_focus']};
     background-color: {p['bg_input']};
+}}
+#NotebookCard[selected="true"] {{
+    background-color: {p['card_selected']};
+    border: 2px solid {p['highlight_color']};
+    border-radius: 12px;
 }}
 #NotebookCard QPushButton#CardActionBtn {{
     background-color: transparent;

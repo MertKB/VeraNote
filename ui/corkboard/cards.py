@@ -7,10 +7,10 @@ import base64
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QTextEdit, QPushButton, QFrame, QMenu)
 from PySide6.QtCore import Signal, Qt, QSize, QPoint, QThreadPool, QRunnable, QObject, Slot
-from PySide6.QtGui import (QPainter, QImage, QTextDocument, QFontMetrics, QCursor, 
+from PySide6.QtGui import (QPainter, QImage, QImageReader, QTextDocument, QFontMetrics, QCursor, 
                            QGuiApplication, QPen, QColor, QPixmap, QTextLayout, QTextOption)
 from utils.i18n import t
-from utils.cache import THUMBNAIL_CACHE, resolve_image_path
+from utils.cache import THUMBNAIL_CACHE, THUMB_THREAD_POOL, load_or_create_thumbnail_qimage, resolve_image_path
 from ui.library_view import get_rounded_pixmap
 from ui.styles import adjust_brightness
 
@@ -24,7 +24,7 @@ def extract_plain_text(html_content: str) -> str:
         return ""
     if len(html_content) > 3000:
         html_content = html_content[:3000]
-    cleaned_html = _DATA_URI_RE.sub('[Görsel]', html_content)
+    cleaned_html = _DATA_URI_RE.sub(t("image_tag_placeholder"), html_content)
     doc = QTextDocument()
     doc.setHtml(cleaned_html)
     return doc.toPlainText().strip()
@@ -116,14 +116,8 @@ class ImageLoadWorker(QRunnable):
         if not self.image_path or not os.path.exists(self.image_path):
             return
         try:
-            img = QImage(self.image_path)
-            if not img.isNull():
-                scaled = img.scaled(
-                    self.target_w, self.target_h,
-                    Qt.KeepAspectRatioByExpanding,
-                    Qt.SmoothTransformation
-                )
-                cropped = scaled.copy(0, 0, self.target_w, self.target_h)
+            cropped = load_or_create_thumbnail_qimage(self.image_path, self.target_w, self.target_h)
+            if not cropped.isNull():
                 self.signals.image_loaded.emit(self.image_path, cropped)
         except Exception:
             pass
@@ -272,15 +266,22 @@ class QuickNoteCardWidget(QFrame):
 
     def mouseMoveEvent(self, event):
         if not self.is_locked and (event.buttons() & Qt.LeftButton):
+            grid = getattr(self, 'grid_size', 20) if getattr(self, 'grid_snap', True) else 1
             if self.is_resizing:
                 delta = event.globalPosition().toPoint() - self.drag_start_pos
                 nw = max(220, min(900, self.drag_start_size.width() + delta.x()))
                 nh = max(120, min(700, self.drag_start_size.height() + delta.y()))
+                if grid > 1:
+                    nw = max(220, round(nw / grid) * grid)
+                    nh = max(120, round(nh / grid) * grid)
                 self.resize(nw, nh)
             elif self.drag_position is not None:
                 new_pos = event.globalPosition().toPoint() - self.drag_position
                 nx = max(0, new_pos.x())
                 ny = max(0, new_pos.y())
+                if grid > 1:
+                    nx = round(nx / grid) * grid
+                    ny = round(ny / grid) * grid
                 self.move(nx, ny)
                 if self.parent():
                     req_w = nx + self.width() + 40
@@ -307,7 +308,11 @@ class QuickNoteCardWidget(QFrame):
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
             b_col = self.border_color if (self.border_color and self.border_color != "transparent") else "#8AB4F8"
-            painter.setPen(QPen(QColor(b_col), 1.5))
+            pen = QPen(QColor(b_col), 1.5, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 12, 12)
+            painter.setPen(QPen(QColor(b_col), 1.5, Qt.SolidLine))
             w, h = self.width(), self.height()
             painter.drawLine(w - 12, h - 4, w - 4, h - 12)
             painter.drawLine(w - 8, h - 4, w - 4, h - 8)
@@ -566,15 +571,22 @@ class CorkboardNoteCard(QFrame):
 
     def mouseMoveEvent(self, event):
         if not self.is_locked and self.mode == "free" and (event.buttons() & Qt.LeftButton):
+            grid = getattr(self, 'grid_size', 20) if getattr(self, 'grid_snap', True) else 1
             if self.is_resizing:
                 delta = event.globalPosition().toPoint() - self.drag_start_pos
                 nw = max(160, min(900, self.drag_start_size.width() + delta.x()))
                 nh = max(140, min(800, self.drag_start_size.height() + delta.y()))
+                if grid > 1:
+                    nw = max(160, round(nw / grid) * grid)
+                    nh = max(140, round(nh / grid) * grid)
                 self.resize(nw, nh)
             elif self.drag_position is not None:
                 new_pos = event.globalPosition().toPoint() - self.drag_position
                 nx = max(0, new_pos.x())
                 ny = max(0, new_pos.y())
+                if grid > 1:
+                    nx = round(nx / grid) * grid
+                    ny = round(ny / grid) * grid
                 self.move(nx, ny)
                 if self.parent():
                     req_w = nx + self.width() + 40
@@ -593,6 +605,9 @@ class CorkboardNoteCard(QFrame):
             elif self.drag_position is not None:
                 self.drag_position = None
                 self.position_changed.emit(self.note_data.get('id', 0), self.x(), self.y(), self.width(), self.height())
+        elif self.is_locked and event.button() == Qt.LeftButton:
+            # When locked, single click opens the note
+            self.clicked.emit(self.note_data)
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
@@ -606,7 +621,11 @@ class CorkboardNoteCard(QFrame):
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
             pen_color = getattr(self, 'highlight_color', '#8AB4F8')
-            painter.setPen(QPen(QColor(pen_color), 1.5))
+            pen = QPen(QColor(pen_color), 1.5, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 14, 14)
+            painter.setPen(QPen(QColor(pen_color), 1.5, Qt.SolidLine))
             w, h = self.width(), self.height()
             painter.drawLine(w - 12, h - 4, w - 4, h - 12)
             painter.drawLine(w - 8, h - 4, w - 4, h - 8)

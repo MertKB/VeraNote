@@ -13,7 +13,7 @@ from .common import ZoomableTextEdit, FlowLayout, TriggerPillButton, TagPillWidg
 
 class ModelSection(QWidget):
     """Encapsulates all model metadata display, trigger words, and tagging."""
-    save_model_data_requested = Signal(int, str, str, str) # model_id, name, notes, base_architecture
+    save_model_data_requested = Signal(int, str, str, str, bool) # model_id, name, notes, base_architecture, is_auto_save
     add_trigger_requested = Signal(int, str) # model_id, word
     delete_trigger_requested = Signal(int, str) # model_id, word
     set_triggers_requested = Signal(int, list) # model_id, triggers_list
@@ -34,6 +34,14 @@ class ModelSection(QWidget):
         self.highlight_color = "#8AB4F8"
         self.accent_color = "#1A73E8"
         self.palette = {}
+
+        # Auto-Save Debounce Timer
+        self.auto_save_timer = QTimer(self)
+        self.auto_save_timer.setSingleShot(True)
+        self.auto_save_timer.timeout.connect(self.trigger_auto_save)
+        self.auto_save_enabled = 1
+        self.auto_save_interval = 1.5
+
         self.init_ui()
 
     def init_ui(self):
@@ -61,6 +69,7 @@ class ModelSection(QWidget):
         self.name_edit.setMinimumWidth(0)
         self.name_edit.setPlaceholderText(t("detail_card_title_placeholder"))
         self.name_edit.textChanged.connect(self.check_changes)
+        self.name_edit.editingFinished.connect(self.flush_pending_saves)
         layout.addWidget(self.name_edit)
 
         # Base Architecture Selection
@@ -79,7 +88,7 @@ class ModelSection(QWidget):
             "SD3",
             "Illustrious",
             "SD 2.1",
-            "Diğer"
+            t("arch_other")
         ])
         self.arch_combo.currentIndexChanged.connect(self._on_arch_combo_changed)
         arch_row.addWidget(self.arch_combo)
@@ -113,6 +122,7 @@ class ModelSection(QWidget):
         self.notes_edit.setMinimumHeight(120)
         self.notes_edit.setMaximumHeight(200)
         self.notes_edit.textChanged.connect(self.check_changes)
+        self.notes_edit.focus_out.connect(self.flush_pending_saves)
         layout.addWidget(self.notes_edit)
 
         # Save & Delete Buttons Container
@@ -290,6 +300,7 @@ class ModelSection(QWidget):
         return map_architecture_to_canonical(detected_arch)
 
     def set_model(self, model_data, trigger_words):
+        self.flush_pending_saves()
         self.model_data = model_data
         self.trigger_words = trigger_words or []
         self.initial_name = model_data.get('name', '')
@@ -315,7 +326,7 @@ class ModelSection(QWidget):
                     model_id = model_data.get('id')
                     if model_id:
                         self.model_data['base_architecture'] = arch
-                        self.save_model_data_requested.emit(model_id, self.initial_name, self.initial_notes, arch)
+                        self.save_model_data_requested.emit(model_id, self.initial_name, self.initial_notes, arch, True)
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Error auto-detecting model arch: {e}")
@@ -394,7 +405,7 @@ class ModelSection(QWidget):
             if model_id:
                 self.model_data['base_architecture'] = mapped
                 self.initial_arch = mapped
-                self.save_model_data_requested.emit(model_id, name, notes, mapped)
+                self.save_model_data_requested.emit(model_id, name, notes, mapped, True)
 
             self.check_changes()
 
@@ -410,10 +421,50 @@ class ModelSection(QWidget):
             current_arch != self.initial_arch
         )
         self.save_btn.setEnabled(has_changed)
+        if has_changed and self.auto_save_enabled:
+            self.auto_save_timer.start(int(self.auto_save_interval * 1000))
+        else:
+            self.auto_save_timer.stop()
+
+    def sync_auto_save_settings(self, enabled, interval):
+        self.auto_save_enabled = int(enabled)
+        self.auto_save_interval = float(interval)
+        if not self.auto_save_enabled and hasattr(self, 'auto_save_timer'):
+            self.auto_save_timer.stop()
+
+    def flush_pending_saves(self):
+        if hasattr(self, 'auto_save_timer') and self.auto_save_timer.isActive():
+            self.auto_save_timer.stop()
+            self.trigger_auto_save()
+
+    def trigger_auto_save(self):
+        if not self.model_data or not self.auto_save_enabled:
+            return
+        name = self.name_edit.text().strip()
+        notes = self.notes_edit.toPlainText().strip()
+        current_arch = self.arch_combo.currentText().strip()
+        if not name:
+            return
+        if (name == self.initial_name and 
+            notes == self.initial_notes and 
+            current_arch == self.initial_arch):
+            self.save_btn.setEnabled(False)
+            return
+
+        self.initial_name = name
+        self.initial_notes = notes
+        self.initial_arch = current_arch
+        self.model_data['name'] = name
+        self.model_data['notes'] = notes
+        self.model_data['base_architecture'] = current_arch
+        self.save_btn.setEnabled(False)
+        self.save_model_data_requested.emit(self.model_data['id'], name, notes, current_arch, True)
 
     def on_save_clicked(self):
         if not self.model_data:
             return
+        if hasattr(self, 'auto_save_timer') and self.auto_save_timer.isActive():
+            self.auto_save_timer.stop()
         name = self.name_edit.text().strip()
         notes = self.notes_edit.toPlainText().strip()
         current_arch = self.arch_combo.currentText().strip()
@@ -436,11 +487,14 @@ class ModelSection(QWidget):
         if not name:
             QMessageBox.warning(self, t("msg_copy_error_title"), t("msg_model_name_empty"), QMessageBox.Ok)
             return
-        self.save_model_data_requested.emit(self.model_data['id'], name, notes, current_arch)
         self.initial_name = name
         self.initial_notes = notes
         self.initial_arch = self.arch_combo.currentText().strip()
+        self.model_data['name'] = name
+        self.model_data['notes'] = notes
+        self.model_data['base_architecture'] = current_arch
         self.save_btn.setEnabled(False)
+        self.save_model_data_requested.emit(self.model_data['id'], name, notes, current_arch, False)
 
     def on_delete_model_clicked(self):
         if not self.model_data:
@@ -497,28 +551,44 @@ class ModelSection(QWidget):
             return
         tag = self.new_tag_edit.text().strip()
         if tag:
-            tags = self.model_data.get('tags', [])
+            tags = list(self.model_data.get('tags', []))
             if tag in tags:
                 QMessageBox.warning(self, t("msg_copy_error_title"), t("msg_tag_exists"), QMessageBox.Ok)
                 return
-            self.add_tag_requested.emit(self.model_data['id'], tag)
-            self.new_tag_edit.clear()
+            model_id = self.model_data.get('id')
+            if model_id:
+                tags.append(tag)
+                self.model_data['tags'] = tags
+                self.add_tag_requested.emit(model_id, tag)
+                self.reload_tags()
+                self.new_tag_edit.clear()
 
     def on_delete_tag(self, tag):
         if not self.model_data:
             return
-        reply = QMessageBox.question(
-            self, t("msg_confirm_remove_tag_title"), t("msg_confirm_remove_tag_text").format(tag=tag),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self.delete_tag_requested.emit(self.model_data['id'], tag)
+        model_id = self.model_data.get('id')
+        if model_id:
+            tags = list(self.model_data.get('tags', []))
+            if tag in tags:
+                tags.remove(tag)
+            self.model_data['tags'] = tags
+            self.delete_tag_requested.emit(model_id, tag)
+            self.reload_tags()
 
     def run_clear_tags(self):
         if not self.model_data:
             return
         tags = self.model_data.get('tags', [])
         if not tags:
+            return
+        reply = QMessageBox.question(
+            self,
+            t("msg_confirm_remove_tag_title"),
+            t("detail_tags_clear_confirm"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
             return
         model_id = self.model_data.get('id')
         if model_id:
@@ -625,18 +695,22 @@ class ModelSection(QWidget):
             if word in self.trigger_words:
                 QMessageBox.warning(self, t("msg_copy_error_title"), t("msg_trigger_exists"), QMessageBox.Ok)
                 return
-            self.add_trigger_requested.emit(self.model_data['id'], word)
-            self.new_tw_edit.clear()
+            model_id = self.model_data.get('id')
+            if model_id:
+                self.trigger_words.append(word)
+                self.add_trigger_requested.emit(model_id, word)
+                self.reload_pills()
+                self.new_tw_edit.clear()
 
     def on_delete_trigger(self, word):
         if not self.model_data:
             return
-        reply = QMessageBox.question(
-            self, t("msg_confirm_delete_trigger_title"), t("msg_confirm_delete_trigger_text").format(word=word),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            self.delete_trigger_requested.emit(self.model_data['id'], word)
+        model_id = self.model_data.get('id')
+        if model_id:
+            if word in self.trigger_words:
+                self.trigger_words.remove(word)
+            self.delete_trigger_requested.emit(model_id, word)
+            self.reload_pills()
 
     def on_word_clicked(self, word):
         QGuiApplication.clipboard().setText(word)
@@ -731,6 +805,13 @@ class ModelSection(QWidget):
         self.name_title.setText(t("detail_card_title"))
         self.name_edit.setPlaceholderText(t("detail_card_title_placeholder"))
         self.arch_label.setText(t("detail_arch_label") + ":")
+        if hasattr(self, 'arch_combo') and self.arch_combo.count() > 0:
+            self.arch_combo.blockSignals(True)
+            self.arch_combo.setItemText(0, t("detail_arch_auto"))
+            last_idx = self.arch_combo.count() - 1
+            if self.arch_combo.itemText(last_idx) in ("Diğer", "Other", t("arch_other")):
+                self.arch_combo.setItemText(last_idx, t("arch_other"))
+            self.arch_combo.blockSignals(False)
         if hasattr(self, 'detect_arch_btn'):
             self.detect_arch_btn.setText(t("detail_arch_detect_btn"))
             self.detect_arch_btn.setToolTip(t("detail_arch_detect_tooltip"))
@@ -762,6 +843,7 @@ class ModelSection(QWidget):
             self.sample_neg_lbl.setText(t("detail_sample_prompt_neg"))
             self.copy_sample_pos_btn.setText(t("workflow_copy_prompt"))
             self.copy_sample_neg_btn.setText(t("workflow_copy_prompt"))
+        self.update_image()
         if self.model_data:
             self.path_label.setText(f"{t('detail_card_path')} {self.model_data.get('file_path', '')}")
             self.reload_tags()

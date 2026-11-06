@@ -23,7 +23,9 @@ DEFAULT_CUSTOM_COLORS = {
     "card_selected": "#192231",
     "text_main": "#E3E3E3",
     "text_muted": "#9AA0A6",
-    "cal_weekend_color": "#FB7185"
+    "cal_weekend_color": "#FB7185",
+    "badge_bg": "#282A2E",
+    "card_img_bg": "#18191B"
 }
 
 CUSTOM_PRESETS = [
@@ -39,7 +41,9 @@ CUSTOM_PRESETS = [
         "card_selected": "#192231",
         "text_main": "#E3E3E3",
         "text_muted": "#9AA0A6",
-        "cal_weekend_color": "#FB7185"
+        "cal_weekend_color": "#FB7185",
+        "badge_bg": "#282A2E",
+        "card_img_bg": "#18191B"
     }),
     ("custom_preset_amoled", {
         "bg_main": "#18191C",
@@ -112,6 +116,8 @@ COLOR_ATTRIBUTES = [
     ("text_main", "custom_theme_text_main", "custom_theme_text_main_tooltip"),
     ("text_muted", "custom_theme_text_muted", "custom_theme_text_muted_tooltip"),
     ("cal_weekend_color", "custom_theme_cal_weekend", "custom_theme_cal_weekend_tooltip"),
+    ("badge_bg", "custom_theme_badge", "custom_theme_badge_tooltip"),
+    ("card_img_bg", "custom_theme_card_img", "custom_theme_card_img_tooltip"),
 ]
 
 
@@ -149,19 +155,27 @@ class SettingsDialog(QDialog):
         self._child_dialog_open = False
         self._outside_filter = AutoSaveOnOutsideClickFilter(self)
         self.custom_colors = dict(DEFAULT_CUSTOM_COLORS)
+        self.user_presets = {}
+        try:
+            import database
+            raw_presets = database.get_setting("user_custom_presets", "{}")
+            if raw_presets:
+                self.user_presets = json.loads(raw_presets)
+        except Exception:
+            self.user_presets = {}
         self.color_buttons = {}
         self.preset_buttons = []
         self.setWindowTitle(t("settings_title"))
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(580)
         
         # Responsive height calculation for FHD / scaled displays
         screen = QApplication.primaryScreen()
         if screen:
             avail_h = screen.availableGeometry().height()
-            target_h = min(720, max(480, int(avail_h * 0.82)))
-            self.resize(580, target_h)
+            target_h = min(820, max(560, int(avail_h * 0.88)))
+            self.resize(600, target_h)
         else:
-            self.resize(580, 640)
+            self.resize(600, 720)
             
         self.init_ui()
 
@@ -303,20 +317,63 @@ class SettingsDialog(QDialog):
         autosave_layout.addWidget(self.autosave_check)
 
         interval_layout = QHBoxLayout()
+        interval_layout.setSpacing(10)
         self.interval_lbl = QLabel(t("settings_interval"))
         self.interval_lbl.setStyleSheet("color: #9AA0A6; font-size: 12px;")
         
         self.interval_spin = QDoubleSpinBox()
+        self.interval_spin.setObjectName("SettingsIntervalSpin")
         self.interval_spin.setRange(0.5, 120.0)
         self.interval_spin.setSingleStep(0.5)
         self.interval_spin.setDecimals(1)
+        self.interval_spin.setFixedSize(90, 30)
         self.interval_spin.setStyleSheet("""
-            QDoubleSpinBox {
+            QDoubleSpinBox#SettingsIntervalSpin {
                 background-color: #2D2F31;
                 border: 1px solid #444746;
                 border-radius: 6px;
                 color: #E3E3E3;
-                padding: 4px;
+                padding-left: 8px;
+                padding-right: 22px;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QDoubleSpinBox#SettingsIntervalSpin:focus {
+                border: 1px solid #8AB4F8;
+                background-color: #35383B;
+            }
+            QDoubleSpinBox#SettingsIntervalSpin::up-button {
+                subcontrol-origin: border;
+                subcontrol-position: top right;
+                right: 0px;
+                width: 20px;
+                height: 14px;
+                border-left: 1px solid #444746;
+                border-bottom: 1px solid #444746;
+                border-top-right-radius: 5px;
+                background-color: #323538;
+            }
+            QDoubleSpinBox#SettingsIntervalSpin::up-button:hover {
+                background-color: #444746;
+            }
+            QDoubleSpinBox#SettingsIntervalSpin::up-button:pressed {
+                background-color: #1A73E8;
+            }
+            QDoubleSpinBox#SettingsIntervalSpin::down-button {
+                subcontrol-origin: border;
+                subcontrol-position: bottom right;
+                right: 0px;
+                width: 20px;
+                height: 14px;
+                border-left: 1px solid #444746;
+                border-bottom-right-radius: 5px;
+                background-color: #323538;
+            }
+            QDoubleSpinBox#SettingsIntervalSpin::down-button:hover {
+                background-color: #444746;
+            }
+            QDoubleSpinBox#SettingsIntervalSpin::down-button:pressed {
+                background-color: #1A73E8;
             }
         """)
         
@@ -342,16 +399,7 @@ class SettingsDialog(QDialog):
         self.theme_combo.addItem(t("theme_deep_purple"), "Derin Mor")
         self.theme_combo.addItem(t("theme_ocean_blue"), "Okyanus Mavisi")
         self.theme_combo.addItem(t("settings_theme_custom"), "Özel Tema")
-        self.theme_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 6px;
-                color: #E3E3E3;
-                padding: 4px 8px;
-                min-width: 150px;
-            }
-        """)
+        self.theme_combo.setMinimumWidth(150)
         self.theme_combo.currentIndexChanged.connect(self.on_theme_changed)
         
         theme_row.addWidget(self.theme_lbl)
@@ -399,6 +447,46 @@ class SettingsDialog(QDialog):
         presets_bar.addStretch()
         custom_colors_layout.addLayout(presets_bar)
 
+        # User Saved Themes & Actions Bar
+        self.user_presets_container = QWidget()
+        self.user_presets_layout = QHBoxLayout(self.user_presets_container)
+        self.user_presets_layout.setContentsMargins(0, 0, 0, 0)
+        self.user_presets_layout.setSpacing(6)
+
+        self.user_presets_lbl = QLabel(t("custom_theme_saved_list") + ":")
+        self.user_presets_lbl.setStyleSheet("color: #E3E3E3; font-size: 11px; font-weight: bold;")
+        self.user_presets_layout.addWidget(self.user_presets_lbl)
+
+        self.user_preset_buttons_layout = QHBoxLayout()
+        self.user_preset_buttons_layout.setSpacing(6)
+        self.user_presets_layout.addLayout(self.user_preset_buttons_layout)
+
+        self.save_theme_btn = QPushButton(t("custom_theme_save"))
+        self.save_theme_btn.setCursor(Qt.PointingHandCursor)
+        self.save_theme_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2D2F31;
+                color: #E3E3E3;
+                border: 1px solid #444746;
+                border-radius: 12px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #3C4043;
+                border-color: #8AB4F8;
+                color: #FFFFFF;
+            }
+        """)
+        self.save_theme_btn.clicked.connect(self.save_custom_theme)
+        self.user_presets_layout.addWidget(self.save_theme_btn)
+
+        self.user_presets_layout.addStretch()
+        custom_colors_layout.addWidget(self.user_presets_container)
+
+        self.refresh_user_preset_buttons()
+
         # Color Pickers Grid (4 rows x 2 columns)
         colors_grid = QGridLayout()
         colors_grid.setHorizontalSpacing(10)
@@ -430,16 +518,7 @@ class SettingsDialog(QDialog):
         self.lang_combo = QComboBox()
         self.lang_combo.addItem("Türkçe", "tr")
         self.lang_combo.addItem("English", "en")
-        self.lang_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #2D2F31;
-                border: 1px solid #444746;
-                border-radius: 6px;
-                color: #E3E3E3;
-                padding: 4px 8px;
-                min-width: 150px;
-            }
-        """)
+        self.lang_combo.setMinimumWidth(150)
         lang_row.addWidget(self.lang_lbl)
         lang_row.addWidget(self.lang_combo)
         lang_row.addStretch()
@@ -624,24 +703,11 @@ class SettingsDialog(QDialog):
         backup_btn_layout.addWidget(self.export_backup_btn)
 
         self.import_backup_btn = QPushButton(t("settings_backup_import"))
+        self.import_backup_btn.setObjectName("SettingsImportBackupBtn")
         self.import_backup_btn.setCursor(Qt.PointingHandCursor)
-        self.import_backup_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2D2F31;
-                color: #FBBF24;
-                border: 1px solid #444746;
-                border-radius: 6px;
-                padding: 6px 12px;
-                font-size: 12px;
-                font-weight: 500;
-            }
-            QPushButton:hover {
-                background-color: #3C4043;
-                border-color: #F59E0B;
-            }
-        """)
         self.import_backup_btn.clicked.connect(self.on_import_backup)
         backup_btn_layout.addWidget(self.import_backup_btn)
+        self.update_backup_buttons_style()
         backup_btn_layout.addStretch()
 
         storage_layout.addLayout(backup_btn_layout)
@@ -651,15 +717,9 @@ class SettingsDialog(QDialog):
         root_layout.addWidget(self.scroll_area, 1)
 
         # Fixed bottom action bar (Always visible!)
-        bottom_bar = QWidget(self)
-        bottom_bar.setObjectName("SettingsBottomBar")
-        bottom_bar.setStyleSheet("""
-            QWidget#SettingsBottomBar {
-                background-color: rgba(20, 21, 23, 0.95);
-                border-top: 1px solid rgba(255, 255, 255, 0.08);
-            }
-        """)
-        bottom_layout = QHBoxLayout(bottom_bar)
+        self.bottom_bar = QWidget(self)
+        self.bottom_bar.setObjectName("SettingsBottomBar")
+        bottom_layout = QHBoxLayout(self.bottom_bar)
         bottom_layout.setContentsMargins(20, 10, 20, 10)
 
         # Buttons
@@ -671,7 +731,7 @@ class SettingsDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         bottom_layout.addWidget(self.button_box)
 
-        root_layout.addWidget(bottom_bar, 0)
+        root_layout.addWidget(self.bottom_bar, 0)
 
     def select_lora_path(self):
         self._child_dialog_open = True
@@ -697,10 +757,255 @@ class SettingsDialog(QDialog):
     def on_theme_changed(self):
         is_custom = self.theme_combo.currentData() == "Özel Tema"
         self.custom_colors_widget.setVisible(is_custom)
+        self.update_dialog_theme_styles()
+
+    def update_backup_buttons_style(self):
+        self.update_dialog_theme_styles()
+
+    def update_dialog_theme_styles(self):
+        if not hasattr(self, 'theme_combo'):
+            return
+        theme_name = self.theme_combo.currentData() or "Koyu Gece"
+        from ui.styles import get_palette, get_stylesheet
+        self.setStyleSheet(get_stylesheet(theme_name, self.custom_colors))
+        p = get_palette(theme_name, self.custom_colors)
+        bg_card = p.get('bg_card', '#1E1F22')
+        bg_input = p.get('bg_input', '#282A2E')
+        border_col = p.get('border_color', '#2F3136')
+        text_main = p.get('text_main', '#E3E3E3')
+        text_muted = p.get('text_muted', '#9AA0A6')
+        card_hover = p.get('card_hover', '#38383D')
+        border_focus = p.get('border_focus', '#8AB4F8')
+        highlight = p.get('highlight_color', '#8AB4F8')
+        bg_sidebar = p.get('bg_sidebar', bg_card)
+
+        # Style preset buttons & save button
+        btn_style = f"""
+            QPushButton {{
+                background-color: {bg_input};
+                color: {text_main};
+                border: 1px solid {border_col};
+                border-radius: 12px;
+                padding: 4px 10px;
+                font-size: 11px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: {card_hover};
+                border-color: {border_focus};
+                color: {text_main};
+            }}
+        """
+        for p_btn, _ in getattr(self, 'preset_buttons', []):
+            p_btn.setStyleSheet(btn_style)
+        if hasattr(self, 'save_theme_btn'):
+            self.save_theme_btn.setStyleSheet(btn_style)
+        if hasattr(self, 'reset_shortcuts_btn'):
+            self.reset_shortcuts_btn.setStyleSheet(btn_style)
+        if hasattr(self, 'export_backup_btn'):
+            self.export_backup_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {bg_input};
+                    color: {text_main};
+                    border: 1px solid {border_col};
+                    border-radius: 6px;
+                    padding: 6px 12px;
+                    font-size: 12px;
+                    font-weight: 500;
+                }}
+                QPushButton:hover {{
+                    background-color: {card_hover};
+                    border-color: {border_focus};
+                }}
+            """)
+
+        # Interval spinbox
+        if hasattr(self, 'interval_spin'):
+            self.interval_spin.setStyleSheet(f"""
+                QDoubleSpinBox#SettingsIntervalSpin {{
+                    background-color: {bg_input};
+                    border: 1px solid {border_col};
+                    border-radius: 6px;
+                    color: {text_main};
+                    padding-left: 8px;
+                    padding-right: 22px;
+                    font-size: 13px;
+                    font-weight: 500;
+                }}
+                QDoubleSpinBox#SettingsIntervalSpin:focus {{
+                    border: 1.5px solid {border_focus};
+                    background-color: {bg_card};
+                }}
+                QDoubleSpinBox#SettingsIntervalSpin::up-button {{
+                    subcontrol-origin: border;
+                    subcontrol-position: top right;
+                    right: 0px;
+                    width: 20px;
+                    height: 14px;
+                    border-left: 1px solid {border_col};
+                    border-bottom: 1px solid {border_col};
+                    border-top-right-radius: 5px;
+                    background-color: {bg_card};
+                }}
+                QDoubleSpinBox#SettingsIntervalSpin::up-button:hover {{
+                    background-color: {card_hover};
+                }}
+                QDoubleSpinBox#SettingsIntervalSpin::down-button {{
+                    subcontrol-origin: border;
+                    subcontrol-position: bottom right;
+                    right: 0px;
+                    width: 20px;
+                    height: 14px;
+                    border-left: 1px solid {border_col};
+                    border-bottom-right-radius: 5px;
+                    background-color: {bg_card};
+                }}
+                QDoubleSpinBox#SettingsIntervalSpin::down-button:hover {{
+                    background-color: {card_hover};
+                }}
+            """)
+
+        # KeySequence edits
+        edit_style = f"""
+            QKeySequenceEdit {{
+                background-color: {bg_input};
+                border: 1px solid {border_col};
+                border-radius: 6px;
+                color: {text_main};
+                padding: 4px 8px;
+                font-size: 12px;
+                min-width: 140px;
+            }}
+            QKeySequenceEdit:focus {{
+                border: 1.5px solid {border_focus};
+                background-color: {bg_card};
+            }}
+        """
+        for edit in getattr(self, 'shortcut_edits', {}).values():
+            edit.setStyleSheet(edit_style)
+
+        # Bottom bar
+        if hasattr(self, 'bottom_bar'):
+            self.bottom_bar.setStyleSheet(f"""
+                QWidget#SettingsBottomBar {{
+                    background-color: {bg_sidebar};
+                    border-top: 1px solid {border_col};
+                }}
+            """)
+
+        # Import backup button
+        if hasattr(self, 'import_backup_btn'):
+            accent_col = p.get('highlight_color') or p.get('accent_color', '#8AB4F8')
+            self.import_backup_btn.setStyleSheet(f"""
+                QPushButton#SettingsImportBackupBtn {{
+                    background-color: {bg_input};
+                    color: {accent_col};
+                    border: 1px solid {border_col};
+                    border-radius: 6px;
+                    padding: 6px 14px;
+                    font-size: 12px;
+                    font-weight: 500;
+                }}
+                QPushButton#SettingsImportBackupBtn:hover {{
+                    background-color: {card_hover};
+                    border-color: {border_focus};
+                }}
+            """)
 
     def apply_preset(self, preset_colors):
         self.custom_colors.update(preset_colors)
         self.update_color_buttons()
+        self.update_dialog_theme_styles()
+
+    def save_custom_theme(self):
+        self._child_dialog_open = True
+        try:
+            from PySide6.QtWidgets import QInputDialog
+            count = len(self.user_presets) + 1
+            default_name = f"{t('settings_theme_custom')} {count}"
+            name, ok = QInputDialog.getText(
+                self, t("custom_theme_save_title"),
+                t("custom_theme_save_prompt"),
+                text=default_name
+            )
+            if ok and name and name.strip():
+                name = name.strip()
+                self.user_presets[name] = dict(self.custom_colors)
+                try:
+                    import database
+                    database.set_setting("user_custom_presets", json.dumps(self.user_presets))
+                except Exception as e:
+                    print(f"Error saving user custom preset: {e}")
+                self.refresh_user_preset_buttons()
+                self.update_backup_buttons_style()
+                QMessageBox.information(
+                    self, t("msg_saved_title"),
+                    t("custom_theme_saved_success").format(name=name)
+                )
+        finally:
+            self._child_dialog_open = False
+
+    def refresh_user_preset_buttons(self):
+        if not hasattr(self, 'user_preset_buttons_layout'):
+            return
+        while self.user_preset_buttons_layout.count():
+            item = self.user_preset_buttons_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        for name, p_colors in self.user_presets.items():
+            btn = QPushButton(name)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip(t("custom_theme_preset_tooltip").format(name=name))
+            theme_name = self.theme_combo.currentData() if hasattr(self, 'theme_combo') else "Koyu Gece"
+            from ui.styles import get_palette
+            p = get_palette(theme_name, self.custom_colors)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {p.get('bg_input', '#2D2F31')};
+                    color: {p.get('text_main', '#E3E3E3')};
+                    border: 1px solid {p.get('border_color', '#444746')};
+                    border-radius: 12px;
+                    padding: 4px 10px;
+                    font-size: 11px;
+                    font-weight: 500;
+                }}
+                QPushButton:hover {{
+                    background-color: {p.get('card_hover', '#3C4043')};
+                    border-color: {p.get('border_focus', '#8AB4F8')};
+                    color: {p.get('text_main', '#FFFFFF')};
+                }}
+            """)
+            btn.clicked.connect(lambda checked=False, c=p_colors: self.apply_preset(c))
+            btn.setContextMenuPolicy(Qt.CustomContextMenu)
+            btn.customContextMenuRequested.connect(lambda pos, n=name, b=btn: self.show_user_preset_menu(n, b.mapToGlobal(pos)))
+            self.user_preset_buttons_layout.addWidget(btn)
+
+    def show_user_preset_menu(self, name, pos):
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        del_action = menu.addAction(f"{t('msg_delete')} '{name}'")
+        action = menu.exec(pos)
+        if action == del_action:
+            self._child_dialog_open = True
+            try:
+                reply = QMessageBox.question(
+                    self, t("custom_theme_delete_title"),
+                    t("custom_theme_delete_confirm").format(name=name),
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+                )
+                if reply == QMessageBox.Yes:
+                    if name in self.user_presets:
+                        del self.user_presets[name]
+                        try:
+                            import database
+                            database.set_setting("user_custom_presets", json.dumps(self.user_presets))
+                        except Exception:
+                            pass
+                        self.refresh_user_preset_buttons()
+            finally:
+                self._child_dialog_open = False
 
     def pick_color(self, attr_name, button):
         self._child_dialog_open = True
@@ -711,6 +1016,7 @@ class SettingsDialog(QDialog):
                 hex_color = color.name().upper()
                 self.custom_colors[attr_name] = hex_color
                 self.update_color_buttons()
+                self.update_dialog_theme_styles()
         finally:
             self._child_dialog_open = False
 
@@ -914,7 +1220,13 @@ class SettingsDialog(QDialog):
             self.presets_lbl.setText(t("custom_theme_presets") + ":")
         for p_btn, tr_key in getattr(self, 'preset_buttons', []):
             p_btn.setText(t(tr_key))
+        if hasattr(self, 'user_presets_lbl'):
+            self.user_presets_lbl.setText(t("custom_theme_saved_list") + ":")
+        if hasattr(self, 'save_theme_btn'):
+            self.save_theme_btn.setText(t("custom_theme_save"))
+        self.refresh_user_preset_buttons()
         self.update_color_buttons()
+        self.update_backup_buttons_style()
 
         # Shortcuts Section
         if hasattr(self, 'shortcuts_lbl'):

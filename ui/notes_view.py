@@ -10,7 +10,7 @@ from PySide6.QtGui import (QPixmap, QFontMetrics, QGuiApplication, QImage, QKeyE
                            QCursor, QKeySequence, QShortcut, QTextDocument)
 from utils.i18n import t
 from utils.icon_manager import get_icon
-from ui.library_view import get_rounded_pixmap, THUMBNAIL_CACHE, cache_thumbnail, ImageLoadWorker
+from ui.library_view import get_rounded_pixmap, THUMBNAIL_CACHE, THUMB_THREAD_POOL, cache_thumbnail, ImageLoadWorker
 from database import resolve_image_path
 
 _STYLE_RE = re.compile(r'<style[^>]*>.*?</style>', re.DOTALL | re.IGNORECASE)
@@ -60,7 +60,11 @@ class NoteCardWidget(QFrame):
         self.is_pinned = bool(self.note_data.get('is_pinned_corkboard', 0))
         self.is_selected = False
         self.display_mode = self.note_data.get('display_mode', 'WITH_IMAGE')
-        self.image_path = resolve_image_path(self.note_data.get('image_path') or '')
+        raw_img = self.note_data.get('image_path') or ''
+        if self.note_data.get('_raw_img_path') != raw_img:
+            self.note_data['_raw_img_path'] = raw_img
+            self.note_data['_resolved_img_path'] = resolve_image_path(raw_img) if raw_img else ''
+        self.image_path = self.note_data.get('_resolved_img_path', '')
         self.image_loaded = False
         self.image_loading = False
         
@@ -207,6 +211,14 @@ class NoteCardWidget(QFrame):
         bottom_layout.setContentsMargins(0, 0, 0, 0)
         bottom_layout.setSpacing(4)
 
+        # Notebook icon
+        self.nb_icon_label = QLabel(self.bottom_bar)
+        self.nb_icon_label.setFixedSize(14, 14)
+        self.nb_icon_label.setScaledContents(True)
+        self.nb_icon_label.setAlignment(Qt.AlignCenter)
+        self.nb_icon_label.setVisible(False)
+        bottom_layout.addWidget(self.nb_icon_label)
+
         self.tags_label = QLabel(self.bottom_bar)
         self.tags_label.setObjectName("NoteCardTagsLabel")
         self.tags_label.setStyleSheet(f"color: {self.highlight_color}; font-size: 10px; font-weight: 500;")
@@ -232,6 +244,9 @@ class NoteCardWidget(QFrame):
         self.highlight_color = highlight_color
         if hasattr(self, 'tags_label') and self.tags_label:
             self.tags_label.setStyleSheet(f"color: {self.highlight_color}; font-size: 10px; font-weight: 500;")
+        if hasattr(self, 'nb_icon_label') and self.nb_icon_label.isVisible():
+            from utils.icon_manager import get_pixmap
+            self.nb_icon_label.setPixmap(get_pixmap("notebooks", self.highlight_color, 14))
         self.update_card_style()
 
     def set_selected(self, selected):
@@ -335,7 +350,11 @@ class NoteCardWidget(QFrame):
         self.corkboard_pin_toggled.emit(self.note_data.get('id', 0), self.is_pinned)
 
     def update_layout(self):
-        self.image_path = resolve_image_path(self.image_path or self.note_data.get('image_path') or '')
+        raw_img = self.note_data.get('image_path') or ''
+        if self.note_data.get('_raw_img_path') != raw_img:
+            self.note_data['_raw_img_path'] = raw_img
+            self.note_data['_resolved_img_path'] = resolve_image_path(raw_img) if raw_img else ''
+        self.image_path = self.note_data.get('_resolved_img_path', '')
         show_img = (self.display_mode == 'WITH_IMAGE') and bool(self.image_path)
         layout = self.layout()
         if not layout:
@@ -372,7 +391,10 @@ class NoteCardWidget(QFrame):
     def ensure_image_loaded(self):
         if getattr(self, 'image_loaded', False) or getattr(self, 'image_loading', False):
             return
-        self.image_path = resolve_image_path(self.image_path or self.note_data.get('image_path') or '')
+        if not self.image_path:
+            raw_img = self.note_data.get('image_path') or ''
+            if raw_img:
+                self.image_path = resolve_image_path(raw_img)
         if not (self.display_mode == 'WITH_IMAGE' and self.image_path):
             self.image_loaded = True
             return
@@ -385,7 +407,7 @@ class NoteCardWidget(QFrame):
         self.image_loading = True
         worker = ImageLoadWorker(self.image_path, target_w=216, target_h=130)
         worker.signals.image_loaded.connect(self._on_async_image_loaded)
-        QThreadPool.globalInstance().start(worker)
+        THUMB_THREAD_POOL.start(worker)
 
     @Slot(str, object, int, int)
     def _on_async_image_loaded(self, path, qimage, w, h):
@@ -448,9 +470,12 @@ class NoteCardWidget(QFrame):
             self.hidden_badge.setVisible(self.note_data.get('is_hidden', 0) == 1)
 
         html_content = self.note_data.get('content', '')
-        plain_text = html_to_plain(html_content)
+        if self.note_data.get('_cached_html') != html_content:
+            self.note_data['_cached_html'] = html_content
+            self.note_data['_plain_text'] = html_to_plain(html_content)
+        plain_text = self.note_data.get('_plain_text', '')
         
-        show_img = (self.display_mode == 'WITH_IMAGE') and self.image_path and os.path.exists(self.image_path)
+        show_img = (self.display_mode == 'WITH_IMAGE') and bool(self.image_path)
         if show_img:
             display_text = plain_text
             if len(display_text) > 80:
@@ -464,16 +489,24 @@ class NoteCardWidget(QFrame):
 
         if hasattr(self, 'tags_label'):
             tag_parts = []
-            nb_name = self.note_data.get('notebook_name')
+            nb_name = self.note_data.get('notebook_name') or self.note_data.get('notebook')
             if nb_name:
-                tag_parts.append(f"📁 {nb_name}")
+                from utils.icon_manager import get_pixmap
+                if hasattr(self, 'nb_icon_label'):
+                    self.nb_icon_label.setPixmap(get_pixmap("notebooks", self.highlight_color, 14))
+                    self.nb_icon_label.setVisible(True)
+                tag_parts.append(nb_name)
+            else:
+                if hasattr(self, 'nb_icon_label'):
+                    self.nb_icon_label.setVisible(False)
             tags = self.note_data.get('tags', [])
             if tags:
                 tag_parts.extend([f"#{t}" for t in tags[:2]])
                 if len(tags) > 2:
                     tag_parts.append(f"+{len(tags)-2}")
             full_str = " ".join(tag_parts)
-            elided_tags = metrics.elidedText(full_str, Qt.ElideRight, 130)
+            avail_w = 115 if nb_name else 130
+            elided_tags = metrics.elidedText(full_str, Qt.ElideRight, avail_w)
             self.tags_label.setText(elided_tags)
             self.tags_label.setToolTip(full_str if full_str else "")
             self.tags_label.setVisible(bool(full_str))
@@ -491,32 +524,6 @@ class NoteCardWidget(QFrame):
                 except Exception:
                     date_display = str(dt_raw)[:10]
             self.date_label.setText(date_display)
-
-    def contextMenuEvent(self, event):
-        if self.is_trash:
-            super().contextMenuEvent(event)
-            return
-            
-        main_win = self.window()
-        if not (main_win and getattr(main_win, 'incognito_active', False)):
-            event.ignore()
-            return
-
-        from PySide6.QtWidgets import QMenu
-        menu = QMenu(self)
-        
-        is_hidden = self.note_data.get('is_hidden', 0) == 1
-        
-        if not is_hidden:
-            hide_action = menu.addAction(t("menu_hide"))
-            action = menu.exec(event.globalPos())
-            if action == hide_action:
-                self.hide_requested.emit(self.note_data)
-        else:
-            unhide_action = menu.addAction(t("menu_unhide"))
-            action = menu.exec(event.globalPos())
-            if action == unhide_action:
-                self.unhide_requested.emit(self.note_data)
 
     def on_fav_clicked(self):
         self.is_fav = not self.is_fav
@@ -893,10 +900,19 @@ class NotesView(QWidget):
         self.tag_combo.blockSignals(False)
 
     def set_notes(self, notes, is_trash=False):
+        notes = notes or []
         same_trash = (self.is_trash == is_trash)
         self.is_trash = is_trash
-        is_same_data = (self.notes_data == (notes or []))
-        self.notes_data = notes or []
+        new_sig = [
+            (n.get('id'), n.get('updated_at'), n.get('title'), n.get('content'), n.get('is_favorite'),
+             n.get('is_hidden'), n.get('color_hex'), n.get('image_path'), n.get('display_mode'),
+             n.get('notebook_id'), n.get('tags_list'))
+            for n in notes
+        ]
+        is_same_data = (new_sig == getattr(self, '_last_notes_sig', None))
+        self._last_notes_sig = new_sig
+        if not is_same_data or not self.notes_data:
+            self.notes_data = notes
         self.clear_selection()
         
         self.empty_trash_btn.setVisible(is_trash)
@@ -1001,41 +1017,6 @@ class NotesView(QWidget):
             return
         self.select_all_notes()
 
-    def keyPressEvent(self, event: QKeyEvent):
-        if event.matches(QKeySequence.SelectAll):
-            focus_widget = QApplication.focusWidget()
-            from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit
-            if not isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
-                self.select_all_notes()
-                event.accept()
-                return
-        super().keyPressEvent(event)
-
-    def apply_theme(self, palette: dict):
-        if not palette:
-            return
-        self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
-        if hasattr(self, 'back_btn') and self.back_btn:
-            self.back_btn.setStyleSheet(f"""
-                QPushButton#BackToNotebooksBtn {{
-                    background-color: #2D2F31;
-                    border: 1px solid #444746;
-                    border-radius: 8px;
-                    color: #E3E3E3;
-                    padding: 6px 14px;
-                    font-size: 13px;
-                    font-weight: 600;
-                }}
-                QPushButton#BackToNotebooksBtn:hover {{
-                    background-color: #3C4043;
-                    border-color: {self.highlight_color};
-                    color: #FFFFFF;
-                }}
-            """)
-        for card in self.cards:
-            if isinstance(card, NoteCardWidget):
-                card.update_theme(self.highlight_color)
-
     def clear_selection(self):
         self.selected_note_ids.clear()
         for card in self.cards:
@@ -1072,6 +1053,13 @@ class NotesView(QWidget):
         self.clear_selection()
 
     def keyPressEvent(self, event: QKeyEvent):
+        if event.matches(QKeySequence.SelectAll):
+            focus_widget = QApplication.focusWidget()
+            from PySide6.QtWidgets import QLineEdit, QTextEdit, QPlainTextEdit
+            if not isinstance(focus_widget, (QLineEdit, QTextEdit, QPlainTextEdit)):
+                self.select_all_notes()
+                event.accept()
+                return
         if event.key() == Qt.Key_Delete and self.selected_note_ids:
             self.on_bulk_delete_clicked()
         elif event.key() == Qt.Key_Escape:
@@ -1100,10 +1088,14 @@ class NotesView(QWidget):
                     continue
             if query:
                 title_match = query in n.get('title', '').lower()
-                plain_content = html_to_plain(n.get('content', '')).lower()
-                content_match = query in plain_content
-                if not (title_match or content_match):
-                    continue
+                if not title_match:
+                    html_c = n.get('content', '')
+                    if n.get('_cached_html') != html_c:
+                        n['_cached_html'] = html_c
+                        n['_plain_text'] = html_to_plain(html_c)
+                    content_match = query in n.get('_plain_text', '').lower()
+                    if not content_match:
+                        continue
             filtered.append(n)
 
         if sort_idx == 1: # Son Düzenlenen / Last Edited
@@ -1146,10 +1138,12 @@ class NotesView(QWidget):
                 return
 
             width = self.scroll_area.viewport().width()
-            if width <= 100:
+            if width <= 100 and self.window():
+                width = max(100, self.window().width() - 280)
+            elif width <= 100:
                 width = self.scroll_area.width() - 48
             if width <= 100:
-                width = 860
+                width = 1100
 
             card_width = 240
             spacing = 16
@@ -1164,11 +1158,12 @@ class NotesView(QWidget):
 
             # Responsive Phase 1: render immediate visible cards (~12) instantly
             initial_count = min(12, len(self.filtered_notes_data))
+            is_vis = self.isVisible()
             for i in range(initial_count):
                 card = self._create_card(self.filtered_notes_data[i])
                 self.grid_layout.addWidget(card, i // columns, i % columns)
                 self.cards.append(card)
-                if i < columns * 2:
+                if is_vis and i < columns * 2:
                     card.ensure_image_loaded()
         finally:
             self.grid_container.setUpdatesEnabled(True)
@@ -1180,7 +1175,7 @@ class NotesView(QWidget):
                 self._chunk_timer = QTimer(self)
                 self._chunk_timer.setSingleShot(True)
                 self._chunk_timer.timeout.connect(self._load_remaining_notes)
-            self._chunk_timer.start(15)
+            self._chunk_timer.start(0)
 
         self.scroll_check_timer.start(20)
 
@@ -1189,7 +1184,7 @@ class NotesView(QWidget):
             return
 
         columns = self.current_columns if self.current_columns > 0 else 1
-        chunk_size = 20
+        chunk_size = 48
         end_idx = min(self._pending_load_index + chunk_size, len(self.filtered_notes_data))
 
         self.scroll_area.setUpdatesEnabled(False)
@@ -1205,7 +1200,7 @@ class NotesView(QWidget):
 
         self._pending_load_index = end_idx
         if self._pending_load_index < len(self.filtered_notes_data):
-            self._chunk_timer.start(15)
+            self._chunk_timer.start(0)
         else:
             self.scroll_check_timer.start(20)
 
@@ -1214,6 +1209,12 @@ class NotesView(QWidget):
             return
 
         width = self.scroll_area.viewport().width()
+        if width <= 100 and self.window():
+            width = max(100, self.window().width() - 280)
+        elif width <= 100:
+            width = self.scroll_area.width() - 48
+        if width <= 100:
+            width = 1100
         card_width = 240
         spacing = 16
         total_items = len(self.filtered_notes_data) if getattr(self, 'filtered_notes_data', None) else len(self.cards)
@@ -1248,12 +1249,29 @@ class NotesView(QWidget):
     def on_sort_changed(self, text):
         self.apply_filters_and_sorting()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.update_grid_layout()
+        if hasattr(self, '_pending_load_index') and self._pending_load_index < len(self.filtered_notes_data):
+            if hasattr(self, '_chunk_timer') and not self._chunk_timer.isActive():
+                self._chunk_timer.start(16)
+        self.scroll_check_timer.start(20)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        for timer_name in ('_chunk_timer', 'resize_debounce_timer', 'scroll_check_timer', 'search_debounce_timer'):
+            timer = getattr(self, timer_name, None)
+            if timer and timer.isActive():
+                timer.stop()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if event.oldSize().width() <= 0 or event.oldSize().width() == event.size().width():
+        if event.oldSize().width() == event.size().width():
             return
 
         width = self.scroll_area.viewport().width()
+        if width <= 100 and self.window():
+            width = max(100, self.window().width() - 280)
         card_width = 240
         spacing = 16
         scrollbar_w = 16 if len(self.cards) > 12 else 0

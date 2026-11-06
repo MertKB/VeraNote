@@ -1,6 +1,68 @@
 # utils/cache.py
+import os
+import hashlib
 from collections import OrderedDict
 import threading
+from PySide6.QtCore import QThreadPool, QSize, Qt
+from PySide6.QtGui import QImage, QImageReader
+
+THUMB_CACHE_DIR = os.path.join(os.path.expanduser("~"), ".veranote_data", "thumbnails")
+os.makedirs(THUMB_CACHE_DIR, exist_ok=True)
+
+# Dedicated bounded thread pool (max 2 concurrent decoders) to prevent parallel 2K/4K PNG heap spikes
+THUMB_THREAD_POOL = QThreadPool()
+THUMB_THREAD_POOL.setMaxThreadCount(2)
+
+
+def load_or_create_thumbnail_qimage(image_path: str, target_w: int, target_h: int) -> QImage:
+    """
+    Loads a pre-scaled thumbnail from disk cache (~15-30KB) if available, avoiding
+    decoding 2K/4K ComfyUI PNGs (95MB+) into RAM on every launch.
+    """
+    if not image_path or not os.path.exists(image_path):
+        return QImage()
+    try:
+        st = os.stat(image_path)
+        key_raw = f"{os.path.abspath(image_path)}|{int(st.st_mtime)}|{st.st_size}|{target_w}x{target_h}"
+        digest = hashlib.md5(key_raw.encode("utf-8", errors="ignore")).hexdigest()
+        cache_file = os.path.join(THUMB_CACHE_DIR, f"{digest}.png")
+        if os.path.exists(cache_file):
+            cached_img = QImage(cache_file)
+            if not cached_img.isNull():
+                return cached_img
+    except Exception:
+        cache_file = None
+
+    cropped = None
+    try:
+        reader = QImageReader(image_path)
+        reader.setAutoTransform(True)
+        orig_size = reader.size()
+        if orig_size.isValid() and orig_size.width() > 0 and orig_size.height() > 0:
+            scale = max(target_w / orig_size.width(), target_h / orig_size.height())
+            scaled_w = max(target_w, int(orig_size.width() * scale))
+            scaled_h = max(target_h, int(orig_size.height() * scale))
+            reader.setScaledSize(QSize(scaled_w, scaled_h))
+            img = reader.read()
+            if not img.isNull():
+                cropped = img.copy(0, 0, target_w, target_h)
+        if cropped is None:
+            image = QImage(image_path)
+            if not image.isNull():
+                scaled = image.scaled(
+                    target_w, target_h,
+                    Qt.KeepAspectRatioByExpanding,
+                    Qt.SmoothTransformation
+                )
+                cropped = scaled.copy(0, 0, target_w, target_h)
+        if cropped is not None and not cropped.isNull() and cache_file:
+            try:
+                cropped.save(cache_file, "PNG")
+            except Exception:
+                pass
+        return cropped if cropped is not None else QImage()
+    except Exception:
+        return QImage()
 
 class QPixmapLRUCache:
     """Thread-safe Least-Recently-Used (LRU) Cache with item count and memory boundaries."""
@@ -99,18 +161,10 @@ class QPixmapLRUCache:
         with self.lock:
             return self._approx_bytes
 
-# Global shared LRU thumbnail cache with max 350 entries and ~180MB RAM limit
-THUMBNAIL_CACHE = QPixmapLRUCache(max_size=350, max_bytes=180 * 1024 * 1024)
+# Global shared LRU thumbnail cache with max 120 entries and ~24MB RAM limit
+THUMBNAIL_CACHE = QPixmapLRUCache(max_size=120, max_bytes=24 * 1024 * 1024)
 
 def resolve_image_path(path: str) -> str:
     """Helper to resolve relative image paths against SAVED_IMAGES_DIR if needed."""
-    if not path:
-        return ""
-    import os
-    if os.path.isabs(path) and os.path.exists(path):
-        return path
     import database
-    rel_in_saved = os.path.join(database.SAVED_IMAGES_DIR, os.path.basename(path))
-    if os.path.exists(rel_in_saved):
-        return rel_in_saved
-    return path
+    return database.resolve_image_path(path)

@@ -13,7 +13,7 @@ Write-Host "[+] Vera Note Executable Build Complete!" -ForegroundColor Green
 Write-Host "[+] Output location: dist\VeraNote\VeraNote.exe" -ForegroundColor Green
 
 # Create distribution ZIP archive
-$zipPath = "dist\VeraNote-v2.0.0.zip"
+$zipPath = "dist\VeraNote-v2.1.0.zip"
 Write-Host "[*] Packaging $zipPath..." -ForegroundColor Cyan
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force

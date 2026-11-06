@@ -31,12 +31,19 @@ os.makedirs(SAVED_IMAGES_DIR, exist_ok=True)
 SAVED_WORKFLOWS_DIR = os.path.join(db_dir, "saved_workflows")
 os.makedirs(SAVED_WORKFLOWS_DIR, exist_ok=True)
 
+_RESOLVED_IMAGE_CACHE = {}
+
 def resolve_image_path(path: str) -> str:
     """Resolve image path handling absolute paths, legacy folder names, and relative paths."""
     if not path:
         return ""
+    cached = _RESOLVED_IMAGE_CACHE.get(path)
+    if cached and os.path.exists(cached):
+        return cached
     if os.path.exists(path):
-        return os.path.abspath(path)
+        res = os.path.abspath(path)
+        _RESOLVED_IMAGE_CACHE[path] = res
+        return res
     
     base = os.path.basename(path)
     if not base:
@@ -45,17 +52,23 @@ def resolve_image_path(path: str) -> str:
     # Check SAVED_IMAGES_DIR (~/.veranote_data/saved_images/)
     p_saved = os.path.join(SAVED_IMAGES_DIR, base)
     if os.path.exists(p_saved):
-        return os.path.abspath(p_saved)
+        res = os.path.abspath(p_saved)
+        _RESOLVED_IMAGE_CACHE[path] = res
+        return res
         
     # Check root images directory
     module_dir = os.path.dirname(os.path.abspath(__file__))
     p_local = os.path.join(module_dir, "images", base)
     if os.path.exists(p_local):
-        return os.path.abspath(p_local)
+        res = os.path.abspath(p_local)
+        _RESOLVED_IMAGE_CACHE[path] = res
+        return res
         
     p_cwd = os.path.join(os.getcwd(), "images", base)
     if os.path.exists(p_cwd):
-        return os.path.abspath(p_cwd)
+        res = os.path.abspath(p_cwd)
+        _RESOLVED_IMAGE_CACHE[path] = res
+        return res
         
     return ""
 
@@ -312,22 +325,19 @@ def initialize_db():
             );
         """)
 
-        conn.commit()
-
         # Migrate libraries table if type column is missing
         try:
             cursor.execute("PRAGMA table_info(libraries);")
-            columns = [row['name'] for row in cursor.fetchall()]
+            columns = {row['name'] for row in cursor.fetchall()}
             if 'type' not in columns:
                 cursor.execute("ALTER TABLE libraries ADD COLUMN type TEXT DEFAULT 'MODEL';")
-                conn.commit()
         except sqlite3.Error as e:
             print(f"Error migrating libraries table: {e}")
 
         # Migrate notes table if columns are missing (RUN BEFORE INDEX CREATION!)
         try:
             cursor.execute("PRAGMA table_info(notes);")
-            columns = [row['name'] for row in cursor.fetchall()]
+            columns = {row['name'] for row in cursor.fetchall()}
             
             if 'image_path' not in columns:
                 cursor.execute("ALTER TABLE notes ADD COLUMN image_path TEXT;")
@@ -355,34 +365,14 @@ def initialize_db():
                 cursor.execute("ALTER TABLE notes ADD COLUMN corkboard_h INTEGER DEFAULT 180;")
             if 'notebook_id' not in columns:
                 cursor.execute("ALTER TABLE notes ADD COLUMN notebook_id INTEGER REFERENCES notebooks(id) ON DELETE SET NULL;")
-                
-            conn.commit()
+            if 'is_hidden' not in columns:
+                cursor.execute("ALTER TABLE notes ADD COLUMN is_hidden INTEGER DEFAULT 0;")
         except sqlite3.Error as e:
             print(f"Error migrating database (notes table): {e}")
 
-        # Add is_favorite column to models if it doesn't exist (migration for existing db)
-        try:
-            cursor.execute("SELECT is_favorite FROM models LIMIT 1;")
-        except sqlite3.OperationalError:
-            try:
-                cursor.execute("ALTER TABLE models ADD COLUMN is_favorite INTEGER DEFAULT 0;")
-                conn.commit()
-            except sqlite3.Error as e:
-                print(f"Error migrating database (adding is_favorite to models): {e}")
-
-        # Migrate is_hidden columns
-        try:
-            cursor.execute("PRAGMA table_info(notes);")
-            columns = [row['name'] for row in cursor.fetchall()]
-            if 'is_hidden' not in columns:
-                cursor.execute("ALTER TABLE notes ADD COLUMN is_hidden INTEGER DEFAULT 0;")
-                conn.commit()
-        except sqlite3.Error as e:
-            print(f"Error migrating notes table (is_hidden): {e}")
-
         try:
             cursor.execute("PRAGMA table_info(workflows);")
-            columns = [row['name'] for row in cursor.fetchall()]
+            columns = {row['name'] for row in cursor.fetchall()}
             if 'is_hidden' not in columns:
                 cursor.execute("ALTER TABLE workflows ADD COLUMN is_hidden INTEGER DEFAULT 0;")
             if 'title' not in columns:
@@ -391,18 +381,18 @@ def initialize_db():
                 cursor.execute("ALTER TABLE workflows ADD COLUMN workflow_json TEXT;")
             if 'is_favorite' not in columns:
                 cursor.execute("ALTER TABLE workflows ADD COLUMN is_favorite INTEGER DEFAULT 0;")
-            conn.commit()
         except sqlite3.Error as e:
             print(f"Error migrating workflows table (columns): {e}")
 
         try:
             cursor.execute("PRAGMA table_info(models);")
-            columns = [row['name'] for row in cursor.fetchall()]
+            columns = {row['name'] for row in cursor.fetchall()}
+            if 'is_favorite' not in columns:
+                cursor.execute("ALTER TABLE models ADD COLUMN is_favorite INTEGER DEFAULT 0;")
             if 'is_hidden' not in columns:
                 cursor.execute("ALTER TABLE models ADD COLUMN is_hidden INTEGER DEFAULT 0;")
             if 'base_architecture' not in columns:
                 cursor.execute("ALTER TABLE models ADD COLUMN base_architecture TEXT;")
-            conn.commit()
 
             # Auto backfill base_architecture for existing models if empty
             cursor.execute("SELECT id, name, file_path FROM models WHERE base_architecture IS NULL OR base_architecture = '';")
@@ -416,7 +406,6 @@ def initialize_db():
                         updates.append((arch, r['id']))
                 if updates:
                     cursor.executemany("UPDATE models SET base_architecture = ? WHERE id = ?;", updates)
-                    conn.commit()
         except sqlite3.Error as e:
             print(f"Error migrating models table: {e}")
 
@@ -446,14 +435,12 @@ def initialize_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_tag_id ON note_tags(tag_id);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_notebooks_updated_at ON notebooks(updated_at);")
 
-        conn.commit()
-
         # Insert default libraries and settings if not exists
         try:
             cursor.execute("INSERT OR IGNORE INTO libraries (name, type) VALUES ('Lora Modelleri', 'MODEL');")
             cursor.execute("INSERT OR IGNORE INTO libraries (name, type) VALUES ('Checkpoint Modelleri', 'MODEL');")
-            # Force update in case they existed without type
-            cursor.execute("UPDATE libraries SET type = 'MODEL' WHERE name IN ('Lora Modelleri', 'Checkpoint Modelleri');")
+            # Update only if type is missing or not MODEL
+            cursor.execute("UPDATE libraries SET type = 'MODEL' WHERE name IN ('Lora Modelleri', 'Checkpoint Modelleri') AND (type IS NULL OR type != 'MODEL');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_save_enabled', '1');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_save_interval', '1.5');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('comfyui_enabled', '1');")
@@ -462,9 +449,10 @@ def initialize_db():
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('sidebar_notebooks_limit', '5');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('custom_theme_colors', '{\"bg_main\":\"#131314\",\"bg_card\":\"#1E1F20\",\"accent_color\":\"#1A73E8\"}');")
             cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('shortcuts', ?);", (json.dumps(DEFAULT_SHORTCUTS),))
-            conn.commit()
         except sqlite3.Error as e:
             print(f"Error seeding libraries or settings: {e}")
+
+        conn.commit()
 
 # --- CRUD METHODS ---
 
@@ -485,6 +473,29 @@ def get_setting(key, default=None):
         cursor.execute("SELECT value FROM settings WHERE key = ?;", (key,))
         row = cursor.fetchone()
         return row['value'] if row else default
+
+def get_all_settings() -> dict:
+    """Fetches all settings in a single query for fast startup."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM settings;")
+        return {row['key']: row['value'] for row in cursor.fetchall()}
+
+def get_all_models_for_builder(show_hidden: bool = False) -> list[dict]:
+    """Lightweight query returning model names, file paths, and library names for WorkflowBuilderView."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        query = """
+            SELECT m.name, m.file_path, l.name AS lib_name
+            FROM models m
+            JOIN libraries l ON m.library_id = l.id
+            WHERE l.type = 'MODEL'
+        """
+        if not show_hidden:
+            query += " AND (m.is_hidden = 0 OR m.is_hidden IS NULL)"
+        query += " ORDER BY m.name ASC;"
+        cursor.execute(query)
+        return [dict(r) for r in cursor.fetchall()]
 
 def set_setting(key, value):
     with get_connection() as conn:

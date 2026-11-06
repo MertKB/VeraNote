@@ -3,9 +3,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QCalendarWidget,
     QPushButton, QLabel, QFrame, QProgressBar, QSplitter, QScrollArea
 )
-from PySide6.QtCore import Qt, QDate, Signal, QTimer, QRectF
+from PySide6.QtCore import Qt, QDate, Signal, QTimer, QRectF, QLocale
 from PySide6.QtGui import QPainter, QColor, QBrush, QPen, QFont, QTextCharFormat
-from utils.i18n import t
+from utils.i18n import t, get_lang
 
 # ---------------------------------------------------------------------------
 # Centralized Default Calendar Theming Configuration
@@ -59,7 +59,14 @@ class CustomCalendarWidget(QCalendarWidget):
         self.theme = dict(DEFAULT_CALENDAR_THEME)
         if theme_config:
             self.theme.update(theme_config)
+        self.update_locale()
         self._apply_header_formats()
+
+    def update_locale(self):
+        if get_lang() == "tr":
+            self.setLocale(QLocale(QLocale.Turkish, QLocale.Turkey))
+        else:
+            self.setLocale(QLocale(QLocale.English, QLocale.UnitedStates))
 
     def set_theme_config(self, theme_config: dict):
         """Update active calendar colors dynamically and repaint."""
@@ -254,7 +261,7 @@ class MonthlySummaryPanel(QFrame):
         self.lbl_notes_title.setObjectName("AgendaMetricTitle")
         self.lbl_notes_val = QLabel(f"0/30 {t('agenda_days_unit')}")
         self.lbl_notes_val.setObjectName("AgendaMetricValue")
-        self.lbl_notes_sub = QLabel("%0 Aktif")
+        self.lbl_notes_sub = QLabel(t("agenda_sub_active_pct").format(pct=0))
         self.lbl_notes_sub.setObjectName("AgendaMetricSub")
 
         notes_layout.addWidget(self.lbl_notes_title)
@@ -273,7 +280,7 @@ class MonthlySummaryPanel(QFrame):
         self.lbl_streak_title.setObjectName("AgendaMetricTitle")
         self.lbl_streak_val = QLabel(f"0 {t('agenda_streak_unit')}")
         self.lbl_streak_val.setObjectName("AgendaMetricValue")
-        self.lbl_streak_sub = QLabel("Aralıksız Seri")
+        self.lbl_streak_sub = QLabel(t("agenda_sub_streak_default"))
         self.lbl_streak_sub.setObjectName("AgendaMetricSub")
 
         streak_layout.addWidget(self.lbl_streak_title)
@@ -292,7 +299,7 @@ class MonthlySummaryPanel(QFrame):
         self.lbl_prod_title.setObjectName("AgendaMetricTitle")
         self.lbl_prod_val = QLabel("%0")
         self.lbl_prod_val.setObjectName("AgendaMetricValue")
-        self.lbl_prod_sub = QLabel(f"Aylık {t('agenda_score_badge')}")
+        self.lbl_prod_sub = QLabel(t("agenda_sub_score_default"))
         self.lbl_prod_sub.setObjectName("AgendaMetricSub")
 
         prod_layout.addWidget(self.lbl_prod_title)
@@ -306,6 +313,7 @@ class MonthlySummaryPanel(QFrame):
         """Update metrics from stats dictionary."""
         if not stats:
             return
+        self._last_stats = dict(stats)
 
         total_tasks = stats.get('total_tasks', 0)
         completed_tasks = stats.get('completed_tasks', 0)
@@ -322,25 +330,25 @@ class MonthlySummaryPanel(QFrame):
         # 2. Notes
         self.lbl_notes_val.setText(f"{active_notes}/{days_in_month} {t('agenda_days_unit')}")
         note_pct = int((active_notes / days_in_month) * 100) if days_in_month > 0 else 0
-        self.lbl_notes_sub.setText(f"%{note_pct} Katılım")
+        self.lbl_notes_sub.setText(t("agenda_sub_engagement_pct").format(pct=note_pct))
 
         # 3. Streak
         self.lbl_streak_val.setText(f"{streak} {t('agenda_streak_unit')}")
         if streak >= 7:
-            self.lbl_streak_sub.setText("Harika Gidiyorsun!")
+            self.lbl_streak_sub.setText(t("agenda_sub_streak_great"))
         elif streak > 0:
-            self.lbl_streak_sub.setText("Aktif Seri Devam")
+            self.lbl_streak_sub.setText(t("agenda_sub_streak_active"))
         else:
-            self.lbl_streak_sub.setText("Yeni Seri Başlat")
+            self.lbl_streak_sub.setText(t("agenda_sub_streak_start"))
 
         # 4. Productivity
         self.lbl_prod_val.setText(f"%{score}")
         if score >= 80:
-            self.lbl_prod_sub.setText("Yüksek Başarı")
+            self.lbl_prod_sub.setText(t("agenda_sub_score_high"))
         elif score >= 50:
-            self.lbl_prod_sub.setText("İyi İlerleme")
+            self.lbl_prod_sub.setText(t("agenda_sub_score_good"))
         else:
-            self.lbl_prod_sub.setText("Geliştirilebilir")
+            self.lbl_prod_sub.setText(t("agenda_sub_score_improve"))
 
     def update_monthly_stats(self, year: int, month: int, stats: dict = None):
         """Slot / helper called when month changes or when stats are updated."""
@@ -356,6 +364,14 @@ class MonthlySummaryPanel(QFrame):
         self.lbl_notes_title.setText(t('agenda_metric_notes'))
         self.lbl_streak_title.setText(t('agenda_metric_streak'))
         self.lbl_prod_title.setText(t('agenda_metric_productivity'))
+        if getattr(self, '_last_stats', None):
+            self.set_stats(self._last_stats)
+        else:
+            self.lbl_notes_val.setText(f"0/30 {t('agenda_days_unit')}")
+            self.lbl_notes_sub.setText(t("agenda_sub_active_pct").format(pct=0))
+            self.lbl_streak_val.setText(f"0 {t('agenda_streak_unit')}")
+            self.lbl_streak_sub.setText(t("agenda_sub_streak_default"))
+            self.lbl_prod_sub.setText(t("agenda_sub_score_default"))
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +512,7 @@ class UpcomingTasksPanel(QFrame):
         if not self.upcoming_tasks:
             self.badge_label.setText(t('agenda_upcoming_subtitle'))
         else:
-            self.badge_label.setText(t('agenda_upcoming_count').format(count=len(self.upcoming_tasks)))
+            self.set_tasks(self.upcoming_tasks)
 
 
 # ---------------------------------------------------------------------------
@@ -578,10 +594,10 @@ class CalendarPanel(QFrame):
             lbl.setStyleSheet("color: #9AA0A6; font-size: 11px;")
             row.addWidget(dot)
             row.addWidget(lbl)
-            return row
+            return row, lbl
 
-        self.legend_task_lbl = make_legend_item("#F59E0B", t("agenda_tasks_title"))
-        self.legend_note_lbl = make_legend_item("#38BDF8", t("agenda_daily_note_title"))
+        self.legend_task_lbl, self.legend_task_text_lbl = make_legend_item("#F59E0B", t("agenda_tasks_title"))
+        self.legend_note_lbl, self.legend_note_text_lbl = make_legend_item("#38BDF8", t("agenda_daily_note_title"))
 
         legend_layout.addLayout(self.legend_task_lbl)
         legend_layout.addLayout(self.legend_note_lbl)
@@ -714,6 +730,11 @@ class CalendarPanel(QFrame):
     def retranslate_ui(self):
         self.title_label.setText(t("agenda_calendar_title"))
         self.today_btn.setText(t('agenda_today_btn'))
+        if hasattr(self, 'legend_task_text_lbl'):
+            self.legend_task_text_lbl.setText(t("agenda_tasks_title"))
+        if hasattr(self, 'legend_note_text_lbl'):
+            self.legend_note_text_lbl.setText(t("agenda_daily_note_title"))
+        self.calendar.update_locale()
         self.summary_panel.retranslate_ui()
         self.upcoming_panel.retranslate_ui()
 

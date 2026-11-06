@@ -1,3 +1,19 @@
+import sys
+import os
+import time
+def _veranote_excepthook(exc_type, exc_value, exc_tb):
+    import traceback
+    err = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    print("UNCAUGHT EXCEPTION:", err)
+    try:
+        log_path = os.path.join(os.path.expanduser("~"), ".veranote_data", "crash.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"\n--- CRASH AT {time.ctime()} ---\n" + err)
+    except Exception:
+        pass
+    sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+sys.excepthook = _veranote_excepthook
 # Vera Note - AI Model & Workflow Manager
 # Copyright (C) 2026 Vera Note Contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -24,8 +40,9 @@ from scanner import ModelScanner
 from utils import i18n
 
 class AppController:
-    def __init__(self, main_window):
+    def __init__(self, main_window, initial_settings=None):
         self.win = main_window
+        self._initial_settings = initial_settings
         self.active_library = ""
         self.active_workflow_library = ""
         self.active_note_id = None
@@ -156,17 +173,28 @@ class AppController:
         import datetime
         self.agenda_active_date = datetime.date.today().isoformat()
 
+        # Load all settings in a single query for fast startup
+        all_settings = self._initial_settings if self._initial_settings is not None else (
+            database.get_all_settings() if hasattr(database, 'get_all_settings') else {}
+        )
+        def _get_setting(key, default=None):
+            if key in all_settings:
+                return all_settings[key]
+            return database.get_setting(key, default) if not all_settings else default
+
         # Load theme and language settings from DB
-        lang = database.get_setting("lang", "en")
-        theme = database.get_setting("theme", "Koyu Gece")
-        custom_colors = database.get_setting("custom_theme_colors", "{}")
+        lang = _get_setting("lang", "en")
+        theme = _get_setting("theme", "Koyu Gece")
+        custom_colors = _get_setting("custom_theme_colors", "{}")
+        lang_changed = (i18n.get_lang() != lang)
         i18n.set_lang(lang)
         self.win.change_theme(theme, custom_colors)
-        self.win.retranslate_ui()
+        if lang_changed or self._initial_settings is None:
+            self.win.retranslate_ui()
 
         # Load Welcome customizations from DB
-        w_title = database.get_setting("welcome_title", i18n.t("welcome_title_default"))
-        w_wallpaper = database.get_setting("welcome_wallpaper", "")
+        w_title = _get_setting("welcome_title", i18n.t("welcome_title_default"))
+        w_wallpaper = _get_setting("welcome_wallpaper", "")
         welcome_keys = [
             "corkboard_mode", "corkboard_coord_mode", "home_positions_locked", "welcome_title_visible",
             "welcome_title_font_size", "welcome_title_font_family", "welcome_title_font_weight",
@@ -175,16 +203,24 @@ class AppController:
             "welcome_title_frame_enabled", "welcome_title_frame_bg", "welcome_title_frame_border_color",
             "quick_note_visible", "quick_note_bg", "quick_note_border_color",
             "quick_note_w", "quick_note_h", "corkboard_notes_visible", "corkboard_show_images",
-            "welcome_title_x", "welcome_title_y", "quick_note_x", "quick_note_y"
+            "welcome_title_x", "welcome_title_y", "quick_note_x", "quick_note_y",
+            "welcome_wallpaper_mode", "welcome_wallpaper_vertical", "welcome_wallpaper_horizontal",
+            "welcome_wallpaper_scale", "welcome_wallpaper_brightness", "welcome_wallpaper_blur",
+            "welcome_wallpapers_list", "home_grid_snap", "home_show_grid_dots"
         ]
-        welcome_settings = {k: database.get_setting(k) for k in welcome_keys if database.get_setting(k) is not None}
-        self.win.welcome_screen.load_settings(welcome_settings)
+        welcome_settings = {k: _get_setting(k) for k in welcome_keys if _get_setting(k) is not None}
+        self.win.welcome_screen.load_settings(welcome_settings, render=False)
         self.win.welcome_screen.title_label.setText(w_title)
         self.win.welcome_screen.set_wallpaper(w_wallpaper)
 
         # ComfyUI Features Enabled state
-        self.comfyui_enabled = database.get_setting("comfyui_enabled", "1") == "1"
+        self.comfyui_enabled = _get_setting("comfyui_enabled", "1") == "1"
         self.win.set_comfyui_enabled(self.comfyui_enabled)
+
+        # Sync auto-save settings to detail panel
+        ase = _get_setting("auto_save_enabled", "1")
+        asi = _get_setting("auto_save_interval", "1.5")
+        self.win.detail_panel.sync_auto_save_settings(ase, asi)
 
         # Initial UI populate
         self.refresh_notes()
@@ -213,28 +249,30 @@ class AppController:
         trash_count = database.get_deleted_note_count(show_hidden=self.incognito_active)
         self.win.sidebar.update_trash_count(trash_count)
 
-        # Refresh Corkboard (Mantar Pano) on Welcome Screen only if welcome screen is active/visible
-        if self.win.center_stack.currentIndex() == 0 or self.win.welcome_screen.isVisible():
+        # Refresh Corkboard (Mantar Pano) on Welcome Screen only if visible or uninitialized
+        if self.win.center_stack.currentIndex() == 0 or not getattr(self.win.welcome_screen, '_corkboard_initialized', False):
             cork_notes = database.get_corkboard_notes(show_hidden=self.incognito_active)
             self.win.welcome_screen.set_corkboard_notes(cork_notes)
+            self.win.welcome_screen._corkboard_initialized = True
             self.win.welcome_screen._corkboard_dirty = False
         else:
             self.win.welcome_screen._corkboard_dirty = True
         
-        # Keep NotesView grid updated based on whether we are showing trash, a custom notebook, or scope (unassigned vs all)
-        if getattr(self, 'showing_trash', False):
-            deleted_notes = database.get_notes(only_deleted=True, show_hidden=self.incognito_active)
-            self.win.notes_view.set_notebook_context(None, None)
-            self.win.notes_view.set_notes(deleted_notes, is_trash=True)
-        elif getattr(self, 'active_notebook_id', None) is not None:
-            nb_notes = database.get_notes(notebook_id=self.active_notebook_id, show_hidden=self.incognito_active)
-            self.win.notes_view.set_notebook_context(self.active_notebook_id, self.active_notebook_name)
-            self.win.notes_view.set_notes(nb_notes, is_trash=False)
-        else:
-            scope = getattr(self, 'notes_scope', 'unassigned')
-            notes = database.get_notes(scope=scope, show_hidden=self.incognito_active)
-            self.win.notes_view.set_notebook_context(None, None)
-            self.win.notes_view.set_notes(notes, is_trash=False)
+        # Keep NotesView grid updated when visible or already populated
+        if self.win.center_stack.currentIndex() == 3 or getattr(self.win.notes_view, '_has_populated_once', False):
+            if getattr(self, 'showing_trash', False):
+                deleted_notes = database.get_notes(only_deleted=True, show_hidden=self.incognito_active)
+                self.win.notes_view.set_notebook_context(None, None)
+                self.win.notes_view.set_notes(deleted_notes, is_trash=True)
+            elif getattr(self, 'active_notebook_id', None) is not None:
+                nb_notes = database.get_notes(notebook_id=self.active_notebook_id, show_hidden=self.incognito_active)
+                self.win.notes_view.set_notebook_context(self.active_notebook_id, self.active_notebook_name)
+                self.win.notes_view.set_notes(nb_notes, is_trash=False)
+            else:
+                scope = getattr(self, 'notes_scope', 'unassigned')
+                notes = database.get_notes(scope=scope, show_hidden=self.incognito_active)
+                self.win.notes_view.set_notebook_context(None, None)
+                self.win.notes_view.set_notes(notes, is_trash=False)
 
     def refresh_libraries(self):
         # 1. Models
@@ -295,8 +333,8 @@ class AppController:
         self.active_notebook_name = None
         self.active_library = ""
         self.win.sidebar.clear_list_selections()
-        self.refresh_notes()
         self.win.show_notes_panel(None, is_trash=False)
+        self.refresh_notes()
 
     @Slot()
     def on_trash_requested(self):
@@ -324,9 +362,9 @@ class AppController:
         self.active_notebook_name = notebook_name
         self.active_library = ""
         database.touch_notebook(notebook_id)
+        self.win.show_notebook_panel(notebook_id, notebook_name, None)
         self.refresh_notebooks()
         self.refresh_notes()
-        self.win.show_notebook_panel(notebook_id, notebook_name, None)
 
     @Slot()
     def on_new_notebook(self):
@@ -400,32 +438,89 @@ class AppController:
     @Slot(int, str)
     def on_add_note_tag(self, note_id: int, tag: str):
         database.add_note_tag(note_id, tag)
-        self.refresh_notes()
-        note = database.get_note_by_id(note_id)
-        if note and getattr(self, 'active_note_id', None) == note_id:
-            all_models = database.get_all_models_for_association()
-            all_notebooks = database.get_notebooks(order_by_recent=False)
-            self.win.detail_panel.set_note(note, all_models, all_notebooks=all_notebooks)
+        if hasattr(self.win, 'notes_view'):
+            if hasattr(self.win.notes_view, 'notes_data'):
+                for n in self.win.notes_view.notes_data:
+                    if n.get('id') == note_id:
+                        tags = list(n.get('tags', []))
+                        if tag not in tags:
+                            tags.append(tag)
+                            n['tags'] = tags
+                        break
+            if hasattr(self.win.notes_view, 'cards'):
+                for card in self.win.notes_view.cards:
+                    if hasattr(card, 'note_data') and card.note_data.get('id') == note_id:
+                        tags = list(card.note_data.get('tags', []))
+                        if tag not in tags:
+                            tags.append(tag)
+                            card.note_data['tags'] = tags
+                        break
+            if hasattr(self.win.notes_view, 'update_tags_combo'):
+                self.win.notes_view.update_tags_combo()
+        if getattr(self, 'active_note_id', None) == note_id:
+            dp = self.win.detail_panel
+            if dp.note_data and dp.note_data.get('id') == note_id:
+                tags = list(dp.note_data.get('tags', []))
+                if tag not in tags:
+                    tags.append(tag)
+                    dp.note_data['tags'] = tags
+                if hasattr(dp, 'note_section'):
+                    dp.note_section.reload_tags()
 
     @Slot(int, str)
     def on_delete_note_tag(self, note_id: int, tag: str):
         database.delete_note_tag(note_id, tag)
-        self.refresh_notes()
-        note = database.get_note_by_id(note_id)
-        if note and getattr(self, 'active_note_id', None) == note_id:
-            all_models = database.get_all_models_for_association()
-            all_notebooks = database.get_notebooks(order_by_recent=False)
-            self.win.detail_panel.set_note(note, all_models, all_notebooks=all_notebooks)
+        if hasattr(self.win, 'notes_view'):
+            if hasattr(self.win.notes_view, 'notes_data'):
+                for n in self.win.notes_view.notes_data:
+                    if n.get('id') == note_id:
+                        tags = list(n.get('tags', []))
+                        if tag in tags:
+                            tags.remove(tag)
+                            n['tags'] = tags
+                        break
+            if hasattr(self.win.notes_view, 'cards'):
+                for card in self.win.notes_view.cards:
+                    if hasattr(card, 'note_data') and card.note_data.get('id') == note_id:
+                        tags = list(card.note_data.get('tags', []))
+                        if tag in tags:
+                            tags.remove(tag)
+                            card.note_data['tags'] = tags
+                        break
+            if hasattr(self.win.notes_view, 'update_tags_combo'):
+                self.win.notes_view.update_tags_combo()
+        if getattr(self, 'active_note_id', None) == note_id:
+            dp = self.win.detail_panel
+            if dp.note_data and dp.note_data.get('id') == note_id:
+                tags = list(dp.note_data.get('tags', []))
+                if tag in tags:
+                    tags.remove(tag)
+                    dp.note_data['tags'] = tags
+                if hasattr(dp, 'note_section'):
+                    dp.note_section.reload_tags()
 
     @Slot(int)
     def on_clear_note_tags(self, note_id: int):
         database.clear_note_tags(note_id)
-        self.refresh_notes()
-        note = database.get_note_by_id(note_id)
-        if note and getattr(self, 'active_note_id', None) == note_id:
-            all_models = database.get_all_models_for_association()
-            all_notebooks = database.get_notebooks(order_by_recent=False)
-            self.win.detail_panel.set_note(note, all_models, all_notebooks=all_notebooks)
+        if hasattr(self.win, 'notes_view'):
+            if hasattr(self.win.notes_view, 'notes_data'):
+                for n in self.win.notes_view.notes_data:
+                    if n.get('id') == note_id:
+                        n['tags'] = []
+                        break
+            if hasattr(self.win.notes_view, 'cards'):
+                for card in self.win.notes_view.cards:
+                    if hasattr(card, 'note_data') and card.note_data.get('id') == note_id:
+                        card.note_data['tags'] = []
+                        break
+            if hasattr(self.win.notes_view, 'update_tags_combo'):
+                self.win.notes_view.update_tags_combo()
+        if getattr(self, 'active_note_id', None) == note_id:
+            dp = self.win.detail_panel
+            if dp.note_data and dp.note_data.get('id') == note_id:
+                dp.note_data['tags'] = []
+                if hasattr(dp, 'note_section'):
+                    dp.note_section.reload_tags()
 
     @Slot(int, object)
     def on_set_note_notebook(self, note_id: int, notebook_id: object):
@@ -790,8 +885,7 @@ class AppController:
                         wf_data = database.get_workflow_by_id(new_wf_id)
                         if wf_data:
                             self.on_workflow_clicked(wf_data)
-                        from ui.toast_notification import ToastNotification
-                        ToastNotification.show_toast(self.win, f"✨ {wf_name}: {i18n.t('toast_png_workflow_imported')}", duration=3000)
+                        self.win.show_toast(f"✨ {wf_name}: {i18n.t('toast_png_workflow_imported')}", "success", 3000)
                         return
 
         # If user dropped an image while editing a note in the detail panel
@@ -799,8 +893,7 @@ class AppController:
             if hasattr(self.win, 'detail_panel') and getattr(self.win.detail_panel, 'mode', None) == "NOTE":
                 self.win.detail_panel.update_image(file_path)
                 self.win.detail_panel.note_section.check_changes()
-                from ui.toast_notification import ToastNotification
-                ToastNotification.show_toast(self.win, f"🖼️ {os.path.basename(file_path)}", duration=2000)
+                self.win.show_toast(f"🖼️ {os.path.basename(file_path)}", "info", 2000)
 
     @Slot(str)
     def on_library_selected(self, library_name):
@@ -892,15 +985,23 @@ class AppController:
         self.refresh_libraries() # update badge counts in sidebar
         self.win.statusBar().showMessage(i18n.t("status_wf_added").format(name=name), 3000)
 
-    @Slot(int, str, str, str)
-    def on_save_workflow_data(self, workflow_id, name, description, notes):
+    @Slot(int, str, str, str, bool)
+    def on_save_workflow_data(self, workflow_id, name, description, notes, is_auto_save=False):
         database.update_workflow_data(workflow_id, name, description, notes)
-        self.win.statusBar().showMessage(i18n.t("status_wf_saved"), 3000)
-        
-        wf = database.get_workflow_by_id(workflow_id)
-        if wf:
-            self.win.detail_panel.set_workflow(wf)
-            self.refresh_workflow_grid(wf['library_id'])
+        if is_auto_save:
+            if self.win.detail_panel.workflow_data and self.win.detail_panel.workflow_data.get('id') == workflow_id:
+                self.win.detail_panel.workflow_data['name'] = name
+                self.win.detail_panel.workflow_data['description'] = description
+                self.win.detail_panel.workflow_data['notes'] = notes
+            self.win.workflow_view.update_card_workflow_data(workflow_id, name, description)
+            self.win.statusBar().showMessage(i18n.t("status_wf_saved"), 1500)
+        else:
+            self.win.statusBar().showMessage(i18n.t("status_wf_saved"), 3000)
+            self.win.show_toast(i18n.t("toast_saved"), "success")
+            wf = database.get_workflow_by_id(workflow_id)
+            if wf:
+                self.win.detail_panel.set_workflow(wf)
+                self.refresh_workflow_grid(wf['library_id'])
 
     @Slot(int)
     def on_delete_workflow(self, workflow_id):
@@ -1149,44 +1250,62 @@ class AppController:
         scanner.finished_signal.connect(on_finished)
         scanner.start()
 
-    @Slot(int, str, str, str)
-    def on_save_model_data(self, model_id, name, notes, base_architecture=""):
+    @Slot(int, str, str, str, bool)
+    def on_save_model_data(self, model_id, name, notes, base_architecture="", is_auto_save=False):
         database.update_model_data(model_id, name, notes, base_architecture)
-        self.win.statusBar().showMessage(i18n.t("status_model_saved"), 3000)
-        self.win.show_toast(i18n.t("toast_saved"), "success")
-        
-        model_data = database.get_model_by_id(model_id)
-        trigger_words = database.get_trigger_words(model_id)
-        if model_data:
-            self.win.detail_panel.set_model(model_data, trigger_words)
-        
-        self.win.library_view.update_card_model_data(model_id, name, base_architecture)
+        if is_auto_save:
+            if self.win.detail_panel.model_data and self.win.detail_panel.model_data.get('id') == model_id:
+                self.win.detail_panel.model_data['name'] = name
+                self.win.detail_panel.model_data['notes'] = notes
+                self.win.detail_panel.model_data['base_architecture'] = base_architecture
+            self.win.library_view.update_card_model_data(model_id, name, base_architecture)
+            self.win.statusBar().showMessage(i18n.t("status_model_saved"), 1500)
+        else:
+            self.win.statusBar().showMessage(i18n.t("status_model_saved"), 3000)
+            self.win.show_toast(i18n.t("toast_saved"), "success")
+            model_data = database.get_model_by_id(model_id)
+            trigger_words = database.get_trigger_words(model_id)
+            if model_data:
+                self.win.detail_panel.set_model(model_data, trigger_words)
+            self.win.library_view.update_card_model_data(model_id, name, base_architecture)
 
     @Slot(int, str)
     def on_add_trigger(self, model_id, word):
         if database.add_trigger_word(model_id, word):
             self.win.statusBar().showMessage(i18n.t("status_trigger_added").format(word=word), 2000)
-            model_data = database.get_model_by_id(model_id)
-            trigger_words = database.get_trigger_words(model_id)
-            if model_data:
-                self.win.detail_panel.set_model(model_data, trigger_words)
+            dp = self.win.detail_panel
+            if dp.model_data and dp.model_data.get('id') == model_id:
+                triggers = list(dp.trigger_words or [])
+                if word not in triggers:
+                    triggers.append(word)
+                    dp.trigger_words = triggers
+                if hasattr(dp, 'model_section'):
+                    dp.model_section.trigger_words = dp.trigger_words
+                    dp.model_section.reload_pills()
 
     @Slot(int, str)
     def on_delete_trigger(self, model_id, word):
         database.delete_trigger_word(model_id, word)
         self.win.statusBar().showMessage(i18n.t("status_trigger_deleted").format(word=word), 2000)
-        model_data = database.get_model_by_id(model_id)
-        trigger_words = database.get_trigger_words(model_id)
-        if model_data:
-            self.win.detail_panel.set_model(model_data, trigger_words)
+        dp = self.win.detail_panel
+        if dp.model_data and dp.model_data.get('id') == model_id:
+            triggers = list(dp.trigger_words or [])
+            if word in triggers:
+                triggers.remove(word)
+                dp.trigger_words = triggers
+            if hasattr(dp, 'model_section'):
+                dp.model_section.trigger_words = dp.trigger_words
+                dp.model_section.reload_pills()
 
     @Slot(int, list)
     def on_set_triggers(self, model_id, triggers):
         if database.set_trigger_words(model_id, triggers):
-            model_data = database.get_model_by_id(model_id)
-            trigger_words = database.get_trigger_words(model_id)
-            if model_data:
-                self.win.detail_panel.set_model(model_data, trigger_words)
+            dp = self.win.detail_panel
+            if dp.model_data and dp.model_data.get('id') == model_id:
+                dp.trigger_words = list(triggers)
+                if hasattr(dp, 'model_section'):
+                    dp.model_section.trigger_words = dp.trigger_words
+                    dp.model_section.reload_pills()
 
     @Slot(int, str)
     def on_model_image_changed(self, model_id, file_path):
@@ -1302,20 +1421,57 @@ class AppController:
     def on_add_tag(self, model_id, tag_name):
         if database.add_model_tag(model_id, tag_name):
             self.win.statusBar().showMessage(i18n.t("status_tag_added").format(tag_name=tag_name), 2000)
-            self.win.show_toast(i18n.t("status_tag_added").format(tag_name=tag_name), "success")
-            self.refresh_active_model_details(model_id)
+            if self.active_library and hasattr(self.win.library_view, 'models_data'):
+                for m in self.win.library_view.models_data:
+                    if m.get('id') == model_id:
+                        tags = list(m.get('tags', []))
+                        if tag_name not in tags:
+                            tags.append(tag_name)
+                            m['tags'] = tags
+                        break
+            dp = self.win.detail_panel
+            if dp.model_data and dp.model_data.get('id') == model_id:
+                tags = list(dp.model_data.get('tags', []))
+                if tag_name not in tags:
+                    tags.append(tag_name)
+                    dp.model_data['tags'] = tags
+                if hasattr(dp, 'model_section'):
+                    dp.model_section.reload_tags()
 
     @Slot(int, str)
     def on_delete_tag(self, model_id, tag_name):
         if database.delete_model_tag(model_id, tag_name):
             self.win.statusBar().showMessage(i18n.t("status_tag_removed").format(tag_name=tag_name), 2000)
-            self.win.show_toast(i18n.t("status_tag_removed").format(tag_name=tag_name), "info")
-            self.refresh_active_model_details(model_id)
+            if self.active_library and hasattr(self.win.library_view, 'models_data'):
+                for m in self.win.library_view.models_data:
+                    if m.get('id') == model_id:
+                        tags = list(m.get('tags', []))
+                        if tag_name in tags:
+                            tags.remove(tag_name)
+                            m['tags'] = tags
+                        break
+            dp = self.win.detail_panel
+            if dp.model_data and dp.model_data.get('id') == model_id:
+                tags = list(dp.model_data.get('tags', []))
+                if tag_name in tags:
+                    tags.remove(tag_name)
+                    dp.model_data['tags'] = tags
+                if hasattr(dp, 'model_section'):
+                    dp.model_section.reload_tags()
 
     @Slot(int, list)
     def on_set_tags(self, model_id, tags):
         if database.set_model_tags(model_id, tags):
-            self.refresh_active_model_details(model_id)
+            if self.active_library and hasattr(self.win.library_view, 'models_data'):
+                for m in self.win.library_view.models_data:
+                    if m.get('id') == model_id:
+                        m['tags'] = list(tags)
+                        break
+            dp = self.win.detail_panel
+            if dp.model_data and dp.model_data.get('id') == model_id:
+                dp.model_data['tags'] = list(tags)
+                if hasattr(dp, 'model_section'):
+                    dp.model_section.reload_tags()
 
     @Slot(list)
     def on_bulk_add_tag(self, model_ids):
@@ -1460,6 +1616,10 @@ class AppController:
         # Refresh sidebar counts & lists
         self.refresh_libraries()
         self.refresh_notes()
+
+        # Refresh Workflow Builder models immediately
+        if hasattr(self.win, 'workflow_builder_view') and self.win.workflow_builder_view:
+            self.win.workflow_builder_view.load_models_from_db(show_hidden=self.incognito_active)
         
         current_index = self.win.center_stack.currentIndex()
         if current_index == 0:
@@ -1475,6 +1635,9 @@ class AppController:
                 self.on_all_notes_requested()
         elif current_index == 6:
             self.on_all_notebooks_requested()
+        elif current_index == 7:
+            if hasattr(self.win, 'workflow_builder_view') and self.win.workflow_builder_view:
+                self.win.workflow_builder_view.load_models_from_db(show_hidden=self.incognito_active)
 
         self.win.statusBar().showMessage(i18n.t("status_incognito_on") if self.incognito_active else i18n.t("status_incognito_off"), 2000)
 
@@ -1491,6 +1654,8 @@ class AppController:
             self.win.hide_detail_panel()
         elif self.win.detail_panel.isVisible() and self.win.detail_panel.mode == "MODEL" and self.win.detail_panel.model_data and self.win.detail_panel.model_data['id'] == model_id:
             self.refresh_active_model_details(model_id)
+        if hasattr(self.win, 'workflow_builder_view') and self.win.workflow_builder_view:
+            self.win.workflow_builder_view.load_models_from_db(show_hidden=self.incognito_active)
 
     @Slot(object)
     def on_model_unhide(self, model_data):
@@ -1503,6 +1668,8 @@ class AppController:
             self.on_library_selected(self.active_library)
         if self.win.detail_panel.isVisible() and self.win.detail_panel.mode == "MODEL" and self.win.detail_panel.model_data and self.win.detail_panel.model_data['id'] == model_id:
             self.refresh_active_model_details(model_id)
+        if hasattr(self.win, 'workflow_builder_view') and self.win.workflow_builder_view:
+            self.win.workflow_builder_view.load_models_from_db(show_hidden=self.incognito_active)
 
     @Slot(object)
     def on_workflow_hide(self, workflow_data):
@@ -1555,9 +1722,11 @@ class AppController:
 def main():
     app = QApplication(sys.argv)
     database.initialize_db()
-    win = MainWindow()
-    controller = AppController(win)
-    win.show()
+    initial_settings = database.get_all_settings() if hasattr(database, 'get_all_settings') else {}
+    i18n.set_lang(initial_settings.get("lang", "en"))
+    win = MainWindow(defer_theme=True)
+    controller = AppController(win, initial_settings=initial_settings)
+    win.restore_window_state()
     sys.exit(app.exec())
 
 if __name__ == "__main__":

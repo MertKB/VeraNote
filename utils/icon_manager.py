@@ -50,6 +50,12 @@ ICON_MAP = {
     'workflows': 'nav_workflows.png',
     'puzzle': 'nav_workflows.png',
     'nav_workflows': 'nav_workflows.png',
+    'builder': 'nav_builder.png',
+    'nav_builder': 'nav_builder.png',
+    'workflow_builder': 'nav_builder.png',
+    'wand': 'nav_builder.png',
+    'wand-magic-sparkles': 'nav_builder.png',
+    'sliders': 'nav_builder.png',
     'settings': 'nav_settings.png',
     'gear': 'nav_settings.png',
     'nav_settings': 'nav_settings.png',
@@ -88,6 +94,14 @@ ICON_MAP = {
     'panel': 'btn_sidebar.png',
     'sidebar_toggle': 'btn_sidebar.png',
     'collapse': 'btn_sidebar.png',
+    'spin_up': 'spin_up.png',
+    'spin_down': 'spin_down.png',
+    'step_left': 'step_left.png',
+    'step_right': 'step_right.png',
+    'upload': 'upload.png',
+    'export': 'upload.png',
+    'image': 'image_placeholder.png',
+    'photo': 'image_placeholder.png',
 }
 
 def get_pixmap(name: str, color_hex: str = "#E3E3E3", size: int = 18) -> QPixmap:

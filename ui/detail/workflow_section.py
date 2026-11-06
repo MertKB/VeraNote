@@ -19,7 +19,7 @@ from .common import ZoomableTextEdit, FlowLayout
 
 class WorkflowSection(QWidget):
     """Encapsulates all workflow metadata display, JSON copying, and editing."""
-    save_workflow_data_requested = Signal(int, str, str, str) # id, name, description, notes
+    save_workflow_data_requested = Signal(int, str, str, str, bool) # id, name, description, notes, is_auto_save
     delete_workflow_requested = Signal(int) # workflow_id
     workflow_image_changed = Signal(int, str) # workflow_id, file_path
 
@@ -34,6 +34,14 @@ class WorkflowSection(QWidget):
         self.highlight_color = "#8AB4F8"
         self.accent_color = "#1A73E8"
         self.palette = {}
+
+        # Auto-Save Debounce Timer
+        self.auto_save_timer = QTimer(self)
+        self.auto_save_timer.setSingleShot(True)
+        self.auto_save_timer.timeout.connect(self.trigger_auto_save)
+        self.auto_save_enabled = 1
+        self.auto_save_interval = 1.5
+
         self.init_ui()
 
     def init_ui(self):
@@ -61,6 +69,7 @@ class WorkflowSection(QWidget):
         self.name_edit.setMinimumWidth(0)
         self.name_edit.setPlaceholderText(t("detail_card_title_placeholder"))
         self.name_edit.textChanged.connect(self.check_changes)
+        self.name_edit.editingFinished.connect(self.flush_pending_saves)
         layout.addWidget(self.name_edit)
 
         # Path Label
@@ -226,10 +235,11 @@ class WorkflowSection(QWidget):
         self.workflow_desc_title.setObjectName("DetailWordLabel")
         layout.addWidget(self.workflow_desc_title)
 
-        self.workflow_desc_edit = QTextEdit()
+        self.workflow_desc_edit = ZoomableTextEdit()
         self.workflow_desc_edit.setFixedHeight(60)
         self.workflow_desc_edit.setPlaceholderText(t("detail_workflow_desc_placeholder"))
         self.workflow_desc_edit.textChanged.connect(self.check_changes)
+        self.workflow_desc_edit.focus_out.connect(self.flush_pending_saves)
         layout.addWidget(self.workflow_desc_edit)
 
         # Workflow Notes
@@ -243,6 +253,7 @@ class WorkflowSection(QWidget):
         self.notes_edit.setMinimumHeight(120)
         self.notes_edit.setMaximumHeight(200)
         self.notes_edit.textChanged.connect(self.check_changes)
+        self.notes_edit.focus_out.connect(self.flush_pending_saves)
         layout.addWidget(self.notes_edit)
 
         # Save & Delete Buttons Container
@@ -265,6 +276,7 @@ class WorkflowSection(QWidget):
         layout.addWidget(self.buttons_container)
 
     def set_workflow(self, workflow_data):
+        self.flush_pending_saves()
         self.workflow_data = workflow_data
         self.initial_workflow_name = workflow_data.get('name', '')
         self.initial_workflow_description = workflow_data.get('description', '')
@@ -406,7 +418,7 @@ class WorkflowSection(QWidget):
                 pill = QPushButton(m)
                 pill.setObjectName("WorkflowModelPill")
                 pill.setCursor(Qt.PointingHandCursor)
-                pill.setToolTip(f"{m} (Kopyalamak için tıkla)")
+                pill.setToolTip(t("workflow_click_to_copy_tooltip").format(name=m))
                 pill.clicked.connect(lambda _, name=m: self.copy_model_name(name))
                 self.models_pills_layout.addWidget(pill)
             self.used_models_container.setVisible(True)
@@ -418,24 +430,24 @@ class WorkflowSection(QWidget):
         if not text:
             return
         QGuiApplication.clipboard().setText(text)
-        from ui.toast_notification import ToastNotification
-        ToastNotification.show_toast(self, t("toast_copied_pos_prompt"), duration=2000)
+        from ui.widgets.toast import show_toast
+        show_toast(self.window() or self, t("toast_copied_pos_prompt"), "success", 2000)
 
     def copy_negative_prompt(self):
         text = self.neg_prompt_edit.toPlainText().strip()
         if not text:
             return
         QGuiApplication.clipboard().setText(text)
-        from ui.toast_notification import ToastNotification
-        ToastNotification.show_toast(self, t("toast_copied_neg_prompt"), duration=2000)
+        from ui.widgets.toast import show_toast
+        show_toast(self.window() or self, t("toast_copied_neg_prompt"), "success", 2000)
 
     def copy_seed_value(self):
         seed_txt = self.seed_value_lbl.text().strip()
         if not seed_txt or seed_txt == "-":
             return
         QGuiApplication.clipboard().setText(seed_txt)
-        from ui.toast_notification import ToastNotification
-        ToastNotification.show_toast(self, f"Seed {seed_txt}: {t('toast_copied_seed')}", duration=2000)
+        from ui.widgets.toast import show_toast
+        show_toast(self.window() or self, f"Seed {seed_txt}: {t('toast_copied_seed')}", "success", 2000)
 
     def copy_all_params(self):
         file_path = self.workflow_data.get('file_path', '') if self.workflow_data else ''
@@ -446,20 +458,20 @@ class WorkflowSection(QWidget):
             if params:
                 lines = [f"{k}: {v}" for k, v in params.items()]
                 QGuiApplication.clipboard().setText(", ".join(lines))
-                from ui.toast_notification import ToastNotification
-                ToastNotification.show_toast(self, t("toast_copied_params"), duration=2000)
+                from ui.widgets.toast import show_toast
+                show_toast(self.window() or self, t("toast_copied_params"), "success", 2000)
                 return
         seed_txt = self.seed_value_lbl.text().strip()
         if seed_txt and seed_txt != "-":
             QGuiApplication.clipboard().setText(f"Seed: {seed_txt}")
-            from ui.toast_notification import ToastNotification
-            ToastNotification.show_toast(self, t("toast_copied_params"), duration=2000)
+            from ui.widgets.toast import show_toast
+            show_toast(self.window() or self, t("toast_copied_params"), "success", 2000)
 
     def copy_model_name(self, model_name):
         clean_name = model_name.replace("LoRA: ", "").strip()
         QGuiApplication.clipboard().setText(clean_name)
-        from ui.toast_notification import ToastNotification
-        ToastNotification.show_toast(self, clean_name, duration=2000)
+        from ui.widgets.toast import show_toast
+        show_toast(self.window() or self, clean_name, "info", 2000)
 
     def check_changes(self):
         if not self.workflow_data:
@@ -474,6 +486,45 @@ class WorkflowSection(QWidget):
             self.current_image_path != (self.workflow_data.get('image_path') or '')
         )
         self.save_btn.setEnabled(has_changed)
+        if has_changed and self.auto_save_enabled:
+            self.auto_save_timer.start(int(self.auto_save_interval * 1000))
+        else:
+            self.auto_save_timer.stop()
+
+    def sync_auto_save_settings(self, enabled, interval):
+        self.auto_save_enabled = int(enabled)
+        self.auto_save_interval = float(interval)
+        if not self.auto_save_enabled and hasattr(self, 'auto_save_timer'):
+            self.auto_save_timer.stop()
+
+    def flush_pending_saves(self):
+        if hasattr(self, 'auto_save_timer') and self.auto_save_timer.isActive():
+            self.auto_save_timer.stop()
+            self.trigger_auto_save()
+
+    def trigger_auto_save(self):
+        if not self.workflow_data or not self.auto_save_enabled:
+            return
+        name = self.name_edit.text().strip()
+        desc = self.workflow_desc_edit.toPlainText().strip()
+        notes = self.notes_edit.toPlainText().strip()
+        if not name:
+            return
+        if (name == self.initial_workflow_name and
+            desc == self.initial_workflow_description and
+            notes == self.initial_workflow_notes and
+            self.current_image_path == (self.workflow_data.get('image_path') or '')):
+            self.save_btn.setEnabled(False)
+            return
+
+        self.initial_workflow_name = name
+        self.initial_workflow_description = desc
+        self.initial_workflow_notes = notes
+        self.workflow_data['name'] = name
+        self.workflow_data['description'] = desc
+        self.workflow_data['notes'] = notes
+        self.save_btn.setEnabled(False)
+        self.save_workflow_data_requested.emit(self.workflow_data['id'], name, desc, notes, True)
 
     def update_image(self, image_path=None):
         if image_path is not None:
@@ -553,17 +604,22 @@ class WorkflowSection(QWidget):
     def on_save_clicked(self):
         if not self.workflow_data:
             return
+        if hasattr(self, 'auto_save_timer') and self.auto_save_timer.isActive():
+            self.auto_save_timer.stop()
         name = self.name_edit.text().strip()
         desc = self.workflow_desc_edit.toPlainText().strip()
         notes = self.notes_edit.toPlainText().strip()
         if not name:
             QMessageBox.warning(self, t("msg_copy_error_title"), t("msg_workflow_name_empty"), QMessageBox.Ok)
             return
-        self.save_workflow_data_requested.emit(self.workflow_data['id'], name, desc, notes)
         self.initial_workflow_name = name
         self.initial_workflow_description = desc
         self.initial_workflow_notes = notes
+        self.workflow_data['name'] = name
+        self.workflow_data['description'] = desc
+        self.workflow_data['notes'] = notes
         self.save_btn.setEnabled(False)
+        self.save_workflow_data_requested.emit(self.workflow_data['id'], name, desc, notes, False)
 
     def on_delete_workflow_clicked(self):
         if not self.workflow_data:

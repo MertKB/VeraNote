@@ -9,9 +9,15 @@ from utils.i18n import t
 
 
 class ZoomableTextEdit(QTextEdit):
-    """QTextEdit with Ctrl+Wheel zoom support."""
+    """QTextEdit with Ctrl+Wheel zoom support and focus-out notification."""
+    focus_out = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.focus_out.emit()
 
     def wheelEvent(self, event):
         if event.modifiers() == Qt.ControlModifier:

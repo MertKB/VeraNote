@@ -18,7 +18,7 @@ from .detail.workflow_section import WorkflowSection
 class DetailPanel(QWidget):
     """Modular coordinator panel delegating to ModelSection, NoteSection, or WorkflowSection."""
     close_requested = Signal()
-    save_model_data_requested = Signal(int, str, str, str) # model_id, name, notes, base_architecture
+    save_model_data_requested = Signal(int, str, str, str, bool) # model_id, name, notes, base_architecture, is_auto_save
     image_changed = Signal(int, str) # model_id, new_image_path
     add_trigger_requested = Signal(int, str) # model_id, word
     delete_trigger_requested = Signal(int, str) # model_id, word
@@ -29,7 +29,7 @@ class DetailPanel(QWidget):
     delete_model_requested = Signal(int) # model_id
     save_note_requested = Signal(int, str, str, str, str, int, bool) # id, title, content, image_path, display_mode, is_fav, is_auto_save
     delete_note_requested = Signal(int) # note_id
-    save_workflow_data_requested = Signal(int, str, str, str) # workflow_id, name, description, notes
+    save_workflow_data_requested = Signal(int, str, str, str, bool) # workflow_id, name, description, notes, is_auto_save
     delete_workflow_requested = Signal(int) # workflow_id
     workflow_image_changed = Signal(int, str) # workflow_id, new_image_path
     corkboard_pin_toggled = Signal(int, bool)
@@ -51,6 +51,7 @@ class DetailPanel(QWidget):
         self.auto_save_settings = {"enabled": 1, "interval": 1.5}
         
         self.init_ui()
+        self.sync_auto_save_settings(self.auto_save_settings["enabled"], self.auto_save_settings["interval"])
 
     @property
     def model_data(self):
@@ -126,6 +127,7 @@ class DetailPanel(QWidget):
         self.close_btn.setObjectName("CloseBtn")
         self.close_btn.clicked.connect(self.close_requested.emit)
         self.close_btn.hide()
+        header_layout.addWidget(self.close_btn)
         self.main_layout.addLayout(header_layout)
 
         # Scroll area enclosing the stacked widget
@@ -185,7 +187,16 @@ class DetailPanel(QWidget):
         self.scroll_area.setWidget(scroll_content)
         self.main_layout.addWidget(self.scroll_area)
 
+    def flush_pending_saves(self):
+        if hasattr(self, 'model_section') and self.model_section:
+            self.model_section.flush_pending_saves()
+        if hasattr(self, 'note_section') and self.note_section:
+            self.note_section.flush_pending_saves()
+        if hasattr(self, 'workflow_section') and self.workflow_section:
+            self.workflow_section.flush_pending_saves()
+
     def set_model(self, model_data, trigger_words):
+        self.flush_pending_saves()
         self.mode = "MODEL"
         self.header_label.setText(t("detail_header_model"))
         self.stack.setCurrentIndex(0)
@@ -195,6 +206,7 @@ class DetailPanel(QWidget):
         self.setFocus()
 
     def set_note(self, note_data, all_models=None, all_notebooks=None):
+        self.flush_pending_saves()
         self.mode = "NOTE"
         self.header_label.setText(t("detail_header_note"))
         self.stack.setCurrentIndex(1)
@@ -204,6 +216,7 @@ class DetailPanel(QWidget):
         self.setFocus()
 
     def set_workflow(self, workflow_data):
+        self.flush_pending_saves()
         self.mode = "WORKFLOW"
         self.header_label.setText(t("detail_header_workflow"))
         self.stack.setCurrentIndex(2)
@@ -214,7 +227,12 @@ class DetailPanel(QWidget):
 
     def sync_auto_save_settings(self, enabled, interval):
         self.auto_save_settings = {"enabled": int(enabled), "interval": float(interval)}
-        self.note_section.sync_auto_save_settings(enabled, interval)
+        if hasattr(self, 'note_section') and self.note_section:
+            self.note_section.sync_auto_save_settings(enabled, interval)
+        if hasattr(self, 'model_section') and self.model_section:
+            self.model_section.sync_auto_save_settings(enabled, interval)
+        if hasattr(self, 'workflow_section') and self.workflow_section:
+            self.workflow_section.sync_auto_save_settings(enabled, interval)
 
     def update_image(self, image_path=None):
         if self.mode == "MODEL":
@@ -223,6 +241,10 @@ class DetailPanel(QWidget):
             self.note_section.update_image(image_path)
         elif self.mode == "WORKFLOW":
             self.workflow_section.update_image(image_path)
+
+    def set_floating_state(self, is_floating: bool):
+        if hasattr(self, 'close_btn'):
+            self.close_btn.setVisible(is_floating)
 
     def retranslate_ui(self):
         if self.mode == "MODEL":

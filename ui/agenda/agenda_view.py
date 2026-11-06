@@ -115,6 +115,10 @@ class AgendaView(QWidget):
         """Flush any pending note save before changing views or closing."""
         self.daily_note_panel.flush_save()
 
+    def apply_theme(self, palette: dict):
+        if hasattr(self, 'tasks_panel') and hasattr(self.tasks_panel, 'apply_theme'):
+            self.tasks_panel.apply_theme(palette)
+
     def retranslate_ui(self):
         self.calendar_panel.retranslate_ui()
         self.daily_note_panel.retranslate_ui()

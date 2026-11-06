@@ -162,15 +162,22 @@ class EditableLabel(QStackedWidget):
 
     def mouseMoveEvent(self, event):
         if not self.is_locked and (event.buttons() & Qt.LeftButton):
+            grid = getattr(self, 'grid_size', 20) if getattr(self, 'grid_snap', True) else 1
             if self.is_resizing:
                 delta = event.globalPosition().toPoint() - self.drag_start_pos
                 nw = max(200, min(1800, self.drag_start_size.width() + delta.x()))
                 nh = max(40, min(600, self.drag_start_size.height() + delta.y()))
+                if grid > 1:
+                    nw = max(200, round(nw / grid) * grid)
+                    nh = max(40, round(nh / grid) * grid)
                 self.resize(nw, nh)
             elif self.drag_position is not None:
                 new_pos = event.globalPosition().toPoint() - self.drag_position
                 nx = max(0, new_pos.x())
                 ny = max(0, new_pos.y())
+                if grid > 1:
+                    nx = round(nx / grid) * grid
+                    ny = round(ny / grid) * grid
                 self.move(nx, ny)
                 if self.parent():
                     req_w = nx + self.width() + 40
@@ -198,7 +205,11 @@ class EditableLabel(QStackedWidget):
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
             border_col = self.frame_border_color if (self.frame_border_color and self.frame_border_color != 'transparent') else "#8AB4F8"
-            painter.setPen(QPen(QColor(border_col), 1.5))
+            pen = QPen(QColor(border_col), 1.5, Qt.DashLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 12, 12)
+            painter.setPen(QPen(QColor(border_col), 1.5, Qt.SolidLine))
             w, h = self.width(), self.height()
             painter.drawLine(w - 12, h - 4, w - 4, h - 12)
             painter.drawLine(w - 8, h - 4, w - 4, h - 8)

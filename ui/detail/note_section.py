@@ -66,6 +66,7 @@ class NoteSection(QWidget):
         self.note_title_edit.setObjectName("NoteTitleEdit")
         self.note_title_edit.setPlaceholderText(t("detail_card_title_placeholder"))
         self.note_title_edit.textChanged.connect(self.check_changes)
+        self.note_title_edit.editingFinished.connect(self.flush_pending_saves)
         note_hdr_layout.addWidget(self.note_title_edit)
 
         # Row 2: Thumbnail and Display Actions
@@ -147,6 +148,7 @@ class NoteSection(QWidget):
         self.notes_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.notes_edit.setStyleSheet("background-color: #2D2F31; border: 1px solid #444746; border-radius: 8px; color: #E3E3E3; padding: 8px;")
         self.notes_edit.textChanged.connect(self.check_changes)
+        self.notes_edit.focus_out.connect(self.flush_pending_saves)
         layout.addWidget(self.notes_edit)
 
         # Character Counter Layout
@@ -222,6 +224,7 @@ class NoteSection(QWidget):
         layout.addWidget(self.buttons_container)
 
     def set_note(self, note_data, all_models=None, auto_save_settings=None, all_notebooks=None):
+        self.flush_pending_saves()
         self.note_data = note_data
         self.all_models_list = all_models or []
 
@@ -282,8 +285,10 @@ class NoteSection(QWidget):
         self.notebook_combo.clear()
         self.notebook_combo.addItem(t("notes_scope_unassigned"), None)
         if all_notebooks:
+            from utils.icon_manager import get_icon
+            nb_icon = get_icon("notebooks", "#E3E3E3", 14)
             for nb in all_notebooks:
-                self.notebook_combo.addItem(f"📁 {nb['name']}", nb['id'])
+                self.notebook_combo.addItem(nb_icon, nb['name'], nb['id'])
         curr_nb_id = note_data.get('notebook_id')
         idx = self.notebook_combo.findData(curr_nb_id)
         if idx >= 0:
@@ -346,25 +351,29 @@ class NoteSection(QWidget):
     def on_delete_tag(self, tag):
         if not self.note_data:
             return
-        reply = QMessageBox.question(
-            self, t("msg_confirm_remove_tag_title"), t("msg_confirm_remove_tag_text").format(tag=tag),
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            note_id = self.note_data.get('id')
-            if note_id:
-                tags = list(self.note_data.get('tags', []))
-                if tag in tags:
-                    tags.remove(tag)
-                self.note_data['tags'] = tags
-                self.delete_note_tag_requested.emit(note_id, tag)
-                self.reload_tags()
+        note_id = self.note_data.get('id')
+        if note_id:
+            tags = list(self.note_data.get('tags', []))
+            if tag in tags:
+                tags.remove(tag)
+            self.note_data['tags'] = tags
+            self.delete_note_tag_requested.emit(note_id, tag)
+            self.reload_tags()
 
     def run_clear_tags(self):
         if not self.note_data:
             return
         tags = self.note_data.get('tags', [])
         if not tags:
+            return
+        reply = QMessageBox.question(
+            self,
+            t("msg_confirm_remove_tag_title"),
+            t("detail_tags_clear_confirm"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
             return
         note_id = self.note_data.get('id')
         if note_id:
@@ -444,6 +453,11 @@ class NoteSection(QWidget):
         if not self.auto_save_enabled:
             self.auto_save_timer.stop()
 
+    def flush_pending_saves(self):
+        if hasattr(self, 'auto_save_timer') and self.auto_save_timer.isActive():
+            self.auto_save_timer.stop()
+            self.trigger_auto_save()
+
     def trigger_auto_save(self):
         if self.note_data and self.auto_save_enabled:
             title = self.note_title_edit.text().strip()
@@ -488,46 +502,55 @@ class NoteSection(QWidget):
     def update_pin_corkboard_btn_text(self):
         if not self.note_data or not hasattr(self, 'pin_corkboard_btn'):
             return
-        is_pinned = self.note_data.get('is_corkboard', 0) == 1
+        is_pinned = (self.note_data.get('is_pinned_corkboard', 0) == 1 or self.note_data.get('is_corkboard', 0) == 1)
+        accent = self.palette.get("accent_color", getattr(self, "accent_color", "#1A73E8") or "#1A73E8")
+        accent_hover = self.palette.get("accent_hover", "#4285F4")
+        highlight = self.palette.get("highlight_color", getattr(self, "highlight_color", "#8AB4F8") or "#8AB4F8")
+        bg_pinned = self.palette.get("card_hover", "#3C4043")
+        border_pinned = self.palette.get("border_focus", highlight)
+        text_color = self.palette.get("text_main", "#E3E3E3")
+
         if is_pinned:
             self.pin_corkboard_btn.setText(t("detail_unpin_corkboard"))
-            self.pin_corkboard_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #4B5563;
-                    color: #E5E7EB;
-                    border: none;
+            self.pin_corkboard_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {bg_pinned};
+                    color: {text_color};
+                    border: 1px solid {border_pinned};
                     border-radius: 6px;
                     padding: 4px 10px;
                     font-size: 11px;
                     font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #6B7280;
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {border_pinned};
+                    color: #FFFFFF;
+                }}
             """)
         else:
             self.pin_corkboard_btn.setText(t("detail_pin_corkboard"))
-            self.pin_corkboard_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #D97706;
+            self.pin_corkboard_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {accent};
                     color: #FFFFFF;
                     border: none;
                     border-radius: 6px;
                     padding: 4px 10px;
                     font-size: 11px;
                     font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #F59E0B;
-                }
+                }}
+                QPushButton:hover {{
+                    background-color: {accent_hover};
+                }}
             """)
 
     def on_toggle_pin_corkboard(self):
         if not self.note_data:
             return
         note_id = self.note_data.get('id', 0)
-        current_pinned = self.note_data.get('is_corkboard', 0) == 1
+        current_pinned = (self.note_data.get('is_pinned_corkboard', 0) == 1 or self.note_data.get('is_corkboard', 0) == 1)
         new_pinned = not current_pinned
+        self.note_data['is_pinned_corkboard'] = 1 if new_pinned else 0
         self.note_data['is_corkboard'] = 1 if new_pinned else 0
         self.update_pin_corkboard_btn_text()
         self.corkboard_pin_toggled.emit(note_id, new_pinned)
@@ -667,3 +690,4 @@ class NoteSection(QWidget):
         self.highlight_color = palette.get("highlight_color", palette.get("border_focus", "#8AB4F8"))
         self.accent_color = palette.get("accent_color", "#1A73E8")
         self.update_image()
+        self.update_pin_corkboard_btn_text()

@@ -8,6 +8,7 @@ from .cards import (
 )
 from .title import OutlinedLabel, EditableLabel
 from .dialogs import NoWheelSlider, HomePageSettingsDialog
+from .background_editor import BackgroundEditorDialog, CustomPillSlider, WallpaperThumbnailCard
 
 __all__ = [
     "ImageLoadWorker",
@@ -20,4 +21,8 @@ __all__ = [
     "EditableLabel",
     "NoWheelSlider",
     "HomePageSettingsDialog",
+    "BackgroundEditorDialog",
+    "CustomPillSlider",
+    "WallpaperThumbnailCard",
 ]
+

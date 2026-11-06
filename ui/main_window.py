@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
                              QStackedWidget, QSplitter, QTextEdit, QLineEdit, 
-                             QPushButton, QLabel, QMessageBox, QDockWidget, QApplication)
+                             QPushButton, QLabel, QMessageBox, QDockWidget, QApplication,
+                             QSizePolicy)
 from PySide6.QtCore import Slot, Qt, Signal, QTimer, QEvent, QObject
 from PySide6.QtGui import QIcon, QKeySequence
 from ui.sidebar import Sidebar
@@ -11,6 +12,7 @@ from ui.notes_view import NotesView
 from ui.workflow_view import WorkflowView
 from ui.agenda import AgendaView
 from ui.notebooks_view import NotebooksView
+from ui.workflow_builder_view import WorkflowBuilderView
 from ui.styles import STYLE_SHEET
 from utils.i18n import t
 
@@ -71,53 +73,73 @@ class NavigationEventFilter(QObject):
         return super().eventFilter(obj, event)
 
 class ResettableDockWidget(QDockWidget):
-    """Custom QDockWidget with styled background that cleanly notifies main window on close."""
-    def __init__(self, title, parent=None):
+    """Standard QDockWidget with styled background and WA_DeleteOnClose lifecycle."""
+
+    def __init__(self, title_or_parent=None, parent=None):
+        if isinstance(title_or_parent, QWidget) and parent is None:
+            parent = title_or_parent
+            title = t("detail_dock_title")
+        else:
+            title = title_or_parent if isinstance(title_or_parent, str) else t("detail_dock_title")
         super().__init__(title, parent)
         self._main_win = parent
+        self.setObjectName("DetailDockWidget")
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
+        self.setFeatures(
+            QDockWidget.DockWidgetMovable |
+            QDockWidget.DockWidgetFloatable |
+            QDockWidget.DockWidgetClosable
+        )
+        self.setFloating(False)
         self.topLevelChanged.connect(self._on_top_level_changed)
 
+    def _finish_any_active_drag(self):
+        try:
+            from PySide6.QtGui import QMouseEvent
+            from PySide6.QtCore import QPointF
+            rel_nca = QMouseEvent(
+                QEvent.Type.NonClientAreaMouseButtonRelease,
+                QPointF(0, 0), QPointF(0, 0),
+                Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+            )
+            QApplication.sendEvent(self, rel_nca)
+            rel_client = QMouseEvent(
+                QEvent.Type.MouseButtonRelease,
+                QPointF(0, 0), QPointF(0, 0),
+                Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier
+            )
+            QApplication.sendEvent(self, rel_client)
+        except Exception:
+            pass
+
     def _on_top_level_changed(self, floating):
-        self._wire_close_btn()
-        if self._main_win and hasattr(self._main_win, 'styleSheet'):
-            sheet = self._main_win.styleSheet()
-            if sheet:
-                self.setStyleSheet(sheet)
-
-    def _wire_close_btn(self):
-        for b in self.findChildren(object):
-            if b.objectName() == "qt_dockwidget_closebutton":
-                b.installEventFilter(self)
-                try:
-                    b.clicked.disconnect()
-                except Exception:
-                    pass
-                b.clicked.connect(self.close_dock)
-
-    def eventFilter(self, obj, event):
-        if obj.objectName() == "qt_dockwidget_closebutton":
-            if event.type() == QEvent.MouseButtonRelease:
-                if obj.rect().contains(event.position().toPoint()):
-                    self.close_dock()
-                    return True
-        return super().eventFilter(obj, event)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self._wire_close_btn()
-
-    def close_dock(self):
-        self.hide()
-        main_win = self._main_win or self.parent()
-        if main_win and hasattr(main_win, "hide_detail_panel"):
-            main_win.hide_detail_panel()
+        if self._main_win and hasattr(self._main_win, '_on_dock_top_level_changed'):
+            self._main_win._on_dock_top_level_changed(floating)
 
     def closeEvent(self, event):
-        super().closeEvent(event)
-        main_win = self._main_win or self.parent()
-        if main_win and hasattr(main_win, "hide_detail_panel"):
-            main_win.hide_detail_panel()
+        self._finish_any_active_drag()
+        main_win = self._main_win or self.parentWidget()
+        w = self.widget()
+        if w is not None:
+            if hasattr(w, 'flush_pending_saves'):
+                w.flush_pending_saves()
+            if hasattr(w, 'set_floating_state'):
+                w.set_floating_state(False)
+            w.hide()
+            self.setWidget(None)
+            w.setParent(None)
+        self.hide()
+        if main_win is not None:
+            try:
+                main_win.removeDockWidget(self)
+            except Exception:
+                pass
+            if getattr(main_win, 'detail_dock', None) is self:
+                main_win.detail_dock = None
+        QWidget.closeEvent(self, event)
+        self.deleteLater()
 
 class NoteEditor(QWidget):
     save_requested = Signal(object, str, str) # note_id (int/None), title, content
@@ -188,7 +210,7 @@ class MainWindow(QMainWindow):
     save_note_signal = Signal(object, str, str) # id, title, content
     save_note_new_signal = Signal(int, str, str, str, str, int, bool) # id, title, content, image_path, display_mode, is_fav, is_auto_save
     delete_note_signal = Signal(int)
-    save_model_data_signal = Signal(int, str, str, str) # model_id, name, notes, base_architecture
+    save_model_data_signal = Signal(int, str, str, str, bool) # model_id, name, notes, base_architecture, is_auto_save
     add_trigger_signal = Signal(int, str) # model_id, word
     delete_trigger_signal = Signal(int, str) # model_id, word
     set_triggers_signal = Signal(int, list) # model_id, triggers_list
@@ -203,12 +225,13 @@ class MainWindow(QMainWindow):
     add_tag_signal = Signal(int, str)
     delete_tag_signal = Signal(int, str)
     set_tags_signal = Signal(int, list)
-    save_workflow_data_signal = Signal(int, str, str, str) # id, name, description, notes
+    save_workflow_data_signal = Signal(int, str, str, str, bool) # id, name, description, notes, is_auto_save
     delete_workflow_signal = Signal(int)
     workflow_image_changed_signal = Signal(int, str)
     workflow_clicked_signal = Signal(dict)
     add_workflow_signal = Signal(int, str, str, str, str)
     workflow_favorite_toggled_signal = Signal(int, bool)
+    workflow_builder_requested_signal = Signal()
     model_hide_signal = Signal(dict)
     model_unhide_signal = Signal(dict)
     workflow_hide_signal = Signal(dict)
@@ -233,7 +256,7 @@ class MainWindow(QMainWindow):
     bulk_delete_notebooks_signal = Signal(list)
     notes_scope_changed_signal = Signal(str)
 
-    def __init__(self):
+    def __init__(self, defer_theme: bool = False):
         super().__init__()
         import os
         self.setWindowTitle(t("app_title"))
@@ -251,7 +274,8 @@ class MainWindow(QMainWindow):
         self.nav_forward_shortcut = "Alt+Right"
 
         self.init_ui()
-        self.setStyleSheet(STYLE_SHEET)
+        if not defer_theme:
+            self.setStyleSheet(STYLE_SHEET)
 
     def init_ui(self):
         # Central splitter separating Sidebar and Central area
@@ -264,6 +288,8 @@ class MainWindow(QMainWindow):
 
         # Main Central Stacked Area
         self.center_stack = QStackedWidget()
+        self.center_stack.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.center_stack.setMinimumWidth(0)
         
         self.welcome_screen = WelcomeScreen()
         self.welcome_screen.quick_note_saved.connect(self.on_quick_note_saved)
@@ -293,14 +319,16 @@ class MainWindow(QMainWindow):
 
         self.agenda_view = AgendaView()
         self.notebooks_view = NotebooksView()
+        self.workflow_builder_view = WorkflowBuilderView()
 
-        self.center_stack.addWidget(self.welcome_screen)  # index 0
-        self.center_stack.addWidget(self.library_view)    # index 1
-        self.center_stack.addWidget(self.note_editor)     # index 2
-        self.center_stack.addWidget(self.notes_view)     # index 3
-        self.center_stack.addWidget(self.workflow_view)  # index 4
-        self.center_stack.addWidget(self.agenda_view)    # index 5
-        self.center_stack.addWidget(self.notebooks_view) # index 6
+        self.center_stack.addWidget(self.welcome_screen)        # index 0
+        self.center_stack.addWidget(self.library_view)          # index 1
+        self.center_stack.addWidget(self.note_editor)           # index 2
+        self.center_stack.addWidget(self.notes_view)            # index 3
+        self.center_stack.addWidget(self.workflow_view)         # index 4
+        self.center_stack.addWidget(self.agenda_view)           # index 5
+        self.center_stack.addWidget(self.notebooks_view)        # index 6
+        self.center_stack.addWidget(self.workflow_builder_view) # index 7
         
         self.splitter.addWidget(self.center_stack)
 
@@ -331,15 +359,25 @@ class MainWindow(QMainWindow):
         self.splitter.setCollapsible(0, False)
         self.splitter.setCollapsible(1, False)
 
+        self.splitter.setMinimumWidth(0)
         self.setCentralWidget(self.splitter)
         if self.sidebar.is_collapsed:
             self.splitter.setSizes([64, 1136])
         else:
-            self.splitter.setSizes([260, 940])
+            self.splitter.setSizes([240, 960])
+
+        # Dock options for smooth manual drag-and-drop docking
+        self.setDockOptions(
+            QMainWindow.AnimatedDocks | 
+            QMainWindow.AllowTabbedDocks | 
+            QMainWindow.AllowNestedDocks
+        )
+        self.setCorner(Qt.BottomRightCorner, Qt.RightDockWidgetArea)
+        self.setCorner(Qt.TopRightCorner, Qt.RightDockWidgetArea)
 
         # Detail Panel wrapped inside native QDockWidget (Floatable / Detachable / Closable)
         self.detail_panel = DetailPanel()
-        self.detail_panel.close_requested.connect(self.hide_detail_panel)
+        self.detail_panel.close_requested.connect(lambda: self.hide_detail_panel(force=True))
         self.detail_panel.save_model_data_requested.connect(self.save_model_data_signal.emit)
         self.detail_panel.add_trigger_requested.connect(self.add_trigger_signal.emit)
         self.detail_panel.delete_trigger_requested.connect(self.delete_trigger_signal.emit)
@@ -362,25 +400,10 @@ class MainWindow(QMainWindow):
 
         self.setObjectName("MainWindow")
 
-        # Setup Dock Widget in RightDockWidgetArea
-        dock_title = t("detail_dock_title")
-        self.detail_dock = ResettableDockWidget(dock_title, self)
-        self.detail_dock.setObjectName("DetailDockWidget")
-        self.detail_dock.setAllowedAreas(Qt.RightDockWidgetArea)
-        self.detail_dock.setFeatures(
-            QDockWidget.DockWidgetMovable | 
-            QDockWidget.DockWidgetFloatable | 
-            QDockWidget.DockWidgetClosable
-        )
-        self.detail_dock.setWidget(self.detail_panel)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.detail_dock)
-
-        # Save pristine docked layout state so we can restore docked position with 100% precision
-        self._pristine_docked_state = self.saveState()
-
-        # Initially hidden
-        self.detail_dock.hide()
-        self.detail_dock.visibilityChanged.connect(self._on_dock_visibility_changed)
+        # Initially detail_dock is None; created fresh on demand in show_detail_panel()
+        self.detail_dock = None
+        self._clean_dock_state = None
+        self.detail_panel.hide()
 
         # Connect context menu hide/unhide signals
         self.library_view.model_hide_requested.connect(self.model_hide_signal.emit)
@@ -397,10 +420,24 @@ class MainWindow(QMainWindow):
         self.sidebar.settings_requested.connect(self.settings_requested_signal.emit)
         self.sidebar.home_requested.connect(self.show_welcome)
         self.sidebar.agenda_requested.connect(self.show_agenda)
+        self.sidebar.workflow_builder_requested.connect(self.show_workflow_builder)
         self.sidebar.collapsed_toggled.connect(self._on_sidebar_collapsed_toggled)
 
+    def open_workflow_builder(self):
+        self.show_workflow_builder()
+
+    def show_workflow_builder(self):
+        self._record_nav_state(('workflow_builder',))
+        self.hide_detail_panel()
+        self.sidebar.set_active_item('workflow_builder')
+        self.center_stack.setCurrentIndex(7)
+        if self.center_stack.width() > 100 and hasattr(self, 'workflow_builder_view'):
+            self.workflow_builder_view.resize(self.center_stack.size())
+            self.workflow_builder_view.refresh_models(show_hidden=getattr(self, 'incognito_active', False))
+        self.workflow_builder_requested_signal.emit()
+
     def _on_sidebar_collapsed_toggled(self, collapsed: bool):
-        target_w = 64 if collapsed else 260
+        target_w = 64 if collapsed else 240
         self.sidebar.setFixedWidth(target_w)
         sizes = self.splitter.sizes()
         if sizes and len(sizes) >= 2:
@@ -411,7 +448,7 @@ class MainWindow(QMainWindow):
         self.sidebar.set_comfyui_visible(enabled)
         if not enabled:
             curr_idx = self.center_stack.currentIndex()
-            if curr_idx in (1, 4):  # 1 is library_view, 4 is workflow_view
+            if curr_idx in (1, 4, 7):  # 1 is library_view, 4 is workflow_view, 7 is workflow_builder_view
                 self.show_welcome()
             if hasattr(self, 'detail_panel') and getattr(self.detail_panel, 'mode', None) in ("MODEL", "WORKFLOW"):
                 self.hide_detail_panel()
@@ -474,6 +511,8 @@ class MainWindow(QMainWindow):
                 self.sidebar.library_selected.emit(state[1])
             elif kind == 'workflow_lib':
                 self.sidebar.workflow_library_selected.emit(state[2])
+            elif kind == 'workflow_builder':
+                self.show_workflow_builder()
         finally:
             self._nav_navigating = False
 
@@ -482,7 +521,7 @@ class MainWindow(QMainWindow):
         self.sidebar.set_active_item('home')
         self.center_stack.setCurrentIndex(0)
         self.hide_detail_panel()
-        if getattr(self.welcome_screen, '_corkboard_dirty', False):
+        if getattr(self.welcome_screen, '_corkboard_dirty', False) or (self.welcome_screen.corkboard_notes and len(self.welcome_screen.corkboard_cards) != len(self.welcome_screen.corkboard_notes)):
             import database
             cork_notes = database.get_corkboard_notes(show_hidden=getattr(self, 'incognito_active', False))
             self.welcome_screen.set_corkboard_notes(cork_notes)
@@ -558,33 +597,121 @@ class MainWindow(QMainWindow):
     def on_model_clicked(self, model_data):
         pass
 
+    def setup_detail_dock_signals(self):
+        """Configures properties, widget attachment, and signals for a newly created detail_dock."""
+        if self.detail_dock is None:
+            return
+        self.detail_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
+        self.detail_dock.setFeatures(
+            QDockWidget.DockWidgetMovable | 
+            QDockWidget.DockWidgetFloatable | 
+            QDockWidget.DockWidgetClosable
+        )
+        self.detail_dock.setWidget(self.detail_panel)
+        self.detail_dock.visibilityChanged.connect(self._on_dock_visibility_changed)
+
+    def dock_detail_panel(self):
+        """Cleanly places and docks the detail panel into the right dock panel."""
+        self.show_detail_panel()
+
+    def _on_dock_top_level_changed(self, floating: bool):
+        if hasattr(self, 'detail_panel') and hasattr(self.detail_panel, 'set_floating_state'):
+            self.detail_panel.set_floating_state(floating)
+
     def reset_detail_dock(self):
-        """Resets the detail dock widget back to its pristine right dock area position."""
-        if hasattr(self, '_pristine_docked_state') and self._pristine_docked_state:
-            if hasattr(self, 'detail_dock') and self.detail_dock:
-                self.addDockWidget(Qt.RightDockWidgetArea, self.detail_dock)
-            self.restoreState(self._pristine_docked_state)
+        """Resets the detail dock widget back to its docked right dock area position."""
+        self.show_detail_panel()
 
     def show_detail_panel(self, model_data=None):
-        """Shows the detail panel, guaranteeing it is docked in Qt.RightDockWidgetArea."""
-        if not hasattr(self, 'detail_dock') or not self.detail_dock:
-            return
+        """Shows the detail panel by creating a fresh QDockWidget in RightDockWidgetArea and restoring initial docked state."""
+        if self.detail_dock is not None and self.detail_dock.isFloating():
+            self.hide_detail_panel(force=True)
 
-        # If floating or hidden, restore pristine docked position
-        if self.detail_dock.isFloating() or not self.detail_dock.isVisible():
-            self.reset_detail_dock()
+        if self.detail_dock is None:
+            # 1. Ebeveyni ana pencere (self) olarak ver
+            self.detail_dock = ResettableDockWidget(self)
+            self.detail_dock.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            self.setup_detail_dock_signals()
 
+            # 2. Göstermeden (show) ÖNCE sağ panele dock et ve float'ı kapat
+            self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.detail_dock)
+            self.detail_dock.setFloating(False)
+        else:
+            self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.detail_dock)
+            self.detail_dock.setFloating(False)
+
+        if hasattr(self, 'detail_panel') and self.detail_panel:
+            self.detail_panel.set_floating_state(False)
+            self.detail_panel.show()
+
+        # 3. Görünür yap ve uygulama ilk açıldığındaki temiz sağ panel durumunu kaydet/geri yükle
+        self.detail_dock.setVisible(True)
         self.detail_dock.show()
+        try:
+            target_w = max(360, self.detail_panel.minimumWidth()) if hasattr(self, 'detail_panel') and self.detail_panel else 360
+            if self._clean_dock_state is None:
+                self.resizeDocks([self.detail_dock], [target_w], Qt.Orientation.Horizontal)
+                if self.layout() is not None:
+                    self.layout().activate()
+                self._clean_dock_state = self.saveState()
+            else:
+                self.restoreState(self._clean_dock_state)
+                self.detail_dock.setFloating(False)
+                self.detail_dock.setVisible(True)
+                self.detail_dock.show()
+                self.resizeDocks([self.detail_dock], [target_w], Qt.Orientation.Horizontal)
+                if self.layout() is not None:
+                    self.layout().activate()
+        except Exception:
+            pass
         self.detail_dock.raise_()
 
     def _on_dock_visibility_changed(self, visible: bool):
-        if not visible:
-            self.hide_detail_panel()
+        if not visible and hasattr(self, 'detail_panel') and self.detail_panel:
+            self.detail_panel.flush_pending_saves()
 
-    def hide_detail_panel(self):
-        """Hide detail panel dock widget."""
-        if hasattr(self, 'detail_dock') and self.detail_dock and self.detail_dock.isVisible():
-            self.detail_dock.hide()
+    def hide_detail_panel(self, force=False):
+        """Closes and destroys detail_dock (WA_DeleteOnClose) and flushes any pending saves.
+        If the dock widget is floating, keep it visible across page navigation unless force=True."""
+        has_dock = hasattr(self, 'detail_dock') and self.detail_dock is not None
+        if hasattr(self, 'detail_panel') and self.detail_panel and (has_dock or self.detail_panel.isVisible()):
+            self.detail_panel.flush_pending_saves()
+        if has_dock:
+            if self.detail_dock.isFloating() and not force:
+                return
+            self.detail_dock.close()
+            self.detail_dock = None
+
+    def restore_window_state(self):
+        """Restores window geometry and maximized state, defaulting to maximized on startup."""
+        import database
+        try:
+            geom_hex = database.get_setting("window_geometry", None)
+            if geom_hex:
+                from PySide6.QtCore import QByteArray
+                self.restoreGeometry(QByteArray.fromHex(geom_hex.encode('ascii')))
+        except Exception as e:
+            print(f"Error restoring window geometry: {e}")
+
+        # Default to "1" (maximized) so application opens in full screen
+        is_maximized = database.get_setting("window_maximized", "1")
+        if is_maximized == "1":
+            self.showMaximized()
+        else:
+            self.show()
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.WindowStateChange:
+            try:
+                import database
+                is_max = "1" if self.isMaximized() else "0"
+                database.set_setting("window_maximized", is_max)
+                if not self.isMaximized():
+                    geom_hex = self.saveGeometry().toHex().data().decode('ascii')
+                    database.set_setting("window_geometry", geom_hex)
+            except Exception:
+                pass
+        super().changeEvent(event)
 
     def show_toast(self, message: str, toast_type: str = "info", duration_ms: int = 2800):
         """Displays a non-blocking floating toast notification in the bottom-right corner."""
@@ -612,15 +739,21 @@ class MainWindow(QMainWindow):
                 self.notebooks_view.apply_theme(palette)
             if hasattr(self, 'notes_view') and self.notes_view:
                 self.notes_view.apply_theme(palette)
+            if hasattr(self, 'library_view') and self.library_view and hasattr(self.library_view, 'apply_theme'):
+                self.library_view.apply_theme(palette)
             if hasattr(self, 'agenda_view') and self.agenda_view:
                 cal_theme = get_calendar_theme_config(theme_name, custom_colors)
                 self.agenda_view.set_calendar_theme(cal_theme)
+                if hasattr(self.agenda_view, 'apply_theme'):
+                    self.agenda_view.apply_theme(palette)
             if hasattr(self, 'detail_panel') and self.detail_panel and hasattr(self.detail_panel, 'apply_theme'):
                 self.detail_panel.apply_theme(palette)
             if hasattr(self, 'welcome_screen') and self.welcome_screen and hasattr(self.welcome_screen, 'apply_theme'):
                 self.welcome_screen.apply_theme(palette)
             if hasattr(self, 'workflow_view') and self.workflow_view and hasattr(self.workflow_view, 'apply_theme'):
                 self.workflow_view.apply_theme(palette)
+            if hasattr(self, 'workflow_builder_view') and self.workflow_builder_view and hasattr(self.workflow_builder_view, 'apply_theme'):
+                self.workflow_builder_view.apply_theme(palette)
             if hasattr(self, 'detail_dock') and self.detail_dock and self.detail_dock.isFloating():
                 self.detail_dock.setStyleSheet(stylesheet)
         finally:
@@ -637,6 +770,8 @@ class MainWindow(QMainWindow):
         self.workflow_view.retranslate_ui()
         self.agenda_view.retranslate_ui()
         self.notebooks_view.retranslate_ui()
+        if hasattr(self, 'workflow_builder_view'):
+            self.workflow_builder_view.retranslate_ui()
         self.detail_panel.retranslate_ui()
         if hasattr(self, 'detail_dock') and self.detail_dock and hasattr(self.detail_dock, 'setWindowTitle'):
             self.detail_dock.setWindowTitle(t("detail_dock_title"))
@@ -670,6 +805,22 @@ class MainWindow(QMainWindow):
         super().dropEvent(event)
 
     def closeEvent(self, event):
+        try:
+            if hasattr(self, 'detail_panel') and self.detail_panel:
+                self.detail_panel.flush_pending_saves()
+        except Exception:
+            pass
+
+        try:
+            import database
+            is_max = "1" if self.isMaximized() else "0"
+            database.set_setting("window_maximized", is_max)
+            if not self.isMaximized():
+                geom_hex = self.saveGeometry().toHex().data().decode('ascii')
+                database.set_setting("window_geometry", geom_hex)
+        except Exception as e:
+            print(f"Error saving window geometry: {e}")
+
         if hasattr(self, 'agenda_view') and self.agenda_view:
             self.agenda_view.flush_pending_saves()
         super().closeEvent(event)

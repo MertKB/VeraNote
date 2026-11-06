@@ -14,6 +14,8 @@ Vera Note, özellikle ComfyUI ve Stable Diffusion ile çalışan geliştiriciler
 
 **ComfyUI PNG Workflow ve Metadata Ayrıştırma:** ComfyUI ile üretilen PNG görsellerin içerisindeki gömülü akış bilgilerini otomatik olarak okur, kaydedebilir ve daha sonra tekrar kullanabilirsiniz. Tüm bunları sadece sürükle-bırak yöntemiyle kolayca yapabilirsiniz.
 
+**ComfyUI İş Akışı Oluşturucu (Workflow Builder):** Karmaşık düğüm (node) ekranlarıyla uğraşmadan, doğrudan arayüz üzerinden kullanıma hazır ComfyUI iş akışları (Txt2Img ve Img2Img) oluşturabilirsiniz. Modelinizi, LoRA'larınızı, istemlerinizi (prompt) ve üretim parametrelerinizi (Sampler, Scheduler, Steps, CFG, Çözünürlük, Upscale) seçerek tek tıkla ComfyUI uyumlu JSON iş akışı olarak dışa aktarabilir veya kütüphanenize kaydedebilirsiniz.
+
 **Defterler ve Not Defteri:** İstem (prompt) fikirlerinizi, test sonuçlarınızı, parametre gruplarınızı veya günlük genel notlarınızı defterler altında hiyerarşik olarak düzenleyebilirsiniz. Entegre Markdown düzenleyicisi sayesinde notlarınızı dilediğiniz gibi biçimlendirebilirsiniz.
 
 **Ajanda, Günlük Notlar ve Rutin Takibi:** Çalışma temponuzu tek bir takvim üzerinden yönetebilirsiniz. Her güne özel hızlı notlar düşebilir, yapılacak işlerinizi (Tasks) takip edebilir ve düzenli çalışma alışkanlıklarınız için tekrarlayan rutinler oluşturabilirsiniz.

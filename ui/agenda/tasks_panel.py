@@ -150,21 +150,6 @@ class TasksPanel(QFrame):
         self.clear_completed_btn.setToolTip(t("agenda_clear_completed_tooltip"))
         self.clear_completed_btn.setCursor(Qt.PointingHandCursor)
         self.clear_completed_btn.setFixedHeight(26)
-        self.clear_completed_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #282A2E;
-                color: #94A3B8;
-                border: 1px solid #3F4248;
-                border-radius: 6px;
-                padding: 2px 8px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #3B1818;
-                color: #F87171;
-                border-color: #7F1D1D;
-            }
-        """)
         self.clear_completed_btn.clicked.connect(self._on_clear_completed_clicked)
         header_layout.addWidget(self.clear_completed_btn)
 
@@ -173,22 +158,6 @@ class TasksPanel(QFrame):
         self.routines_btn.setToolTip(t("agenda_routines_desc"))
         self.routines_btn.setCursor(Qt.PointingHandCursor)
         self.routines_btn.setFixedHeight(26)
-        self.routines_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #312E81;
-                color: #A5B4FC;
-                border: 1px solid #4338CA;
-                border-radius: 6px;
-                padding: 2px 10px;
-                font-size: 11px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #3730A3;
-                color: #FFFFFF;
-                border-color: #6366F1;
-            }
-        """)
         self.routines_btn.clicked.connect(self.routines_dialog_requested.emit)
         header_layout.addWidget(self.routines_btn)
 
@@ -216,7 +185,6 @@ class TasksPanel(QFrame):
 
         # Empty State Label inside container
         self.empty_label = QLabel(t("agenda_tasks_empty"))
-        self.empty_label.setStyleSheet("color: #71717A; font-size: 13px; font-style: italic; padding: 40px 10px;")
         self.empty_label.setAlignment(Qt.AlignCenter)
         self.tasks_layout.addWidget(self.empty_label)
 
@@ -226,41 +194,21 @@ class TasksPanel(QFrame):
         layout.addWidget(self.scroll_area, 1)
 
         # Quick Add Bar as Fixed Footer at Bottom
-        quick_add_frame = QFrame()
-        quick_add_frame.setStyleSheet("""
-            QFrame {
-                background-color: #1E1F22;
-                border: 1px solid #2F3136;
-                border-radius: 8px;
-                padding: 4px;
-            }
-        """)
-        quick_add_layout = QHBoxLayout(quick_add_frame)
+        self.quick_add_frame = QFrame()
+        self.quick_add_frame.setObjectName("TasksQuickAddBar")
+        quick_add_layout = QHBoxLayout(self.quick_add_frame)
         quick_add_layout.setContentsMargins(6, 4, 6, 4)
         quick_add_layout.setSpacing(8)
 
         # Task Title Input
         self.input_edit = QLineEdit()
         self.input_edit.setPlaceholderText(t("agenda_task_input_placeholder"))
-        self.input_edit.setStyleSheet("background: transparent; border: none; color: #E3E3E3; font-size: 13px;")
         self.input_edit.returnPressed.connect(self._on_add_clicked)
         quick_add_layout.addWidget(self.input_edit, 1)
 
         # Priority Dropdown
         self.priority_combo = QComboBox()
-        self.priority_combo.setStyleSheet("""
-            QComboBox {
-                background-color: #282A2E;
-                color: #E3E3E3;
-                border: 1px solid #3F4248;
-                border-radius: 6px;
-                padding: 4px 8px;
-                font-size: 11px;
-            }
-            QComboBox::drop-down {
-                border: none;
-            }
-        """)
+        self.priority_combo.setObjectName("TasksPriorityCombo")
         self._populate_priority_combo()
         quick_add_layout.addWidget(self.priority_combo)
 
@@ -272,7 +220,8 @@ class TasksPanel(QFrame):
         self.add_btn.clicked.connect(self._on_add_clicked)
         quick_add_layout.addWidget(self.add_btn)
 
-        layout.addWidget(quick_add_frame)
+        layout.addWidget(self.quick_add_frame)
+        self.apply_theme({})
 
     def _populate_priority_combo(self):
         self.priority_combo.clear()
@@ -339,6 +288,90 @@ class TasksPanel(QFrame):
 
     def _on_card_delete_requested(self, task_id: int):
         self.task_delete_requested.emit(task_id)
+
+    def apply_theme(self, palette: dict):
+        self.theme_palette = palette or {}
+        bg_card = self.theme_palette.get('bg_card', '#1E1F22')
+        bg_input = self.theme_palette.get('bg_input', '#282A2E')
+        border_col = self.theme_palette.get('border_color', '#2F3136')
+        text_main = self.theme_palette.get('text_main', '#E3E3E3')
+        text_muted = self.theme_palette.get('text_muted', '#94A3B8')
+        highlight = self.theme_palette.get('highlight_color', '#8AB4F8')
+        card_hover = self.theme_palette.get('card_hover', '#38383D')
+
+        if hasattr(self, 'clear_completed_btn'):
+            self.clear_completed_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {bg_input};
+                    color: {text_muted};
+                    border: 1px solid {border_col};
+                    border-radius: 6px;
+                    padding: 2px 8px;
+                    font-size: 11px;
+                }}
+                QPushButton:hover {{
+                    background-color: {card_hover};
+                    color: {highlight};
+                    border-color: {highlight};
+                }}
+            """)
+
+        if hasattr(self, 'routines_btn'):
+            self.routines_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {bg_input};
+                    color: {highlight};
+                    border: 1px solid {border_col};
+                    border-radius: 6px;
+                    padding: 2px 10px;
+                    font-size: 11px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: {card_hover};
+                    color: {text_main};
+                    border-color: {highlight};
+                }}
+            """)
+
+        if hasattr(self, 'quick_add_frame'):
+            self.quick_add_frame.setStyleSheet(f"""
+                QFrame#TasksQuickAddBar {{
+                    background-color: {bg_card};
+                    border: 1px solid {border_col};
+                    border-radius: 8px;
+                    padding: 4px;
+                }}
+            """)
+
+        if hasattr(self, 'input_edit'):
+            self.input_edit.setStyleSheet(f"background: transparent; border: none; color: {text_main}; font-size: 13px;")
+
+        if hasattr(self, 'priority_combo'):
+            self.priority_combo.setStyleSheet(f"""
+                QComboBox#TasksPriorityCombo {{
+                    background-color: {bg_input};
+                    color: {text_main};
+                    border: 1px solid {border_col};
+                    border-radius: 6px;
+                    padding: 4px 8px;
+                    font-size: 11px;
+                }}
+                QComboBox#TasksPriorityCombo::drop-down {{
+                    border: none;
+                }}
+                QComboBox#TasksPriorityCombo QAbstractItemView {{
+                    background-color: {bg_card};
+                    color: {text_main};
+                    selection-background-color: {self.theme_palette.get('card_selected', bg_input)};
+                }}
+            """)
+        
+        if hasattr(self, 'empty_label'):
+            self.empty_label.setStyleSheet(f"color: {text_muted}; font-size: 13px; font-style: italic; padding: 40px 10px;")
+
+        if hasattr(self, 'title_label'):
+            self.title_label.setStyleSheet(f"color: {text_main}; font-size: 15px; font-weight: bold;")
 
     def retranslate_ui(self):
         self.title_label.setText(t("agenda_tasks_title"))

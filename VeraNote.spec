@@ -7,6 +7,8 @@ block_cipher = None
 
 added_files = [
     ('assets', 'assets'),
+    ('templates', 'templates'),
+    ('services', 'services'),
     ('ui', 'ui'),
     ('utils', 'utils'),
 ]
@@ -26,7 +28,18 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'numpy',
+        'scipy',
+        'matplotlib',
+        'pandas',
+        'tkinter',
+        'PySide6.QtNetwork',
+        'PySide6.QtQml',
+        'PySide6.QtQuick',
+        'PySide6.QtSql',
+        'PySide6.QtTest',
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

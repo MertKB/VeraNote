@@ -48,3 +48,6 @@ images/
 scratch/
 .cursorrules
 GEMINI.md
+tests/
+test_*.py
+.pytest_cache/

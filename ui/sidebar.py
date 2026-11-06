@@ -29,6 +29,7 @@ class Sidebar(QWidget):
     library_selected = Signal(str) # model_library_name
     workflow_library_selected = Signal(str) # workflow_library_name
     delete_workflow_library_requested = Signal(str) # workflow_library_name
+    workflow_builder_requested = Signal()
     settings_requested = Signal()
     collapsed_toggled = Signal(bool)
 
@@ -53,7 +54,7 @@ class Sidebar(QWidget):
         except Exception:
             self.is_collapsed = False
 
-        self.setFixedWidth(64 if self.is_collapsed else 260)
+        self.setFixedWidth(64 if self.is_collapsed else 230)
         self.init_ui()
 
     def init_palette(self):
@@ -67,9 +68,7 @@ class Sidebar(QWidget):
             self.current_palette = {}
 
     def get_active_color(self):
-        if not hasattr(self, 'current_palette') or not self.current_palette:
-            self.init_palette()
-        return self.current_palette.get('border_focus', '#8AB4F8')
+        return "#FFFFFF"
 
     def get_unified_color(self):
         try:
@@ -89,7 +88,7 @@ class Sidebar(QWidget):
         if hasattr(self, 'active_item_type'):
             self.set_active_item(self.active_item_type)
         else:
-            self.set_active_item('home')
+            self.set_active_item('all_notes')
 
     def init_ui(self):
         outer_layout = QVBoxLayout(self)
@@ -114,35 +113,40 @@ class Sidebar(QWidget):
         self.container = QWidget()
         self.container.setObjectName("SidebarContainer")
         self.main_layout = QVBoxLayout(self.container)
-        self.main_layout.setContentsMargins(10, 12, 10, 12)
-        self.main_layout.setSpacing(8)
+        self.main_layout.setContentsMargins(8, 10, 8, 12)
+        self.main_layout.setSpacing(4)
 
         # --- HEADER (Brand + Lock + Collapse Button) ---
         self.header_widget = QFrame()
         self.header_widget.setObjectName("SidebarHeader")
+        self.header_widget.setFixedSize(224, 40)
         self.header_widget.setStyleSheet("QFrame#SidebarHeader { background-color: transparent; border: none; }")
         
         self.header_layout = QHBoxLayout(self.header_widget)
-        self.header_layout.setContentsMargins(4, 4, 4, 4)
-        self.header_layout.setSpacing(6)
+        self.header_layout.setContentsMargins(4, 2, 4, 2)
+        self.header_layout.setSpacing(8)
 
-        # Brand application vector logo
+        # Brand application vector logo (nav_concept.png)
         self.brand_logo = QLabel()
         self.brand_logo.setObjectName("SidebarBrandLogo")
-        self.brand_logo.setFixedSize(32, 32)
+        self.brand_logo.setFixedSize(28, 28)
         self.brand_logo.setScaledContents(True)
-        self.brand_logo.setPixmap(get_pixmap("brand", self.get_unified_color(), 32))
+        self.brand_logo.setCursor(Qt.PointingHandCursor)
+        self.brand_logo.setPixmap(get_pixmap("brand", self.get_unified_color(), 28))
+        self.brand_logo.mousePressEvent = lambda e: (self.set_active_item('home'), self.home_requested.emit())
 
-        # Brand label
+        # Brand label ("Vera Note")
         self.brand_label = QLabel("Vera Note")
         self.brand_label.setObjectName("SidebarTitle")
+        self.brand_label.setCursor(Qt.PointingHandCursor)
+        self.brand_label.mousePressEvent = lambda e: (self.set_active_item('home'), self.home_requested.emit())
         
-        # Incognito detective badge (shown only when Incognito mode is active)
+        # Incognito detective badge
         self.lock_badge = QLabel()
         self.lock_badge.setObjectName("SidebarLockBadge")
-        self.lock_badge.setFixedSize(22, 22)
+        self.lock_badge.setFixedSize(20, 20)
         self.lock_badge.setScaledContents(True)
-        self.lock_badge.setPixmap(get_pixmap("incognito", "#D7AEF5", 22))
+        self.lock_badge.setPixmap(get_pixmap("incognito", "#D7AEF5", 20))
         self.lock_badge.setToolTip(t("status_incognito_on"))
         self.lock_badge.setVisible(False)
 
@@ -152,10 +156,10 @@ class Sidebar(QWidget):
         # Collapse / Expand Rail Toggle Button (uses btn_sidebar.png)
         self.collapse_btn = QPushButton()
         self.collapse_btn.setObjectName("SidebarCollapseBtn")
-        self.collapse_btn.setFixedSize(32, 32)
+        self.collapse_btn.setFixedSize(28, 28)
         self.collapse_btn.setCursor(Qt.PointingHandCursor)
-        self.collapse_btn.setIcon(get_icon("sidebar", self.get_unified_color(), 20))
-        self.collapse_btn.setIconSize(QSize(20, 20))
+        self.collapse_btn.setIcon(get_icon("sidebar", self.get_unified_color(), 18))
+        self.collapse_btn.setIconSize(QSize(18, 18))
         self.collapse_btn.setToolTip(t("sidebar_collapse"))
         self.collapse_btn.clicked.connect(self.toggle_collapsed)
 
@@ -164,25 +168,24 @@ class Sidebar(QWidget):
         self.header_layout.addWidget(self.lock_badge)
         self.header_layout.addWidget(self.header_stretch)
         self.header_layout.addWidget(self.collapse_btn)
-        
         self.main_layout.addWidget(self.header_widget, 0, Qt.AlignCenter)
 
-        # Separator Line (centered divider)
-        self.sep_line = QFrame()
-        self.sep_line.setFrameShape(QFrame.HLine)
-        self.sep_line.setFrameShadow(QFrame.Sunken)
-        self.sep_line.setStyleSheet("background-color: #2F2F2F; margin: 4px 0px;")
-        self.main_layout.addWidget(self.sep_line, 0, Qt.AlignCenter)
+        # Header Separator Line
+        self.sep_header = QFrame()
+        self.sep_header.setProperty("class", "SidebarDivider")
+        self.sep_header.setFixedSize(224, 1)
+        self.main_layout.addWidget(self.sep_header, 0, Qt.AlignCenter)
 
-        # --- HOME BUTTON ---
+        # --- ANA SAYFA (HOME BUTTON) ---
         self.home_btn = QPushButton()
         self.home_btn.setObjectName("HomeBtn")
-        self.home_btn.setFixedSize(236, 40)
+        self.home_btn.setFixedSize(224, 38)
+        self.home_btn.setCursor(Qt.PointingHandCursor)
         self.home_btn.clicked.connect(lambda: (self.set_active_item('home'), self.home_requested.emit()))
         
         self.home_layout = QHBoxLayout(self.home_btn)
-        self.home_layout.setContentsMargins(16, 0, 16, 0)
-        self.home_layout.setSpacing(12)
+        self.home_layout.setContentsMargins(10, 0, 10, 0)
+        self.home_layout.setSpacing(10)
         
         self.home_icon = QLabel()
         self.home_icon.setFixedSize(20, 20)
@@ -201,15 +204,23 @@ class Sidebar(QWidget):
         self.home_layout.addWidget(self.home_stretch)
         self.main_layout.addWidget(self.home_btn, 0, Qt.AlignCenter)
 
-        # --- AGENDA BUTTON ---
+        # ==========================================
+        # SECTION 1: NOTLAR
+        # ==========================================
+        self.notes_section_label = QLabel(t("sidebar_section_notes"))
+        self.notes_section_label.setProperty("class", "SidebarSectionHeader")
+        self.main_layout.addWidget(self.notes_section_label)
+
+        # 1. Ajanda Button
         self.agenda_btn = QPushButton()
         self.agenda_btn.setObjectName("AgendaBtn")
-        self.agenda_btn.setFixedSize(236, 40)
+        self.agenda_btn.setFixedSize(224, 38)
+        self.agenda_btn.setCursor(Qt.PointingHandCursor)
         self.agenda_btn.clicked.connect(lambda: (self.set_active_item('agenda'), self.agenda_requested.emit()))
         
         self.agenda_layout = QHBoxLayout(self.agenda_btn)
-        self.agenda_layout.setContentsMargins(16, 0, 16, 0)
-        self.agenda_layout.setSpacing(12)
+        self.agenda_layout.setContentsMargins(10, 0, 10, 0)
+        self.agenda_layout.setSpacing(10)
         
         self.agenda_icon = QLabel()
         self.agenda_icon.setFixedSize(20, 20)
@@ -228,43 +239,16 @@ class Sidebar(QWidget):
         self.agenda_layout.addWidget(self.agenda_stretch)
         self.main_layout.addWidget(self.agenda_btn, 0, Qt.AlignCenter)
 
-        # --- SECTION: NEW NOTE BUTTON ---
-        self.new_note_btn = QPushButton()
-        self.new_note_btn.setObjectName("NewNoteBtn")
-        self.new_note_btn.setFixedSize(236, 40)
-        self.new_note_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_note_requested.emit()))
-        
-        self.new_note_layout = QHBoxLayout(self.new_note_btn)
-        self.new_note_layout.setContentsMargins(16, 0, 16, 0)
-        self.new_note_layout.setSpacing(12)
-        
-        self.new_note_icon = QLabel()
-        self.new_note_icon.setFixedSize(20, 20)
-        self.new_note_icon.setScaledContents(True)
-        self.new_note_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.new_note_icon.setPixmap(get_pixmap("add", "#FFFFFF", 20))
-        
-        self.new_note_label = QLabel(t("new_note"))
-        self.new_note_label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.new_note_label.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
-        
-        self.new_note_stretch = QWidget()
-        self.new_note_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        
-        self.new_note_layout.addWidget(self.new_note_icon, 0, Qt.AlignCenter)
-        self.new_note_layout.addWidget(self.new_note_label)
-        self.new_note_layout.addWidget(self.new_note_stretch)
-        self.main_layout.addWidget(self.new_note_btn, 0, Qt.AlignCenter)
-
-        # --- ALL NOTES BUTTON ---
+        # 2. Notlar Button (with Capsule Counter + 32x32 '+' button)
         self.all_notes_btn = QPushButton()
         self.all_notes_btn.setObjectName("AllNotesBtn")
-        self.all_notes_btn.setFixedSize(236, 40)
+        self.all_notes_btn.setFixedSize(224, 40)
+        self.all_notes_btn.setCursor(Qt.PointingHandCursor)
         self.all_notes_btn.clicked.connect(lambda: (self.set_active_item('all_notes'), self.all_notes_requested.emit()))
         
         self.all_notes_layout = QHBoxLayout(self.all_notes_btn)
-        self.all_notes_layout.setContentsMargins(16, 0, 16, 0)
-        self.all_notes_layout.setSpacing(12)
+        self.all_notes_layout.setContentsMargins(10, 0, 4, 0)
+        self.all_notes_layout.setSpacing(8)
         
         self.all_notes_icon = QLabel()
         self.all_notes_icon.setFixedSize(20, 20)
@@ -275,60 +259,45 @@ class Sidebar(QWidget):
         self.all_notes_label = QLabel(t("notes"))
         self.all_notes_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
+        self.all_notes_stretch = QWidget()
+        self.all_notes_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
         self.all_notes_badge = QLabel("0")
         self.all_notes_badge.setObjectName("AllNotesBadge")
         self.all_notes_badge.setAlignment(Qt.AlignCenter)
-        self.all_notes_badge.setFixedSize(24, 20)
         self.all_notes_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
-        
-        self.all_notes_stretch = QWidget()
-        self.all_notes_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        # 32x32 '+' button to create new note directly from Notlar row
+        self.new_note_mini_btn = QPushButton("+")
+        self.new_note_mini_btn.setProperty("class", "SidebarMiniAddBtn")
+        self.new_note_mini_btn.setFixedSize(32, 32)
+        self.new_note_mini_btn.setCursor(Qt.PointingHandCursor)
+        self.new_note_mini_btn.setToolTip(t("new_note"))
+        self.new_note_mini_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_note_requested.emit()))
+
+        # Backward compatibility alias
+        self.new_note_btn = self.new_note_mini_btn
+        self.new_note_icon = QLabel()
+        self.new_note_label = QLabel()
+        self.new_note_stretch = QWidget()
         
         self.all_notes_layout.addWidget(self.all_notes_icon, 0, Qt.AlignCenter)
         self.all_notes_layout.addWidget(self.all_notes_label)
         self.all_notes_layout.addWidget(self.all_notes_stretch)
         self.all_notes_layout.addWidget(self.all_notes_badge)
+        self.all_notes_layout.addWidget(self.new_note_mini_btn)
         self.main_layout.addWidget(self.all_notes_btn, 0, Qt.AlignCenter)
 
-        # --- SECTION: NEW NOTEBOOK BUTTON ---
-        self.new_notebook_btn = QPushButton()
-        self.new_notebook_btn.setObjectName("NewNotebookBtn")
-        self.new_notebook_btn.setFixedSize(236, 40)
-        self.new_notebook_btn.setCursor(Qt.PointingHandCursor)
-        self.new_notebook_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_notebook_requested.emit()))
-
-        self.new_notebook_layout = QHBoxLayout(self.new_notebook_btn)
-        self.new_notebook_layout.setContentsMargins(16, 0, 16, 0)
-        self.new_notebook_layout.setSpacing(12)
-
-        self.new_notebook_icon = QLabel()
-        self.new_notebook_icon.setFixedSize(20, 20)
-        self.new_notebook_icon.setScaledContents(True)
-        self.new_notebook_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.new_notebook_icon.setPixmap(get_pixmap("add", "#FFFFFF", 20))
-
-        self.new_notebook_label = QLabel(t("new_notebook"))
-        self.new_notebook_label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.new_notebook_label.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
-
-        self.new_notebook_stretch = QWidget()
-        self.new_notebook_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        self.new_notebook_layout.addWidget(self.new_notebook_icon, 0, Qt.AlignCenter)
-        self.new_notebook_layout.addWidget(self.new_notebook_label)
-        self.new_notebook_layout.addWidget(self.new_notebook_stretch)
-        self.main_layout.addWidget(self.new_notebook_btn, 0, Qt.AlignCenter)
-
-        # --- SECTION: NOTEBOOKS (NOT DEFTERLERİ) ---
+        # 3. Not Defterleri (Notebooks) Header (with Capsule Counter + 32x32 '+' button)
         self.notebooks_header = QPushButton()
         self.notebooks_header.setObjectName("NotebooksHeaderBtn")
-        self.notebooks_header.setFixedSize(236, 40)
+        self.notebooks_header.setFixedSize(224, 40)
         self.notebooks_header.setCursor(Qt.PointingHandCursor)
         self.notebooks_header.clicked.connect(self.on_notebooks_header_clicked)
 
         self.notebooks_h_layout = QHBoxLayout(self.notebooks_header)
-        self.notebooks_h_layout.setContentsMargins(16, 0, 16, 0)
-        self.notebooks_h_layout.setSpacing(12)
+        self.notebooks_h_layout.setContentsMargins(10, 0, 4, 0)
+        self.notebooks_h_layout.setSpacing(8)
 
         self.notebooks_icon = QLabel()
         self.notebooks_icon.setFixedSize(20, 20)
@@ -339,39 +308,68 @@ class Sidebar(QWidget):
         self.notebooks_label = QLabel(t("notebooks_title"))
         self.notebooks_label.setAttribute(Qt.WA_TransparentForMouseEvents)
 
+        self.notebooks_stretch = QWidget()
+        self.notebooks_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
         self.notebooks_badge = QLabel("0")
         self.notebooks_badge.setObjectName("NotebooksBadge")
         self.notebooks_badge.setAlignment(Qt.AlignCenter)
-        self.notebooks_badge.setFixedSize(24, 20)
         self.notebooks_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
 
-        self.notebooks_stretch = QWidget()
-        self.notebooks_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        # 32x32 '+' button to create new notebook directly from Not Defterleri row
+        self.new_notebook_mini_btn = QPushButton("+")
+        self.new_notebook_mini_btn.setProperty("class", "SidebarMiniAddBtn")
+        self.new_notebook_mini_btn.setFixedSize(32, 32)
+        self.new_notebook_mini_btn.setCursor(Qt.PointingHandCursor)
+        self.new_notebook_mini_btn.setToolTip(t("new_notebook"))
+        self.new_notebook_mini_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_notebook_requested.emit()))
+
+        # Backward compatibility aliases
+        self.new_notebook_btn = self.new_notebook_mini_btn
+        self.new_notebook_icon = QLabel()
+        self.new_notebook_label = QLabel()
 
         self.notebooks_h_layout.addWidget(self.notebooks_icon, 0, Qt.AlignCenter)
         self.notebooks_h_layout.addWidget(self.notebooks_label)
         self.notebooks_h_layout.addWidget(self.notebooks_stretch)
         self.notebooks_h_layout.addWidget(self.notebooks_badge)
+        self.notebooks_h_layout.addWidget(self.new_notebook_mini_btn)
         self.main_layout.addWidget(self.notebooks_header, 0, Qt.AlignCenter)
 
+        # Tree Container for Notebooks (if user configures sidebar notebooks limit > 0)
+        self.notebooks_tree_widget = QWidget()
+        self.notebooks_tree_layout = QHBoxLayout(self.notebooks_tree_widget)
+        self.notebooks_tree_layout.setContentsMargins(22, 0, 4, 0)
+        self.notebooks_tree_layout.setSpacing(10)
+
+        self.notebooks_tree_line = QFrame()
+        self.notebooks_tree_line.setFixedWidth(2)
+        self.notebooks_tree_line.setStyleSheet("background-color: #38383A; border: none; border-radius: 1px;")
+
         self.notebooks_list = StaticListWidget()
+        self.notebooks_list.setObjectName("NotebooksList")
         self.notebooks_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.notebooks_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.notebooks_list.setFocusPolicy(Qt.NoFocus)
         self.notebooks_list.itemClicked.connect(self.on_notebook_clicked)
         self.notebooks_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.notebooks_list.customContextMenuRequested.connect(self.on_notebook_context_menu)
-        self.main_layout.addWidget(self.notebooks_list)
 
-        # --- TRASH BUTTON ---
+        self.notebooks_tree_layout.addWidget(self.notebooks_tree_line)
+        self.notebooks_tree_layout.addWidget(self.notebooks_list)
+        self.notebooks_tree_widget.setVisible(False)
+        self.main_layout.addWidget(self.notebooks_tree_widget)
+
+        # 4. Çöp Kutusu Button (with Capsule Counter aligned with above rows)
         self.trash_btn = QPushButton()
         self.trash_btn.setObjectName("TrashBtn")
-        self.trash_btn.setFixedSize(236, 40)
+        self.trash_btn.setFixedSize(224, 40)
+        self.trash_btn.setCursor(Qt.PointingHandCursor)
         self.trash_btn.clicked.connect(lambda: (self.set_active_item('trash'), self.trash_requested.emit()))
         
         self.trash_layout = QHBoxLayout(self.trash_btn)
-        self.trash_layout.setContentsMargins(16, 0, 16, 0)
-        self.trash_layout.setSpacing(12)
+        self.trash_layout.setContentsMargins(10, 0, 4, 0)
+        self.trash_layout.setSpacing(8)
         
         self.trash_icon = QLabel()
         self.trash_icon.setFixedSize(20, 20)
@@ -382,31 +380,146 @@ class Sidebar(QWidget):
         self.trash_label = QLabel(t("trash"))
         self.trash_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         
+        self.trash_stretch = QWidget()
+        self.trash_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
         self.trash_badge = QLabel("0")
         self.trash_badge.setObjectName("TrashBadge")
         self.trash_badge.setAlignment(Qt.AlignCenter)
-        self.trash_badge.setFixedSize(24, 20)
         self.trash_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
-        
-        self.trash_stretch = QWidget()
-        self.trash_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        # 32px invisible spacer so counter aligns identically with rows with a 32x32 '+' button
+        self.trash_spacer = QWidget()
+        self.trash_spacer.setFixedSize(32, 32)
         
         self.trash_layout.addWidget(self.trash_icon, 0, Qt.AlignCenter)
         self.trash_layout.addWidget(self.trash_label)
         self.trash_layout.addWidget(self.trash_stretch)
         self.trash_layout.addWidget(self.trash_badge)
+        self.trash_layout.addWidget(self.trash_spacer)
         self.main_layout.addWidget(self.trash_btn, 0, Qt.AlignCenter)
 
-        # --- SECTION: MODELS (MODELLER) ---
+        # Separator Line 1 (between NOTLAR and AI & ÜRETİM)
+        self.sep_line_1 = QFrame()
+        self.sep_line_1.setProperty("class", "SidebarDivider")
+        self.sep_line_1.setFixedSize(224, 1)
+        self.main_layout.addWidget(self.sep_line_1, 0, Qt.AlignCenter)
+
+        # ==========================================
+        # SECTION 2: AI & ÜRETİM
+        # ==========================================
+        self.ai_section_label = QLabel(t("sidebar_section_ai"))
+        self.ai_section_label.setProperty("class", "SidebarSectionHeader")
+        self.main_layout.addWidget(self.ai_section_label)
+
+        # 5. İş Akışı Oluşturucu (Special Outlined Card Button)
+        self.workflow_builder_btn = QPushButton()
+        self.workflow_builder_btn.setObjectName("WorkflowBuilderBtn")
+        self.workflow_builder_btn.setFixedSize(224, 42)
+        self.workflow_builder_btn.setCursor(Qt.PointingHandCursor)
+        self.workflow_builder_btn.clicked.connect(lambda: (self.clear_list_selections(), self.set_active_item('workflow_builder'), self.workflow_builder_requested.emit()))
+
+        self.wf_builder_layout = QHBoxLayout(self.workflow_builder_btn)
+        self.wf_builder_layout.setContentsMargins(10, 0, 10, 0)
+        self.wf_builder_layout.setSpacing(10)
+
+        self.wf_builder_icon = QLabel()
+        self.wf_builder_icon.setFixedSize(20, 20)
+        self.wf_builder_icon.setScaledContents(True)
+        self.wf_builder_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.wf_builder_icon.setPixmap(get_pixmap("builder", self.get_unified_color(), 20))
+
+        self.wf_builder_label = QLabel(t("workflow_builder"))
+        self.wf_builder_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self.wf_builder_stretch = QWidget()
+        self.wf_builder_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        self.wf_builder_layout.addWidget(self.wf_builder_icon, 0, Qt.AlignCenter)
+        self.wf_builder_layout.addWidget(self.wf_builder_label)
+        self.wf_builder_layout.addWidget(self.wf_builder_stretch)
+        self.main_layout.addWidget(self.workflow_builder_btn, 0, Qt.AlignCenter)
+
+        # 6. İş Akışları Header (with Capsule Counter + 32x32 '+' button)
+        self.lib_header = QPushButton()
+        self.lib_header.setObjectName("LibHeaderBtn")
+        self.lib_header.setFixedSize(224, 40)
+        self.lib_header.setCursor(Qt.PointingHandCursor)
+        self.lib_header.clicked.connect(self.on_lib_header_clicked)
+        
+        self.lib_h_layout = QHBoxLayout(self.lib_header)
+        self.lib_h_layout.setContentsMargins(10, 0, 4, 0)
+        self.lib_h_layout.setSpacing(8)
+        
+        self.lib_icon = QLabel()
+        self.lib_icon.setFixedSize(20, 20)
+        self.lib_icon.setScaledContents(True)
+        self.lib_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.lib_icon.setPixmap(get_pixmap("workflows", self.get_unified_color(), 20))
+
+        self.lib_label = QLabel(t("workflows_title"))
+        self.lib_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self.lib_stretch = QWidget()
+        self.lib_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        self.workflows_badge = QLabel("0")
+        self.workflows_badge.setObjectName("WorkflowsBadge")
+        self.workflows_badge.setAlignment(Qt.AlignCenter)
+        self.workflows_badge.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        # 32x32 '+' button to create new workflow library directly from İş Akışları row
+        self.new_lib_mini_btn = QPushButton("+")
+        self.new_lib_mini_btn.setProperty("class", "SidebarMiniAddBtn")
+        self.new_lib_mini_btn.setFixedSize(32, 32)
+        self.new_lib_mini_btn.setCursor(Qt.PointingHandCursor)
+        self.new_lib_mini_btn.setToolTip(t("new_lib"))
+        self.new_lib_mini_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_library_requested.emit()))
+
+        # Backward compatibility alias
+        self.new_lib_btn = self.new_lib_mini_btn
+
+        self.lib_h_layout.addWidget(self.lib_icon, 0, Qt.AlignCenter)
+        self.lib_h_layout.addWidget(self.lib_label)
+        self.lib_h_layout.addWidget(self.lib_stretch)
+        self.lib_h_layout.addWidget(self.workflows_badge)
+        self.lib_h_layout.addWidget(self.new_lib_mini_btn)
+        self.main_layout.addWidget(self.lib_header, 0, Qt.AlignCenter)
+
+        # Workflow Libraries Tree Container (hidden if only 1 general library, or displayed with tree line)
+        self.workflows_tree_widget = QWidget()
+        self.workflows_tree_layout = QHBoxLayout(self.workflows_tree_widget)
+        self.workflows_tree_layout.setContentsMargins(22, 0, 4, 0)
+        self.workflows_tree_layout.setSpacing(10)
+
+        self.workflows_tree_line = QFrame()
+        self.workflows_tree_line.setFixedWidth(2)
+        self.workflows_tree_line.setStyleSheet("background-color: #38383A; border: none; border-radius: 1px;")
+
+        self.libraries_list = StaticListWidget()
+        self.libraries_list.setObjectName("LibrariesList")
+        self.libraries_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.libraries_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.libraries_list.setFocusPolicy(Qt.NoFocus)
+        self.libraries_list.itemClicked.connect(self.on_library_clicked)
+        self.libraries_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.libraries_list.customContextMenuRequested.connect(self.on_workflow_lib_context_menu)
+
+        self.workflows_tree_layout.addWidget(self.workflows_tree_line)
+        self.workflows_tree_layout.addWidget(self.libraries_list)
+        self.workflows_tree_widget.setVisible(False)
+        self.main_layout.addWidget(self.workflows_tree_widget)
+
+        # 7. Modeller Category Header
         self.models_header = QPushButton()
         self.models_header.setObjectName("ModelsHeaderBtn")
-        self.models_header.setFixedSize(236, 40)
+        self.models_header.setFixedSize(224, 38)
         self.models_header.setCursor(Qt.PointingHandCursor)
         self.models_header.clicked.connect(self.on_models_header_clicked)
         
         self.models_h_layout = QHBoxLayout(self.models_header)
-        self.models_h_layout.setContentsMargins(16, 0, 16, 0)
-        self.models_h_layout.setSpacing(12)
+        self.models_h_layout.setContentsMargins(10, 0, 10, 0)
+        self.models_h_layout.setSpacing(10)
         
         self.models_icon = QLabel()
         self.models_icon.setFixedSize(20, 20)
@@ -425,69 +538,48 @@ class Sidebar(QWidget):
         self.models_h_layout.addWidget(self.models_stretch)
         self.main_layout.addWidget(self.models_header, 0, Qt.AlignCenter)
 
+        # Tree Container for Model Libraries with Vertical Guide Line
+        self.models_tree_widget = QWidget()
+        self.models_tree_layout = QHBoxLayout(self.models_tree_widget)
+        self.models_tree_layout.setContentsMargins(22, 0, 4, 0)
+        self.models_tree_layout.setSpacing(10)
+
+        self.models_tree_line = QFrame()
+        self.models_tree_line.setFixedWidth(2)
+        self.models_tree_line.setStyleSheet("background-color: #38383A; border: none; border-radius: 1px;")
+
         self.models_list = StaticListWidget()
+        self.models_list.setObjectName("ModelsList")
+        self.models_list.setWordWrap(True)
         self.models_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.models_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.models_list.setFocusPolicy(Qt.NoFocus)
         self.models_list.itemClicked.connect(self.on_model_clicked)
-        self.main_layout.addWidget(self.models_list)
 
-        # --- SECTION: WORKFLOW LIBRARIES (KİTAPLIKLAR) ---
-        self.new_lib_btn = QPushButton(f"  {t('new_lib')}")
-        self.new_lib_btn.setObjectName("NewLibBtn")
-        self.new_lib_btn.setIcon(get_icon("add", "#FFFFFF", 18))
-        self.new_lib_btn.setIconSize(QSize(18, 18))
-        self.new_lib_btn.setFixedSize(236, 40)
-        self.new_lib_btn.clicked.connect(lambda: (self.clear_list_selections(), self.new_library_requested.emit()))
-        self.main_layout.addWidget(self.new_lib_btn, 0, Qt.AlignCenter)
+        self.models_tree_layout.addWidget(self.models_tree_line)
+        self.models_tree_layout.addWidget(self.models_list)
+        self.main_layout.addWidget(self.models_tree_widget)
 
-        self.lib_header = QPushButton()
-        self.lib_header.setObjectName("LibHeaderBtn")
-        self.lib_header.setFixedSize(236, 40)
-        self.lib_header.setCursor(Qt.PointingHandCursor)
-        self.lib_header.clicked.connect(self.on_lib_header_clicked)
-        
-        self.lib_h_layout = QHBoxLayout(self.lib_header)
-        self.lib_h_layout.setContentsMargins(16, 0, 16, 0)
-        self.lib_h_layout.setSpacing(12)
-        
-        self.lib_icon = QLabel()
-        self.lib_icon.setFixedSize(20, 20)
-        self.lib_icon.setScaledContents(True)
-        self.lib_icon.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.lib_icon.setPixmap(get_pixmap("workflows", self.get_unified_color(), 20))
-
-        self.lib_label = QLabel(t("workflows_title"))
-        self.lib_label.setAttribute(Qt.WA_TransparentForMouseEvents)
-
-        self.lib_stretch = QWidget()
-        self.lib_stretch.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        self.lib_h_layout.addWidget(self.lib_icon, 0, Qt.AlignCenter)
-        self.lib_h_layout.addWidget(self.lib_label)
-        self.lib_h_layout.addWidget(self.lib_stretch)
-        self.main_layout.addWidget(self.lib_header, 0, Qt.AlignCenter)
-
-        self.libraries_list = StaticListWidget()
-        self.libraries_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.libraries_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.libraries_list.setFocusPolicy(Qt.NoFocus)
-        self.libraries_list.itemClicked.connect(self.on_library_clicked)
-        self.libraries_list.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.libraries_list.customContextMenuRequested.connect(self.on_workflow_lib_context_menu)
-        self.main_layout.addWidget(self.libraries_list)
-
+        # Stretch to push settings all the way to the very bottom
         self.main_layout.addStretch()
 
-        # Settings Button at bottom
+        # ==========================================
+        # SECTION 3: AYARLAR (At the bottom)
+        # ==========================================
+        self.settings_section_label = QLabel(t("sidebar_section_settings"))
+        self.settings_section_label.setProperty("class", "SidebarSectionHeader")
+        self.main_layout.addWidget(self.settings_section_label)
+
+        # 8. Ayarlar Button
         self.settings_btn = QPushButton()
         self.settings_btn.setObjectName("SettingsBtn")
-        self.settings_btn.setFixedSize(236, 40)
+        self.settings_btn.setFixedSize(224, 38)
+        self.settings_btn.setCursor(Qt.PointingHandCursor)
         self.settings_btn.clicked.connect(lambda: (self.set_active_item('settings'), self.settings_requested.emit()))
         
         self.settings_layout = QHBoxLayout(self.settings_btn)
-        self.settings_layout.setContentsMargins(16, 0, 16, 0)
-        self.settings_layout.setSpacing(12)
+        self.settings_layout.setContentsMargins(10, 0, 10, 0)
+        self.settings_layout.setSpacing(10)
         
         self.settings_icon = QLabel()
         self.settings_icon.setFixedSize(20, 20)
@@ -511,8 +603,8 @@ class Sidebar(QWidget):
 
         # Apply initial collapsed rail state
         self.set_collapsed(self.is_collapsed)
-        # Default active state: home
-        self.set_active_item('home')
+        # Default active state: all_notes
+        self.set_active_item('all_notes')
 
     def toggle_collapsed(self):
         self.set_collapsed(not self.is_collapsed)
@@ -520,229 +612,199 @@ class Sidebar(QWidget):
     def set_collapsed(self, collapsed: bool):
         self.is_collapsed = collapsed
         
-        # Persist setting
         try:
             import database
             database.set_setting("sidebar_collapsed", "1" if collapsed else "0")
         except Exception:
             pass
 
-        target_w = 64 if collapsed else 260
+        target_w = 64 if collapsed else 240
         self.setFixedWidth(target_w)
 
-        # Toggle inner stretch widgets (when hidden in collapsed mode, icons are 100% dead-centered)
-        for st in [self.header_stretch, self.home_stretch, self.agenda_stretch,
-                   self.new_note_stretch, self.all_notes_stretch, getattr(self, 'notebooks_stretch', None), self.trash_stretch,
-                   self.models_stretch, self.lib_stretch, self.settings_stretch]:
+        # Toggle inner stretch widgets
+        for st in [self.header_stretch, self.home_stretch, self.agenda_stretch, self.all_notes_stretch,
+                   self.notebooks_stretch, self.trash_stretch, self.wf_builder_stretch,
+                   self.lib_stretch, self.models_stretch, self.settings_stretch]:
             if st:
                 st.setVisible(not collapsed)
 
+        # Toggle section labels and mini '+' buttons
+        for lbl in [self.notes_section_label, self.ai_section_label, self.settings_section_label]:
+            if lbl:
+                lbl.setVisible(not collapsed and (not (lbl == self.ai_section_label and not self.comfyui_visible)))
+
+        for mini in [self.new_note_mini_btn, self.new_notebook_mini_btn, self.new_lib_mini_btn]:
+            if mini:
+                mini.setVisible(not collapsed)
+
+        if hasattr(self, 'trash_spacer'):
+            self.trash_spacer.setVisible(not collapsed)
+
         if collapsed:
-            # Compact Navigation Rail margins
-            self.main_layout.setContentsMargins(10, 12, 10, 12)
-            self.main_layout.setSpacing(8)
+            # Compact Navigation Rail
+            self.main_layout.setContentsMargins(10, 10, 10, 10)
+            self.main_layout.setSpacing(6)
             
-            # Header - Center collapse button perfectly in 44x40 footprint
-            self.header_widget.setFixedSize(44, 40)
+            # Header
+            self.header_widget.setFixedSize(44, 38)
             self.header_layout.setContentsMargins(0, 0, 0, 0)
             self.header_layout.setSpacing(0)
             self.brand_logo.setVisible(False)
             self.brand_label.setVisible(False)
             self.lock_badge.setVisible(False)
-            self.collapse_btn.setFixedSize(44, 40)
+            self.collapse_btn.setFixedSize(44, 38)
             self.collapse_btn.setToolTip(f"{t('sidebar_expand')} • {t('status_incognito_on')}" if self.incognito_active_state else t("sidebar_expand"))
             
-            # Centered 36px separator divider
-            self.sep_line.setFixedWidth(36)
+            # Small centered separators
+            self.sep_header.setFixedWidth(36)
+            self.sep_line_1.setFixedWidth(36)
 
-            # Uniform 44x40 centered square-ish rail buttons
-            btn_w, btn_h = 44, 40
-            
+            btn_w, btn_h = 44, 38
+
             # Home
             self.home_btn.setFixedSize(btn_w, btn_h)
             self.home_label.setVisible(False)
             self.home_layout.setContentsMargins(0, 0, 0, 0)
-            self.home_layout.setSpacing(0)
             self.home_btn.setToolTip(t("home"))
-            
+
             # Agenda
             self.agenda_btn.setFixedSize(btn_w, btn_h)
             self.agenda_label.setVisible(False)
             self.agenda_layout.setContentsMargins(0, 0, 0, 0)
-            self.agenda_layout.setSpacing(0)
             self.agenda_btn.setToolTip(t("nav_agenda"))
-            
-            # New note (dead-centered, same 44x40 size and 10px radius as all other buttons)
-            self.new_note_btn.setFixedSize(btn_w, btn_h)
-            self.new_note_label.setVisible(False)
-            self.new_note_layout.setContentsMargins(0, 0, 0, 0)
-            self.new_note_layout.setSpacing(0)
-            self.new_note_btn.setToolTip(t("new_note"))
-            
+
             # All notes
             self.all_notes_btn.setFixedSize(btn_w, btn_h)
             self.all_notes_label.setVisible(False)
             self.all_notes_badge.setVisible(False)
             self.all_notes_layout.setContentsMargins(0, 0, 0, 0)
-            self.all_notes_layout.setSpacing(0)
             self.all_notes_btn.setToolTip(f"{t('notes')} ({self.all_notes_badge.text()})")
 
-            # Notebooks (Not Defterleri)
-            if hasattr(self, 'notebooks_header'):
-                self.notebooks_header.setFixedSize(btn_w, btn_h)
-                self.notebooks_label.setVisible(False)
-                if hasattr(self, 'notebooks_badge'):
-                    self.notebooks_badge.setVisible(False)
-                self.notebooks_h_layout.setContentsMargins(0, 0, 0, 0)
-                self.notebooks_h_layout.setSpacing(0)
-                curr_nb = self.last_selected_notebook.get('name') if getattr(self, 'last_selected_notebook', None) else ""
-                self.notebooks_header.setToolTip(f"{t('notebooks_title')}: {curr_nb}" if curr_nb else t("notebooks_title"))
-                self.notebooks_list.setVisible(False)
-                self.new_notebook_btn.setVisible(False)
-            
+            # Notebooks
+            self.notebooks_header.setFixedSize(btn_w, btn_h)
+            self.notebooks_label.setVisible(False)
+            self.notebooks_badge.setVisible(False)
+            self.notebooks_h_layout.setContentsMargins(0, 0, 0, 0)
+            self.notebooks_header.setToolTip(f"{t('notebooks_title')} ({self.notebooks_badge.text()})")
+            self.notebooks_tree_widget.setVisible(False)
+
             # Trash
             self.trash_btn.setFixedSize(btn_w, btn_h)
             self.trash_label.setVisible(False)
             self.trash_badge.setVisible(False)
             self.trash_layout.setContentsMargins(0, 0, 0, 0)
-            self.trash_layout.setSpacing(0)
             self.trash_btn.setToolTip(f"{t('trash')} ({self.trash_badge.text()})")
-            
+
+            # Workflow Builder
+            self.workflow_builder_btn.setFixedSize(btn_w, btn_h)
+            self.wf_builder_label.setVisible(False)
+            self.wf_builder_layout.setContentsMargins(0, 0, 0, 0)
+            self.workflow_builder_btn.setToolTip(t("workflow_builder"))
+
+            # Workflows
+            self.lib_header.setFixedSize(btn_w, btn_h)
+            self.lib_label.setVisible(False)
+            self.workflows_badge.setVisible(False)
+            self.lib_h_layout.setContentsMargins(0, 0, 0, 0)
+            self.lib_header.setToolTip(f"{t('workflows_title')} ({self.workflows_badge.text()})")
+            self.workflows_tree_widget.setVisible(False)
+
             # Models
             self.models_header.setFixedSize(btn_w, btn_h)
             self.models_label.setVisible(False)
             self.models_h_layout.setContentsMargins(0, 0, 0, 0)
-            self.models_h_layout.setSpacing(0)
             curr_model = getattr(self, 'last_selected_model_lib', None) or (self.model_lib_names[0] if getattr(self, 'model_lib_names', None) else "")
             self.models_header.setToolTip(f"{t('models_title')}: {self.tr_lib_name(curr_model)}" if curr_model else t("models_title"))
-            self.models_list.setVisible(False)
-            
-            # Hide redundant '+' button in rail mode for pristine uncluttered layout
-            self.new_lib_btn.setVisible(False)
-            
-            # Workflows
-            self.lib_header.setFixedSize(btn_w, btn_h)
-            self.lib_label.setVisible(False)
-            self.lib_h_layout.setContentsMargins(0, 0, 0, 0)
-            self.lib_h_layout.setSpacing(0)
-            curr_wf = getattr(self, 'last_selected_workflow_lib', None) or (self.workflow_lib_names[0] if getattr(self, 'workflow_lib_names', None) else "")
-            self.lib_header.setToolTip(f"{t('workflows_title')}: {self.tr_lib_name(curr_wf)}" if curr_wf else t("workflows_title"))
-            self.libraries_list.setVisible(False)
-            
+            self.models_tree_widget.setVisible(False)
+
             # Settings
             self.settings_btn.setFixedSize(btn_w, btn_h)
             self.settings_label.setVisible(False)
             self.settings_layout.setContentsMargins(0, 0, 0, 0)
-            self.settings_layout.setSpacing(0)
             self.settings_btn.setToolTip(t("settings"))
         else:
-            # Full Sidebar margins
-            self.main_layout.setContentsMargins(12, 16, 12, 16)
-            self.main_layout.setSpacing(12)
+            # Expanded Sidebar
+            self.main_layout.setContentsMargins(8, 10, 8, 12)
+            self.main_layout.setSpacing(4)
             
             # Header
-            self.header_widget.setFixedSize(236, 40)
-            self.header_layout.setContentsMargins(4, 4, 4, 4)
-            self.header_layout.setSpacing(6)
+            self.header_widget.setFixedSize(224, 40)
+            self.header_layout.setContentsMargins(4, 2, 4, 2)
+            self.header_layout.setSpacing(8)
             self.brand_logo.setVisible(True)
             self.brand_label.setVisible(True)
             self.lock_badge.setVisible(self.incognito_active_state)
-            self.collapse_btn.setFixedSize(32, 32)
+            self.collapse_btn.setFixedSize(28, 28)
             self.collapse_btn.setToolTip(t("sidebar_collapse"))
             
-            # Separator line
-            self.sep_line.setFixedWidth(236)
-            
-            # Buttons
-            btn_w, btn_h = 236, 40
-            
+            # Separators
+            self.sep_header.setFixedWidth(224)
+            self.sep_line_1.setFixedWidth(224)
+
+            btn_w = 224
+
             # Home
-            self.home_btn.setFixedSize(btn_w, btn_h)
+            self.home_btn.setFixedSize(btn_w, 38)
             self.home_label.setVisible(True)
-            self.home_layout.setContentsMargins(16, 0, 16, 0)
-            self.home_layout.setSpacing(12)
+            self.home_layout.setContentsMargins(10, 0, 10, 0)
             self.home_btn.setToolTip("")
-            
+
             # Agenda
-            self.agenda_btn.setFixedSize(btn_w, btn_h)
+            self.agenda_btn.setFixedSize(btn_w, 38)
             self.agenda_label.setVisible(True)
-            self.agenda_layout.setContentsMargins(16, 0, 16, 0)
-            self.agenda_layout.setSpacing(12)
+            self.agenda_layout.setContentsMargins(10, 0, 10, 0)
             self.agenda_btn.setToolTip("")
-            
-            # New note
-            self.new_note_btn.setFixedSize(btn_w, btn_h)
-            self.new_note_label.setVisible(True)
-            self.new_note_layout.setContentsMargins(16, 0, 16, 0)
-            self.new_note_layout.setSpacing(12)
-            self.new_note_btn.setToolTip("")
-            
+
             # All notes
-            self.all_notes_btn.setFixedSize(btn_w, btn_h)
+            self.all_notes_btn.setFixedSize(btn_w, 40)
             self.all_notes_label.setVisible(True)
             self.all_notes_badge.setVisible(True)
-            self.all_notes_layout.setContentsMargins(16, 0, 16, 0)
-            self.all_notes_layout.setSpacing(12)
+            self.all_notes_layout.setContentsMargins(10, 0, 4, 0)
             self.all_notes_btn.setToolTip("")
 
-            # Notebooks (Not Defterleri)
-            if hasattr(self, 'notebooks_header'):
-                self.notebooks_header.setFixedSize(btn_w, btn_h)
-                self.notebooks_label.setVisible(True)
-                if hasattr(self, 'notebooks_badge'):
-                    self.notebooks_badge.setVisible(True)
-                self.notebooks_h_layout.setContentsMargins(16, 0, 16, 0)
-                self.notebooks_h_layout.setSpacing(12)
-                self.notebooks_header.setToolTip("")
-                self.new_notebook_btn.setFixedSize(btn_w, btn_h)
-                self.new_notebook_btn.setVisible(True)
-                self.new_notebook_label.setVisible(True)
-                self.notebooks_list.setVisible(bool(self.notebooks_data) and self.notebooks_list.count() > 0)
-            
+            # Notebooks
+            self.notebooks_header.setFixedSize(btn_w, 40)
+            self.notebooks_label.setVisible(True)
+            self.notebooks_badge.setVisible(True)
+            self.notebooks_h_layout.setContentsMargins(10, 0, 4, 0)
+            self.notebooks_header.setToolTip("")
+            self.notebooks_tree_widget.setVisible(bool(self.notebooks_data) and self.notebooks_list.count() > 0)
+
             # Trash
-            self.trash_btn.setFixedSize(btn_w, btn_h)
+            self.trash_btn.setFixedSize(btn_w, 40)
             self.trash_label.setVisible(True)
             self.trash_badge.setVisible(True)
-            self.trash_layout.setContentsMargins(16, 0, 16, 0)
-            self.trash_layout.setSpacing(12)
+            self.trash_layout.setContentsMargins(10, 0, 4, 0)
             self.trash_btn.setToolTip("")
-            
-            # Models
-            self.models_header.setFixedSize(btn_w, btn_h)
-            self.models_label.setVisible(True)
-            self.models_h_layout.setContentsMargins(16, 0, 16, 0)
-            self.models_h_layout.setSpacing(12)
-            self.models_header.setToolTip("")
-            if hasattr(self, 'comfyui_visible'):
-                self.models_list.setVisible(self.comfyui_visible)
-            else:
-                self.models_list.setVisible(True)
-            
-            # New lib
-            self.new_lib_btn.setFixedSize(btn_w, btn_h)
-            self.new_lib_btn.setText(f"  {t('new_lib')}")
-            self.new_lib_btn.setToolTip("")
-            if hasattr(self, 'comfyui_visible'):
-                self.new_lib_btn.setVisible(self.comfyui_visible)
-            else:
-                self.new_lib_btn.setVisible(True)
-            
+
+            # Workflow Builder
+            self.workflow_builder_btn.setFixedSize(btn_w, 42)
+            self.wf_builder_label.setVisible(True)
+            self.wf_builder_layout.setContentsMargins(10, 0, 10, 0)
+            self.workflow_builder_btn.setToolTip("")
+            self.workflow_builder_btn.setVisible(self.comfyui_visible)
+
             # Workflows
-            self.lib_header.setFixedSize(btn_w, btn_h)
+            self.lib_header.setFixedSize(btn_w, 40)
             self.lib_label.setVisible(True)
-            self.lib_h_layout.setContentsMargins(16, 0, 16, 0)
-            self.lib_h_layout.setSpacing(12)
+            self.workflows_badge.setVisible(True)
+            self.lib_h_layout.setContentsMargins(10, 0, 4, 0)
             self.lib_header.setToolTip("")
-            if hasattr(self, 'comfyui_visible'):
-                self.libraries_list.setVisible(self.comfyui_visible)
-            else:
-                self.libraries_list.setVisible(True)
-            
+            self.lib_header.setVisible(self.comfyui_visible)
+            self.workflows_tree_widget.setVisible(self.comfyui_visible and len(self.workflow_lib_names) > 1)
+
+            # Models
+            self.models_header.setFixedSize(btn_w, 38)
+            self.models_label.setVisible(True)
+            self.models_h_layout.setContentsMargins(10, 0, 10, 0)
+            self.models_header.setToolTip("")
+            self.models_header.setVisible(self.comfyui_visible)
+            self.models_tree_widget.setVisible(self.comfyui_visible and self.models_list.count() > 0)
+
             # Settings
-            self.settings_btn.setFixedSize(btn_w, btn_h)
+            self.settings_btn.setFixedSize(btn_w, 38)
             self.settings_label.setVisible(True)
-            self.settings_layout.setContentsMargins(16, 0, 16, 0)
-            self.settings_layout.setSpacing(12)
+            self.settings_layout.setContentsMargins(10, 0, 10, 0)
             self.settings_btn.setToolTip("")
 
         self.collapsed_toggled.emit(collapsed)
@@ -752,7 +814,6 @@ class Sidebar(QWidget):
             return
 
         if self.is_collapsed:
-            # Cycle through model libraries when rail mode is active
             if self.active_item_type == 'model' and getattr(self, 'last_selected_model_lib', None) in self.model_lib_names:
                 current_idx = self.model_lib_names.index(self.last_selected_model_lib)
                 next_idx = (current_idx + 1) % len(self.model_lib_names)
@@ -765,7 +826,16 @@ class Sidebar(QWidget):
             self.models_header.setToolTip(f"{t('models_title')}: {self.tr_lib_name(target)}")
             self.library_selected.emit(target)
         else:
-            target = self.last_selected_model_lib if (getattr(self, 'last_selected_model_lib', None) in self.model_lib_names) else self.model_lib_names[0]
+            if self.active_item_type == 'model' and getattr(self, 'last_selected_model_lib', None) in self.model_lib_names and len(self.model_lib_names) > 1:
+                current_idx = self.model_lib_names.index(self.last_selected_model_lib)
+                next_idx = (current_idx + 1) % len(self.model_lib_names)
+            elif getattr(self, 'last_selected_model_lib', None) in self.model_lib_names:
+                next_idx = self.model_lib_names.index(self.last_selected_model_lib)
+            else:
+                next_idx = 0
+
+            target = self.model_lib_names[next_idx]
+            self.last_selected_model_lib = target
             self.set_active_item('model', target)
             self.library_selected.emit(target)
 
@@ -774,7 +844,6 @@ class Sidebar(QWidget):
             self.workflow_lib_names = ["Genel"]
 
         if self.is_collapsed:
-            # Cycle through workflow libraries when rail mode is active
             if self.active_item_type == 'workflow' and getattr(self, 'last_selected_workflow_lib', None) in self.workflow_lib_names:
                 current_idx = self.workflow_lib_names.index(self.last_selected_workflow_lib)
                 next_idx = (current_idx + 1) % len(self.workflow_lib_names)
@@ -793,41 +862,53 @@ class Sidebar(QWidget):
 
     def set_active_item(self, item_type, name=None):
         self.active_item_type = item_type
-        buttons = {
-            'home': self.home_btn,
-            'agenda': self.agenda_btn,
-            'all_notes': self.all_notes_btn,
-            'all_notebooks': self.notebooks_header,
-            'notebook': self.notebooks_header,
-            'trash': self.trash_btn,
-            'settings': self.settings_btn,
-            'model': self.models_header,
-            'workflow': self.lib_header,
+        active_map = {
+            self.home_btn: (item_type == 'home'),
+            self.agenda_btn: (item_type == 'agenda'),
+            self.all_notes_btn: (item_type == 'all_notes'),
+            self.notebooks_header: (item_type in ('all_notebooks', 'notebook')),
+            self.trash_btn: (item_type == 'trash'),
+            self.settings_btn: (item_type == 'settings'),
+            self.models_header: (item_type == 'model'),
+            self.lib_header: (item_type == 'workflow'),
+            self.workflow_builder_btn: (item_type == 'workflow_builder'),
         }
-        for k, btn in buttons.items():
+        for btn, is_active in active_map.items():
             if not btn:
                 continue
-            is_active = (k == item_type)
             btn.setProperty("active", is_active)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
             btn.update()
 
-        # Update dynamic icon colors for active vs inactive state based on theme
+        # Update mini '+' button parent-active states
+        self.new_note_mini_btn.setProperty("parent_active", item_type == 'all_notes')
+        self.new_note_mini_btn.style().unpolish(self.new_note_mini_btn)
+        self.new_note_mini_btn.style().polish(self.new_note_mini_btn)
+
+        self.new_notebook_mini_btn.setProperty("parent_active", item_type in ('all_notebooks', 'notebook'))
+        self.new_notebook_mini_btn.style().unpolish(self.new_notebook_mini_btn)
+        self.new_notebook_mini_btn.style().polish(self.new_notebook_mini_btn)
+
+        self.new_lib_mini_btn.setProperty("parent_active", item_type == 'workflow')
+        self.new_lib_mini_btn.style().unpolish(self.new_lib_mini_btn)
+        self.new_lib_mini_btn.style().polish(self.new_lib_mini_btn)
+
+        # Update icon pixmaps
         active_color = self.get_active_color()
         unified_color = self.get_unified_color()
-        self.brand_logo.setPixmap(get_pixmap("brand", unified_color, 32))
-        self.collapse_btn.setIcon(get_icon("sidebar", active_color if self.is_collapsed else unified_color, 20))
+
+        self.brand_logo.setPixmap(get_pixmap("brand", unified_color, 28))
+        self.collapse_btn.setIcon(get_icon("sidebar", active_color if self.is_collapsed else unified_color, 18))
         self.home_icon.setPixmap(get_pixmap("home", active_color if item_type == 'home' else unified_color, 20))
         self.agenda_icon.setPixmap(get_pixmap("calendar", active_color if item_type == 'agenda' else unified_color, 20))
-        self.new_note_icon.setPixmap(get_pixmap("add", "#FFFFFF", 20))
         self.all_notes_icon.setPixmap(get_pixmap("notes", active_color if item_type == 'all_notes' else unified_color, 20))
-        if hasattr(self, 'notebooks_icon'):
-            self.notebooks_icon.setPixmap(get_pixmap("notebooks", active_color if item_type in ('all_notebooks', 'notebook') else unified_color, 20))
+        self.notebooks_icon.setPixmap(get_pixmap("notebooks", active_color if item_type in ('all_notebooks', 'notebook') else unified_color, 20))
         self.trash_icon.setPixmap(get_pixmap("trash", active_color if item_type == 'trash' else unified_color, 20))
-        self.settings_icon.setPixmap(get_pixmap("settings", active_color if item_type == 'settings' else unified_color, 20))
-        self.models_icon.setPixmap(get_pixmap("models", active_color if item_type == 'model' else unified_color, 20))
+        self.wf_builder_icon.setPixmap(get_pixmap("builder", active_color if item_type == 'workflow_builder' else unified_color, 20))
         self.lib_icon.setPixmap(get_pixmap("workflows", active_color if item_type == 'workflow' else unified_color, 20))
+        self.models_icon.setPixmap(get_pixmap("models", active_color if item_type == 'model' else unified_color, 20))
+        self.settings_icon.setPixmap(get_pixmap("settings", active_color if item_type == 'settings' else unified_color, 20))
 
         if item_type == 'notebook':
             if name is not None and hasattr(self, 'notebooks_list'):
@@ -864,20 +945,26 @@ class Sidebar(QWidget):
 
     def retranslate_ui(self):
         self.home_label.setText(t("home"))
+        self.notes_section_label.setText(t("sidebar_section_notes"))
+        self.ai_section_label.setText(t("sidebar_section_ai"))
+        self.settings_section_label.setText(t("sidebar_section_settings"))
+
         self.agenda_label.setText(t("nav_agenda"))
-        self.new_note_label.setText(t("new_note"))
-        self.new_lib_btn.setText(f"  {t('new_lib')}")
         self.all_notes_label.setText(t("notes"))
-        if hasattr(self, 'notebooks_label'):
-            self.notebooks_label.setText(t("notebooks_title"))
-        if hasattr(self, 'new_notebook_label'):
-            self.new_notebook_label.setText(t("new_notebook"))
+        self.notebooks_label.setText(t("notebooks_title"))
         self.trash_label.setText(t("trash"))
-        self.models_label.setText(t("models_title"))
+        self.wf_builder_label.setText(t("workflow_builder"))
         self.lib_label.setText(t("workflows_title"))
+        self.models_label.setText(t("models_title"))
         self.settings_label.setText(t("settings"))
+
+        self.new_note_mini_btn.setToolTip(t("new_note"))
+        self.new_notebook_mini_btn.setToolTip(t("new_notebook"))
+        self.new_lib_mini_btn.setToolTip(t("new_lib"))
+
         self.collapse_btn.setToolTip(t("sidebar_expand") if self.is_collapsed else t("sidebar_collapse"))
         self.set_incognito_active(self.incognito_active_state)
+
         if hasattr(self, 'active_item_type'):
             self.set_active_item(self.active_item_type)
         if hasattr(self, 'comfyui_visible'):
@@ -892,16 +979,13 @@ class Sidebar(QWidget):
 
     def set_comfyui_visible(self, visible: bool):
         self.comfyui_visible = visible
-        if hasattr(self, 'models_header'):
-            self.models_header.setVisible(visible)
-        if hasattr(self, 'models_list'):
-            self.models_list.setVisible(visible and not self.is_collapsed)
-        if hasattr(self, 'new_lib_btn'):
-            self.new_lib_btn.setVisible(visible and not self.is_collapsed)
-        if hasattr(self, 'lib_header'):
-            self.lib_header.setVisible(visible)
-        if hasattr(self, 'libraries_list'):
-            self.libraries_list.setVisible(visible and not self.is_collapsed)
+        self.ai_section_label.setVisible(visible and not self.is_collapsed)
+        self.sep_line_1.setVisible(visible and not self.is_collapsed)
+        self.workflow_builder_btn.setVisible(visible)
+        self.lib_header.setVisible(visible)
+        self.workflows_tree_widget.setVisible(visible and not self.is_collapsed and len(self.workflow_lib_names) > 1)
+        self.models_header.setVisible(visible)
+        self.models_tree_widget.setVisible(visible and not self.is_collapsed and self.models_list.count() > 0)
 
     def tr_lib_name(self, name):
         if name == "Lora Modelleri":
@@ -910,6 +994,8 @@ class Sidebar(QWidget):
             return "Checkpoint Models" if get_lang() == "en" else "Checkpoint Modelleri"
         elif name == "Favoriler":
             return "Favorites" if get_lang() == "en" else "Favoriler"
+        elif name == "Genel":
+            return "General" if get_lang() == "en" else "Genel"
         return name
 
     def update_notes_count(self, count):
@@ -928,37 +1014,43 @@ class Sidebar(QWidget):
         self.models_list.clear()
         self.model_lib_names = []
         for lib_name, count in models_with_counts:
-            item = QListWidgetItem(f"   {self.tr_lib_name(lib_name)} ({count})")
+            # Format as: Checkpoint Modelleri\n(19) or inline based on width
+            item = QListWidgetItem(f"{self.tr_lib_name(lib_name)}\n({count})" if len(lib_name) > 14 else f"{self.tr_lib_name(lib_name)} ({count})")
             self.models_list.addItem(item)
             self.model_lib_names.append(lib_name)
             if self.last_selected_model_lib and lib_name == self.last_selected_model_lib:
                 self.models_list.setCurrentRow(self.models_list.count() - 1)
         
         count = max(1, len(models_with_counts))
-        self.models_list.setFixedHeight(count * 44 + 8)
+        self.models_list.setFixedHeight(count * 46 + 6)
         if self.is_collapsed or (hasattr(self, 'comfyui_visible') and not self.comfyui_visible):
-            self.models_list.setVisible(False)
+            self.models_tree_widget.setVisible(False)
         else:
-            self.models_list.setVisible(True)
+            self.models_tree_widget.setVisible(True)
 
     def update_workflow_libraries_list(self, workflow_libs_with_counts, selected_workflow_lib=None):
         self.last_workflow_libs_data = workflow_libs_with_counts
         self.last_selected_workflow_lib = selected_workflow_lib or (workflow_libs_with_counts[0][0] if workflow_libs_with_counts else None)
+        
+        # Total workflows count
+        total_count = sum(c for _, c in workflow_libs_with_counts)
+        self.workflows_badge.setText(str(total_count))
+        if self.is_collapsed:
+            self.lib_header.setToolTip(f"{t('workflows_title')} ({total_count})")
+
         self.libraries_list.clear()
         self.workflow_lib_names = []
         for lib_name, count in workflow_libs_with_counts:
-            item = QListWidgetItem(f"   {self.tr_lib_name(lib_name)} ({count})")
+            item = QListWidgetItem(f"{self.tr_lib_name(lib_name)} ({count})")
             self.libraries_list.addItem(item)
             self.workflow_lib_names.append(lib_name)
             if self.last_selected_workflow_lib and lib_name == self.last_selected_workflow_lib:
                 self.libraries_list.setCurrentRow(self.libraries_list.count() - 1)
 
         count = max(1, len(workflow_libs_with_counts))
-        self.libraries_list.setFixedHeight(count * 44 + 8)
-        if self.is_collapsed or (hasattr(self, 'comfyui_visible') and not self.comfyui_visible):
-            self.libraries_list.setVisible(False)
-        else:
-            self.libraries_list.setVisible(True)
+        self.libraries_list.setFixedHeight(count * 34 + 4)
+        show_tree = len(workflow_libs_with_counts) > 1 and not self.is_collapsed and (not hasattr(self, 'comfyui_visible') or self.comfyui_visible)
+        self.workflows_tree_widget.setVisible(show_tree)
 
     def on_model_clicked(self, item):
         row = self.models_list.row(item)
@@ -1030,31 +1122,32 @@ class Sidebar(QWidget):
         self.notebooks_data = notebooks or []
         self.notebooks_list.clear()
 
-        if hasattr(self, 'notebooks_badge'):
-            self.notebooks_badge.setText(str(len(self.notebooks_data)))
+        self.notebooks_badge.setText(str(len(self.notebooks_data)))
+        if self.is_collapsed:
+            self.notebooks_header.setToolTip(f"{t('notebooks_title')} ({len(self.notebooks_data)})")
 
         if limit is None:
             try:
                 import database
-                limit = int(database.get_setting("sidebar_notebooks_limit", "5"))
+                limit = int(database.get_setting("sidebar_notebooks_limit", "0"))
             except Exception:
-                limit = 5
+                limit = 0
         else:
             try:
                 limit = int(limit)
             except Exception:
-                limit = 5
+                limit = 0
 
         if limit <= 0:
             self.notebooks_list.clear()
             self.notebooks_list.setFixedHeight(0)
-            self.notebooks_list.setVisible(False)
+            self.notebooks_tree_widget.setVisible(False)
             return
 
         display_items = self.notebooks_data[:limit]
         for nb in display_items:
             count = nb.get('note_count', 0)
-            item = QListWidgetItem(f"   {nb['name']} ({count})")
+            item = QListWidgetItem(f"{nb['name']} ({count})")
             item.setData(Qt.UserRole, nb['id'])
             self.notebooks_list.addItem(item)
             if target_active_id and nb['id'] == target_active_id:
@@ -1064,10 +1157,10 @@ class Sidebar(QWidget):
         count = self.notebooks_list.count()
         if count == 0 or self.is_collapsed or not self.notebooks_data:
             self.notebooks_list.setFixedHeight(0)
-            self.notebooks_list.setVisible(False)
+            self.notebooks_tree_widget.setVisible(False)
         else:
-            self.notebooks_list.setFixedHeight(count * 44 + 8)
-            self.notebooks_list.setVisible(True)
+            self.notebooks_list.setFixedHeight(count * 34 + 4)
+            self.notebooks_tree_widget.setVisible(True)
 
     def clear_list_selections(self):
         self.models_list.clearSelection()

@@ -312,7 +312,8 @@ class WorkflowCardWidget(QFrame):
                 self.image_label.setPixmap(QPixmap())
                 self.image_label.setStyleSheet("background-color: #242527; border-radius: 8px;")
                 self.image_loaded = False
-                self.ensure_image_loaded()
+                if self.isVisible():
+                    self.ensure_image_loaded()
                 return
 
         self.show_default_placeholder()
@@ -574,6 +575,15 @@ class WorkflowView(QWidget):
         self.add_btn.clicked.connect(self.browse_workflow_file)
         header_layout.addWidget(self.add_btn)
 
+        self.builder_btn = QPushButton(f"  {t('workflow_builder')}")
+        self.builder_btn.setIcon(get_icon("builder", "#FFFFFF", 16))
+        self.builder_btn.setIconSize(QSize(16, 16))
+        self.builder_btn.setObjectName("HeaderAddBtn")
+        self.builder_btn.setFixedHeight(36)
+        self.builder_btn.setStyleSheet("QPushButton { border-radius: 18px !important; padding: 6px 14px !important; font-weight: bold !important; }")
+        self.builder_btn.clicked.connect(self.open_workflow_builder)
+        header_layout.addWidget(self.builder_btn)
+
         self.main_layout.addLayout(header_layout)
 
         # Drop Zone instruction
@@ -717,10 +727,12 @@ class WorkflowView(QWidget):
                 return
 
             width = self.scroll_area.viewport().width()
-            if width <= 100:
+            if width <= 100 and self.window():
+                width = max(100, self.window().width() - 280)
+            elif width <= 100:
                 width = self.scroll_area.width() - 48
             if width <= 100:
-                width = 860
+                width = 1100
 
             card_width = 200
             spacing = 16
@@ -740,6 +752,8 @@ class WorkflowView(QWidget):
                 card = self._create_card(self.filtered_workflows_data[i])
                 self.grid_layout.addWidget(card, i // columns, i % columns)
                 self.cards.append(card)
+                if i < columns * 3:
+                    card.ensure_image_loaded()
         finally:
             self.grid_container.setUpdatesEnabled(True)
             self.scroll_area.setUpdatesEnabled(True)
@@ -778,12 +792,20 @@ class WorkflowView(QWidget):
         self._pending_load_index = end_idx
         if self._pending_load_index < len(display_data):
             self._chunk_timer.start(0)
+        else:
+            self.scroll_check_timer.start(20)
 
     def update_grid_layout(self):
         if not self.cards or isinstance(self.cards[0], QLabel):
             return
 
         width = self.scroll_area.viewport().width()
+        if width <= 100 and self.window():
+            width = max(100, self.window().width() - 280)
+        elif width <= 100:
+            width = self.scroll_area.width() - 48
+        if width <= 100:
+            width = 1100
         card_width = 200
         spacing = 16
         total_items = len(self.filtered_workflows_data) if getattr(self, 'filtered_workflows_data', None) else len(self.cards)
@@ -810,11 +832,28 @@ class WorkflowView(QWidget):
 
         self.scroll_check_timer.start(20)
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.update_grid_layout()
+        if hasattr(self, '_pending_workflows_data') and getattr(self, '_pending_load_index', 0) < len(self._pending_workflows_data):
+            if hasattr(self, '_chunk_timer') and not self._chunk_timer.isActive():
+                self._chunk_timer.start(16)
+        self.scroll_check_timer.start(20)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        for timer_name in ('_chunk_timer', 'resize_debounce_timer', 'scroll_check_timer', 'search_debounce_timer'):
+            timer = getattr(self, timer_name, None)
+            if timer and timer.isActive():
+                timer.stop()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if event.oldSize().width() <= 0 or event.oldSize().width() == event.size().width():
+        if event.oldSize().width() == event.size().width():
             return
         width = self.scroll_area.viewport().width()
+        if width <= 100 and self.window():
+            width = max(100, self.window().width() - 280)
         card_width = 200
         spacing = 16
         total_items = len(self.filtered_workflows_data) if getattr(self, 'filtered_workflows_data', None) else len(self.cards)
@@ -914,6 +953,13 @@ class WorkflowView(QWidget):
         if self.library_name:
             self.delete_library_requested.emit(self.library_name)
 
+    def open_workflow_builder(self):
+        win = self.window()
+        if win and hasattr(win, 'show_workflow_builder'):
+            win.show_workflow_builder()
+        elif win and hasattr(win, 'open_workflow_builder'):
+            win.open_workflow_builder()
+
     def tr_lib_name(self, name):
         if name == "Lora Modelleri":
             return "Lora Models" if get_lang() == "en" else "Lora Modelleri"
@@ -921,12 +967,17 @@ class WorkflowView(QWidget):
             return "Checkpoint Models" if get_lang() == "en" else "Checkpoint Modelleri"
         elif name == "Favoriler":
             return "Favorites" if get_lang() == "en" else "Favoriler"
+        elif name == "Genel":
+            return "General" if get_lang() == "en" else "Genel"
         return name
 
     def retranslate_ui(self):
         self.title_label.setText(self.tr_lib_name(self.library_name) if self.library_name else t("workflows_title"))
         self.add_btn.setText(f"  {t('view_add_workflow')}")
         self.add_btn.setIcon(get_icon("add", "#FFFFFF", 16))
+        if hasattr(self, 'builder_btn'):
+            self.builder_btn.setText(f"  {t('workflow_builder')}")
+            self.builder_btn.setIcon(get_icon("builder", "#FFFFFF", 16))
         if hasattr(self, 'delete_lib_btn'):
             self.delete_lib_btn.setText(f"  {t('workflow_delete_library')}")
             self.delete_lib_btn.setIcon(get_icon("trash", "#F87171", 16))
@@ -954,3 +1005,22 @@ class WorkflowView(QWidget):
         for card in self.cards:
             if hasattr(card, 'update_theme'):
                 card.update_theme(self.highlight_color)
+
+    def update_card_workflow_data(self, workflow_id, name, description=None):
+        for wf in self.workflows_data:
+            if wf.get('id') == workflow_id:
+                wf['name'] = name
+                if description is not None:
+                    wf['description'] = description
+        for wf in self.filtered_workflows_data:
+            if wf.get('id') == workflow_id:
+                wf['name'] = name
+                if description is not None:
+                    wf['description'] = description
+        for card in self.cards:
+            if isinstance(card, WorkflowCardWidget) and card.workflow_data.get('id') == workflow_id:
+                card.workflow_data['name'] = name
+                if description is not None:
+                    card.workflow_data['description'] = description
+                card.update_content()
+                break
