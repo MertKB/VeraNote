@@ -164,6 +164,8 @@ class QuickNoteCardWidget(QFrame):
         self.drag_start_size = QSize()
         self.drag_start_pos = QPoint()
         self.is_locked = False
+        self.grid_snap = True
+        self.grid_size = 20
         self.bg_color = "#1E1F20"
         self.highlight_color = highlight_color
         self.accent_color = accent_color
@@ -254,6 +256,7 @@ class QuickNoteCardWidget(QFrame):
 
     def mousePressEvent(self, event):
         if not self.is_locked and event.button() == Qt.LeftButton:
+            self._did_move_or_resize = False
             pos = event.position().toPoint()
             if pos.x() >= self.width() - 20 and pos.y() >= self.height() - 20:
                 self.is_resizing = True
@@ -266,7 +269,9 @@ class QuickNoteCardWidget(QFrame):
 
     def mouseMoveEvent(self, event):
         if not self.is_locked and (event.buttons() & Qt.LeftButton):
+            self._did_move_or_resize = True
             grid = getattr(self, 'grid_size', 20) if getattr(self, 'grid_snap', True) else 1
+            parent_canvas = self.parent()
             if self.is_resizing:
                 delta = event.globalPosition().toPoint() - self.drag_start_pos
                 nw = max(220, min(900, self.drag_start_size.width() + delta.x()))
@@ -274,6 +279,8 @@ class QuickNoteCardWidget(QFrame):
                 if grid > 1:
                     nw = max(220, round(nw / grid) * grid)
                     nh = max(120, round(nh / grid) * grid)
+                if parent_canvas and hasattr(parent_canvas, 'snap_and_update_guides'):
+                    _, _, nw, nh = parent_canvas.snap_and_update_guides(self, self.x(), self.y(), nw, nh, is_resizing=True)
                 self.resize(nw, nh)
             elif self.drag_position is not None:
                 new_pos = event.globalPosition().toPoint() - self.drag_position
@@ -282,24 +289,33 @@ class QuickNoteCardWidget(QFrame):
                 if grid > 1:
                     nx = round(nx / grid) * grid
                     ny = round(ny / grid) * grid
+                if parent_canvas and hasattr(parent_canvas, 'snap_and_update_guides'):
+                    nx, ny, _, _ = parent_canvas.snap_and_update_guides(self, nx, ny, self.width(), self.height(), is_resizing=False)
                 self.move(nx, ny)
-                if self.parent():
+                if parent_canvas:
                     req_w = nx + self.width() + 40
                     req_h = ny + self.height() + 40
-                    pw = max(self.parent().width(), req_w)
-                    ph = max(self.parent().height(), req_h)
-                    if req_w > self.parent().width() or req_h > self.parent().height():
-                        self.parent().setMinimumSize(pw, ph)
+                    pw = max(parent_canvas.width(), req_w)
+                    ph = max(parent_canvas.height(), req_h)
+                    if req_w > parent_canvas.width() or req_h > parent_canvas.height():
+                        parent_canvas.setMinimumSize(pw, ph)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if not self.is_locked:
+            parent_canvas = self.parent()
+            if parent_canvas and hasattr(parent_canvas, 'clear_alignment_guides'):
+                parent_canvas.clear_alignment_guides()
+            moved = getattr(self, '_did_move_or_resize', False)
+            self._did_move_or_resize = False
             if self.is_resizing:
                 self.is_resizing = False
-                self.size_changed.emit(self.width(), self.height())
+                if moved:
+                    self.size_changed.emit(self.width(), self.height())
             elif self.drag_position is not None:
                 self.drag_position = None
-                self.position_changed.emit(self.x(), self.y())
+                if moved:
+                    self.position_changed.emit(self.x(), self.y())
         super().mouseReleaseEvent(event)
 
     def paintEvent(self, event):
@@ -337,14 +353,19 @@ class CorkboardNoteCard(QFrame):
         self.drag_start_size = QSize()
         self.drag_start_pos = QPoint()
         self.is_locked = False
+        self.grid_snap = True
+        self.grid_size = 20
         self._image_worker = None
         self.current_pixmap = None
         self.embedded_qimage = None
         
         w = self.note_data.get('corkboard_w') or 220
         h = self.note_data.get('corkboard_h') or 200
-        self.setMinimumSize(160, 140)
-        self.resize(w, h)
+        if self.mode == "grid":
+            self.setFixedSize(220, 200)
+        else:
+            self.setMinimumSize(160, 140)
+            self.resize(w, h)
         self.setCursor(Qt.PointingHandCursor)
         
         raw_img_path = self.note_data.get('image_path') or ''
@@ -559,6 +580,7 @@ class CorkboardNoteCard(QFrame):
 
     def mousePressEvent(self, event):
         if not self.is_locked and self.mode == "free" and event.button() == Qt.LeftButton:
+            self._did_move_or_resize = False
             pos = event.position().toPoint()
             if pos.x() >= self.width() - 20 and pos.y() >= self.height() - 20:
                 self.is_resizing = True
@@ -571,7 +593,9 @@ class CorkboardNoteCard(QFrame):
 
     def mouseMoveEvent(self, event):
         if not self.is_locked and self.mode == "free" and (event.buttons() & Qt.LeftButton):
+            self._did_move_or_resize = True
             grid = getattr(self, 'grid_size', 20) if getattr(self, 'grid_snap', True) else 1
+            parent_canvas = self.parent()
             if self.is_resizing:
                 delta = event.globalPosition().toPoint() - self.drag_start_pos
                 nw = max(160, min(900, self.drag_start_size.width() + delta.x()))
@@ -579,6 +603,8 @@ class CorkboardNoteCard(QFrame):
                 if grid > 1:
                     nw = max(160, round(nw / grid) * grid)
                     nh = max(140, round(nh / grid) * grid)
+                if parent_canvas and hasattr(parent_canvas, 'snap_and_update_guides'):
+                    _, _, nw, nh = parent_canvas.snap_and_update_guides(self, self.x(), self.y(), nw, nh, is_resizing=True)
                 self.resize(nw, nh)
             elif self.drag_position is not None:
                 new_pos = event.globalPosition().toPoint() - self.drag_position
@@ -587,26 +613,43 @@ class CorkboardNoteCard(QFrame):
                 if grid > 1:
                     nx = round(nx / grid) * grid
                     ny = round(ny / grid) * grid
+                if parent_canvas and hasattr(parent_canvas, 'snap_and_update_guides'):
+                    nx, ny, _, _ = parent_canvas.snap_and_update_guides(self, nx, ny, self.width(), self.height(), is_resizing=False)
                 self.move(nx, ny)
-                if self.parent():
+                if parent_canvas:
                     req_w = nx + self.width() + 40
                     req_h = ny + self.height() + 40
-                    pw = max(self.parent().width(), req_w)
-                    ph = max(self.parent().height(), req_h)
-                    if req_w > self.parent().width() or req_h > self.parent().height():
-                        self.parent().setMinimumSize(pw, ph)
+                    pw = max(parent_canvas.width(), req_w)
+                    ph = max(parent_canvas.height(), req_h)
+                    if req_w > parent_canvas.width() or req_h > parent_canvas.height():
+                        parent_canvas.setMinimumSize(pw, ph)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if not self.is_locked and self.mode == "free":
+            parent_canvas = self.parent()
+            if parent_canvas and hasattr(parent_canvas, 'clear_alignment_guides'):
+                parent_canvas.clear_alignment_guides()
+            moved = getattr(self, '_did_move_or_resize', False)
+            self._did_move_or_resize = False
             if self.is_resizing:
                 self.is_resizing = False
-                self.position_changed.emit(self.note_data.get('id', 0), self.x(), self.y(), self.width(), self.height())
+                if moved:
+                    self.note_data['corkboard_x'] = self.x()
+                    self.note_data['corkboard_y'] = self.y()
+                    self.note_data['corkboard_w'] = self.width()
+                    self.note_data['corkboard_h'] = self.height()
+                    self.position_changed.emit(self.note_data.get('id', 0), self.x(), self.y(), self.width(), self.height())
             elif self.drag_position is not None:
                 self.drag_position = None
-                self.position_changed.emit(self.note_data.get('id', 0), self.x(), self.y(), self.width(), self.height())
-        elif self.is_locked and event.button() == Qt.LeftButton:
-            # When locked, single click opens the note
+                if moved:
+                    self.note_data['corkboard_x'] = self.x()
+                    self.note_data['corkboard_y'] = self.y()
+                    self.note_data['corkboard_w'] = self.width()
+                    self.note_data['corkboard_h'] = self.height()
+                    self.position_changed.emit(self.note_data.get('id', 0), self.x(), self.y(), self.width(), self.height())
+        elif (self.is_locked or self.mode == "grid") and event.button() == Qt.LeftButton:
+            # When locked or in grid mode, single click opens the note
             self.clicked.emit(self.note_data)
         super().mouseReleaseEvent(event)
 

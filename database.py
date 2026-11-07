@@ -589,12 +589,12 @@ def update_corkboard_geometry(note_id, x, y, w=None, h=None):
         cursor = conn.cursor()
         if w is not None and h is not None:
             cursor.execute(
-                "UPDATE notes SET corkboard_x = ?, corkboard_y = ?, corkboard_w = ?, corkboard_h = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
+                "UPDATE notes SET corkboard_x = ?, corkboard_y = ?, corkboard_w = ?, corkboard_h = ? WHERE id = ?;",
                 (int(x), int(y), int(w), int(h), note_id)
             )
         else:
             cursor.execute(
-                "UPDATE notes SET corkboard_x = ?, corkboard_y = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
+                "UPDATE notes SET corkboard_x = ?, corkboard_y = ? WHERE id = ?;",
                 (int(x), int(y), note_id)
             )
         conn.commit()
@@ -1784,7 +1784,7 @@ def get_corkboard_notes(show_hidden=False):
         query = "SELECT * FROM notes WHERE is_deleted = 0 AND is_pinned_corkboard = 1"
         if not show_hidden:
             query += " AND is_hidden = 0"
-        query += " ORDER BY updated_at DESC;"
+        query += " ORDER BY id ASC;"
         cursor.execute(query)
         return [dict(row) for row in cursor.fetchall()]
 

@@ -206,11 +206,12 @@ class AppController:
             "welcome_title_x", "welcome_title_y", "quick_note_x", "quick_note_y",
             "welcome_wallpaper_mode", "welcome_wallpaper_vertical", "welcome_wallpaper_horizontal",
             "welcome_wallpaper_scale", "welcome_wallpaper_brightness", "welcome_wallpaper_blur",
-            "welcome_wallpapers_list", "home_grid_snap", "home_show_grid_dots"
+            "welcome_wallpapers_list", "home_grid_snap", "home_show_grid_dots",
+            "home_design_viewport_w"
         ]
         welcome_settings = {k: _get_setting(k) for k in welcome_keys if _get_setting(k) is not None}
         self.win.welcome_screen.load_settings(welcome_settings, render=False)
-        self.win.welcome_screen.title_label.setText(w_title)
+        self.win.welcome_screen.set_welcome_title(w_title)
         self.win.welcome_screen.set_wallpaper(w_wallpaper)
 
         # ComfyUI Features Enabled state

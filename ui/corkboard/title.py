@@ -14,6 +14,7 @@ class OutlinedLabel(QLabel):
         self.text_color = "#E3E3E3"
         self.outline_color = "#000000"
         self.outline_width = 0
+        self.font_size = 28
         self.font_family = "Segoe UI"
         self.font_weight = 700
 
@@ -21,9 +22,8 @@ class OutlinedLabel(QLabel):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        font = self.font()
-        if self.font_family:
-            font.setFamily(self.font_family)
+        font = QFont(self.font_family or "Segoe UI")
+        font.setPixelSize(max(10, int(self.font_size)))
         font.setWeight(QFont.Weight(self.font_weight) if hasattr(QFont, 'Weight') else self.font_weight)
         painter.setFont(font)
         
@@ -63,6 +63,8 @@ class EditableLabel(QStackedWidget):
         self.drag_start_size = QSize()
         self.drag_start_pos = QPoint()
         self.is_locked = False
+        self.grid_snap = True
+        self.grid_size = 20
         self.font_size = 28
         self.font_family = "Segoe UI"
         self.font_weight = 700
@@ -94,10 +96,25 @@ class EditableLabel(QStackedWidget):
         self.label.mouseDoubleClickEvent = self.on_double_click
         self.label.setToolTip(t("welcome_title_tooltip"))
 
+    def get_auto_size(self) -> tuple[int, int]:
+        """Calculates the exact bounding box size needed to fit the current title text and styling."""
+        font = QFont(self.font_family or "Segoe UI")
+        font.setPixelSize(max(10, int(self.font_size)))
+        font.setWeight(QFont.Weight(self.font_weight) if hasattr(QFont, 'Weight') else self.font_weight)
+        metrics = QFontMetrics(font)
+        text_str = self.label.text() or ""
+        outline_pad = int(self.outline_width) * 4
+        pad_x = 40 if self.frame_enabled else 20
+        pad_y = 24 if self.frame_enabled else 14
+        auto_w = max(120, metrics.horizontalAdvance(text_str) + outline_pad + pad_x)
+        auto_h = max(36, metrics.height() + outline_pad + pad_y)
+        return auto_w, auto_h
+
     def update_title_styling(self):
         self.label.text_color = self.text_color
         self.label.outline_color = self.outline_color
         self.label.outline_width = self.outline_width
+        self.label.font_size = self.font_size
         self.label.font_family = self.font_family
         self.label.font_weight = self.font_weight
         
@@ -150,6 +167,7 @@ class EditableLabel(QStackedWidget):
 
     def mousePressEvent(self, event):
         if not self.is_locked and event.button() == Qt.LeftButton and self.currentIndex() == 0:
+            self._did_move_or_resize = False
             pos = event.position().toPoint()
             if pos.x() >= self.width() - 20 and pos.y() >= self.height() - 20:
                 self.is_resizing = True
@@ -162,14 +180,18 @@ class EditableLabel(QStackedWidget):
 
     def mouseMoveEvent(self, event):
         if not self.is_locked and (event.buttons() & Qt.LeftButton):
+            self._did_move_or_resize = True
             grid = getattr(self, 'grid_size', 20) if getattr(self, 'grid_snap', True) else 1
+            parent_canvas = self.parent()
             if self.is_resizing:
                 delta = event.globalPosition().toPoint() - self.drag_start_pos
-                nw = max(200, min(1800, self.drag_start_size.width() + delta.x()))
-                nh = max(40, min(600, self.drag_start_size.height() + delta.y()))
+                nw = max(120, min(1800, self.drag_start_size.width() + delta.x()))
+                nh = max(36, min(600, self.drag_start_size.height() + delta.y()))
                 if grid > 1:
-                    nw = max(200, round(nw / grid) * grid)
-                    nh = max(40, round(nh / grid) * grid)
+                    nw = max(120, round(nw / grid) * grid)
+                    nh = max(36, round(nh / grid) * grid)
+                if parent_canvas and hasattr(parent_canvas, 'snap_and_update_guides'):
+                    _, _, nw, nh = parent_canvas.snap_and_update_guides(self, self.x(), self.y(), nw, nh, is_resizing=True)
                 self.resize(nw, nh)
             elif self.drag_position is not None:
                 new_pos = event.globalPosition().toPoint() - self.drag_position
@@ -178,24 +200,32 @@ class EditableLabel(QStackedWidget):
                 if grid > 1:
                     nx = round(nx / grid) * grid
                     ny = round(ny / grid) * grid
+                if parent_canvas and hasattr(parent_canvas, 'snap_and_update_guides'):
+                    nx, ny, _, _ = parent_canvas.snap_and_update_guides(self, nx, ny, self.width(), self.height(), is_resizing=False)
                 self.move(nx, ny)
-                if self.parent():
+                if parent_canvas:
                     req_w = nx + self.width() + 40
                     req_h = ny + self.height() + 40
-                    pw = max(self.parent().width(), req_w)
-                    ph = max(self.parent().height(), req_h)
-                    if req_w > self.parent().width() or req_h > self.parent().height():
-                        self.parent().setMinimumSize(pw, ph)
+                    pw = max(parent_canvas.width(), req_w)
+                    ph = max(parent_canvas.height(), req_h)
+                    if req_w > parent_canvas.width() or req_h > parent_canvas.height():
+                        parent_canvas.setMinimumSize(pw, ph)
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if not self.is_locked:
+            parent_canvas = self.parent()
+            if parent_canvas and hasattr(parent_canvas, 'clear_alignment_guides'):
+                parent_canvas.clear_alignment_guides()
+            moved = getattr(self, '_did_move_or_resize', False)
+            self._did_move_or_resize = False
             if self.is_resizing:
                 self.is_resizing = False
-                self.size_changed.emit(self.width(), self.height())
+                if moved:
+                    self.size_changed.emit(self.width(), self.height())
             elif self.drag_position is not None:
                 self.drag_position = None
-                if self.x() >= 0:
+                if moved and self.x() >= 0:
                     self.position_changed.emit(self.x(), self.y())
         super().mouseReleaseEvent(event)
 

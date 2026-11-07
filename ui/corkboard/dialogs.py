@@ -608,15 +608,43 @@ class HomePageSettingsDialog(QDialog):
     def showEvent(self, event):
         super().showEvent(event)
         self.setWindowModality(Qt.NonModal)
+        self.welcome_screen._settings_dialog_open = True
+        if hasattr(self.welcome_screen, 'title_label') and self.welcome_screen.title_label:
+            try:
+                self.welcome_screen.title_label.size_changed.connect(self._on_canvas_title_resized)
+            except Exception:
+                pass
+        if hasattr(self.welcome_screen, 'corkboard_grid_widget') and self.welcome_screen.corkboard_grid_widget:
+            self.welcome_screen.corkboard_grid_widget.update()
         app = QApplication.instance()
         if app:
             app.installEventFilter(self._outside_filter)
 
     def hideEvent(self, event):
         super().hideEvent(event)
+        self.welcome_screen._settings_dialog_open = False
+        if hasattr(self.welcome_screen, 'title_label') and self.welcome_screen.title_label:
+            try:
+                self.welcome_screen.title_label.size_changed.disconnect(self._on_canvas_title_resized)
+            except Exception:
+                pass
+        if hasattr(self.welcome_screen, 'corkboard_grid_widget') and self.welcome_screen.corkboard_grid_widget:
+            self.welcome_screen.corkboard_grid_widget.update()
         app = QApplication.instance()
         if app:
             app.removeEventFilter(self._outside_filter)
+
+    def _on_canvas_title_resized(self, w: int, h: int):
+        self.title_w_slider.blockSignals(True)
+        self.title_h_slider.blockSignals(True)
+        self.title_w_slider.setValue(w)
+        self.title_h_slider.setValue(h)
+        self.title_w_slider.blockSignals(False)
+        self.title_h_slider.blockSignals(False)
+        w_text = f"{w}px" if w > 0 else t("home_auto_fit_text")
+        h_text = f"{h}px" if h > 0 else t("home_auto_fit_text")
+        self.title_w_lbl.setText(t("title_width_lbl").format(w=w_text))
+        self.title_h_lbl.setText(t("title_height_lbl").format(h=h_text))
 
     def changeEvent(self, event):
         super().changeEvent(event)
@@ -845,8 +873,15 @@ class HomePageSettingsDialog(QDialog):
         self.welcome_screen.set_title_size(self.welcome_screen.title_w, val)
 
     def auto_fit_title(self):
+        self.title_w_slider.blockSignals(True)
+        self.title_h_slider.blockSignals(True)
         self.title_w_slider.setValue(0)
         self.title_h_slider.setValue(0)
+        self.title_w_slider.blockSignals(False)
+        self.title_h_slider.blockSignals(False)
+        auto_text = t("home_auto_fit_text")
+        self.title_w_lbl.setText(t("title_width_lbl").format(w=auto_text))
+        self.title_h_lbl.setText(t("title_height_lbl").format(h=auto_text))
         self.welcome_screen.set_title_size(0, 0)
 
     def on_qn_w_changed(self, val):

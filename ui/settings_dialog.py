@@ -12,52 +12,56 @@ from utils.i18n import t, get_lang
 from database import DEFAULT_SHORTCUTS
 
 DEFAULT_CUSTOM_COLORS = {
-    "bg_main": "#131314",
-    "bg_card": "#1E1F22",
-    "border_color": "#2F3136",
-    "bg_sidebar": "#18191B",
-    "bg_input": "#282A2E",
-    "accent_color": "#1A73E8",
-    "highlight_color": "#8AB4F8",
-    "border_focus": "#8AB4F8",
-    "card_selected": "#192231",
-    "text_main": "#E3E3E3",
-    "text_muted": "#9AA0A6",
-    "cal_weekend_color": "#FB7185",
+    "bg_main": "#121012",
+    "bg_card": "#222125",
+    "border_color": "#3A353E",
+    "bg_sidebar": "#1A191C",
+    "bg_input": "#302E33",
+    "accent_color": "#A8A2AB",
+    "highlight_color": "#EFE7F5",
+    "border_focus": "#DDDFEE",
+    "card_selected": "#333038",
+    "text_main": "#EAE5ED",
+    "text_muted": "#B5A9BC",
+    "cal_weekend_color": "#F9EAEB",
     "badge_bg": "#282A2E",
     "card_img_bg": "#18191B"
 }
 
 CUSTOM_PRESETS = [
     ("custom_preset_default", {
-        "bg_main": "#131314",
-        "bg_card": "#1E1F22",
-        "border_color": "#2F3136",
-        "bg_sidebar": "#18191B",
-        "bg_input": "#282A2E",
-        "accent_color": "#1A73E8",
-        "highlight_color": "#8AB4F8",
-        "border_focus": "#8AB4F8",
-        "card_selected": "#192231",
-        "text_main": "#E3E3E3",
-        "text_muted": "#9AA0A6",
-        "cal_weekend_color": "#FB7185",
+        "bg_main": "#121012",
+        "bg_card": "#222125",
+        "border_color": "#3A353E",
+        "bg_sidebar": "#1A191C",
+        "bg_input": "#302E33",
+        "accent_color": "#A8A2AB",
+        "highlight_color": "#EFE7F5",
+        "border_focus": "#DDDFEE",
+        "card_selected": "#333038",
+        "text_main": "#EAE5ED",
+        "text_muted": "#B5A9BC",
+        "cal_weekend_color": "#F9EAEB",
         "badge_bg": "#282A2E",
-        "card_img_bg": "#18191B"
+        "card_img_bg": "#18191B",
+        "cal_weekend_header": "#FAFA51",
+        "cal_weekend_text": "#FFFA5E"
     }),
     ("custom_preset_amoled", {
-        "bg_main": "#18191C",
+        "bg_main": "#131314",
         "bg_card": "#0F1012",
         "border_color": "#26282B",
         "bg_sidebar": "#141517",
         "bg_input": "#222428",
-        "accent_color": "#3B82F6",
-        "highlight_color": "#60A5FA",
-        "border_focus": "#60A5FA",
+        "accent_color": "#1A73E8",
+        "highlight_color": "#8AB4F8",
+        "border_focus": "#8AB4F8",
         "card_selected": "#141E2E",
         "text_main": "#F1F3F5",
-        "text_muted": "#909296",
-        "cal_weekend_color": "#F87171"
+        "text_muted": "#9AA0A6",
+        "cal_weekend_color": "#FB7185",
+        "badge_bg": "#222428",
+        "card_img_bg": "#141517"
     }),
     ("custom_preset_midnight", {
         "bg_main": "#120E16",
@@ -71,7 +75,9 @@ CUSTOM_PRESETS = [
         "card_selected": "#281838",
         "text_main": "#EAE5ED",
         "text_muted": "#B5A9BC",
-        "cal_weekend_color": "#E879F9"
+        "cal_weekend_color": "#E879F9",
+        "badge_bg": "#2A2033",
+        "card_img_bg": "#17121C"
     }),
     ("custom_preset_emerald", {
         "bg_main": "#0C1410",
@@ -85,7 +91,9 @@ CUSTOM_PRESETS = [
         "card_selected": "#112B20",
         "text_main": "#E6F4EA",
         "text_muted": "#829B8C",
-        "cal_weekend_color": "#6EE7B7"
+        "cal_weekend_color": "#6EE7B7",
+        "badge_bg": "#182B23",
+        "card_img_bg": "#0E1813"
     }),
     ("custom_preset_espresso", {
         "bg_main": "#191512",
@@ -99,7 +107,9 @@ CUSTOM_PRESETS = [
         "card_selected": "#2E2018",
         "text_main": "#F5EBE6",
         "text_muted": "#A8988F",
-        "cal_weekend_color": "#F59E0B"
+        "cal_weekend_color": "#F59E0B",
+        "badge_bg": "#2E2620",
+        "card_img_bg": "#1D1814"
     })
 ]
 
@@ -161,6 +171,9 @@ class SettingsDialog(QDialog):
             raw_presets = database.get_setting("user_custom_presets", "{}")
             if raw_presets:
                 self.user_presets = json.loads(raw_presets)
+                if "siyah" in self.user_presets:
+                    del self.user_presets["siyah"]
+                    database.set_setting("user_custom_presets", json.dumps(self.user_presets))
         except Exception:
             self.user_presets = {}
         self.color_buttons = {}
@@ -383,11 +396,24 @@ class SettingsDialog(QDialog):
         autosave_layout.addLayout(interval_layout)
         layout.addLayout(autosave_layout)
 
-        # General Settings Section (Theme & Language)
+        # General Settings Section (Language & Theme)
         general_layout = QVBoxLayout()
         self.general_lbl = QLabel(t("settings"))
         self.general_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #E3E3E3; margin-top: 10px;")
         general_layout.addWidget(self.general_lbl)
+
+        # Language Combobox (Placed at the very top of the Settings section, above Theme selection)
+        lang_row = QHBoxLayout()
+        self.lang_lbl = QLabel(t("settings_lang"))
+        self.lang_lbl.setStyleSheet("color: #9AA0A6; font-size: 12px;")
+        self.lang_combo = QComboBox()
+        self.lang_combo.addItem("Türkçe", "tr")
+        self.lang_combo.addItem("English", "en")
+        self.lang_combo.setMinimumWidth(150)
+        lang_row.addWidget(self.lang_lbl)
+        lang_row.addWidget(self.lang_combo)
+        lang_row.addStretch()
+        general_layout.addLayout(lang_row)
         
         # Theme Combobox
         theme_row = QHBoxLayout()
@@ -510,19 +536,6 @@ class SettingsDialog(QDialog):
         custom_colors_layout.addLayout(colors_grid)
         general_layout.addWidget(self.custom_colors_widget)
         self.custom_colors_widget.setVisible(False)
-        
-        # Language Combobox
-        lang_row = QHBoxLayout()
-        self.lang_lbl = QLabel(t("settings_lang"))
-        self.lang_lbl.setStyleSheet("color: #9AA0A6; font-size: 12px;")
-        self.lang_combo = QComboBox()
-        self.lang_combo.addItem("Türkçe", "tr")
-        self.lang_combo.addItem("English", "en")
-        self.lang_combo.setMinimumWidth(150)
-        lang_row.addWidget(self.lang_lbl)
-        lang_row.addWidget(self.lang_combo)
-        lang_row.addStretch()
-        general_layout.addLayout(lang_row)
 
         # Sidebar Notebooks Limit
         nb_limit_row = QHBoxLayout()
@@ -913,6 +926,7 @@ class SettingsDialog(QDialog):
             """)
 
     def apply_preset(self, preset_colors):
+        self.custom_colors = dict(DEFAULT_CUSTOM_COLORS)
         self.custom_colors.update(preset_colors)
         self.update_color_buttons()
         self.update_dialog_theme_styles()
